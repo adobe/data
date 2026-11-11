@@ -72,7 +72,7 @@ const intrinsicModules: ReadonlySet<string> = new Set(layouts("interface/math/in
 const attachKernelModules: ReadonlySet<string> = new Set(layouts("implementation/world/attach-kernel"));
 const rootModules = [...layouts("interface/index"), ...layouts("index")];
 const namespaceModules: { readonly [namespace: string]: ReadonlySet<string> } = Object.fromEntries(
-    [["System", "system/system"], ["Rule", "rule/rule"], ["Finalizer", "finalizer/finalizer"], ["Index", "indexes/index-type"]]
+    [["System", "system/system"], ["Component", "component/component"], ["Index", "indexes/index-type"]]
         .map(([namespace, module]) => [namespace, new Set([...layouts(`interface/${module}`), ...rootModules])]),
 );
 

@@ -1,7 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
 import { Entity } from "../../interface/entity/entity.js";
-import { Finalizer } from "../../interface/finalizer/finalizer.js";
 import { Index } from "../../interface/indexes/index-type.js";
 import { Observe } from "../../observe/index.js";
 import { always } from "../../interface/resources/always.js";
@@ -228,13 +227,14 @@ describe("call sites", () => {
     });
 });
 
-describe("finalizers", () => {
+describe("removed systems", () => {
     const released: number[] = [];
-    Finalizer.create({ components: { with: [order, cell] }, lookup: { near: { index: grid } } }, (row, { lookup }) => {
+    const release = System.removed({ components: { with: [order, cell] }, lookup: { near: { index: grid } } }, (row, { lookup }) => {
         released.push(lookup.near(row[cell]).length);
     });
     it("look up through indexes as they are before the sync point applies", async () => {
         await using world = createWorld({ [workers]: 0 });
+        world.add(release);
         await world.run(System.create(({ commands }) => {
             commands.spawn([cell, weight])({ [cell]: [3, 3], [weight]: 1 });
             commands.spawn([cell, weight, order])({ [cell]: [3, 3], [weight]: 2, [order]: 0 });

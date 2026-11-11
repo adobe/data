@@ -92,19 +92,24 @@ const namespaceOrigin = (graph: Graph, file: string, namespace: string, name: st
 /** Whether a node reads a member by its name: `a.b`. */
 const isMember = (node: Node): node is ESTree.StaticMemberExpression => node.type === 'MemberExpression' && !node.computed && node.property.type === 'Identifier';
 
-/** Whether an expression is `@adobe/ecs`'s `System`: imported under any name, a namespace's member, or `System` unbound. */
-const isSystem = (module: Module, expression: Node): boolean => {
+/**
+ * Whether an expression is `@adobe/ecs`'s namespace `namespace`: imported under any name, a namespace's member, or the
+ * name unbound.
+ */
+const isEcs = (module: Module, expression: Node, namespace: 'System' | 'Component'): boolean => {
     for (const statement of module.program.body) {
         if (statement.type !== 'ImportDeclaration' || statement.source.value !== '@adobe/ecs') continue;
         for (const specifier of statement.specifiers) {
             if (specifier.type === 'ImportNamespaceSpecifier' && isMember(expression) && expression.object.type === 'Identifier'
-                && expression.object.name === specifier.local.name && expression.property.name === 'System') return true;
+                && expression.object.name === specifier.local.name && expression.property.name === namespace) return true;
             if (specifier.type === 'ImportSpecifier' && expression.type === 'Identifier' && specifier.local.name === expression.name
-                && nameOf(specifier.imported) === 'System') return true;
+                && nameOf(specifier.imported) === namespace) return true;
         }
     }
-    return expression.type === 'Identifier' && expression.name === 'System' && !topLevelNames(module).has('System');
+    return expression.type === 'Identifier' && expression.name === namespace && !topLevelNames(module).has(namespace);
 };
+
+const isSystem = (module: Module, expression: Node): boolean => isEcs(module, expression, 'System');
 
 /**
  * The systems something runs: those listed in a `systems` list or property, members of a composite
@@ -245,5 +250,22 @@ export const checkApps = ({ graph, settings, violate }: Context, { edges }: Impo
             violate(file, 'app-misses-systems', `lists the systems of layers that depend on \`${layer}\` but not its own, which run what they read or write.`,
                 `Import \`systems\` from '${relativeSpec(relative(dirname(file), `${layer}/index.js`))}' and add it to the world, or, if this app leaves the layer out on purpose, stop listing the layers that need it.`);
         }
+    }
+};
+
+/** `Component.derive(key, ...)` is in the file that declares `key`, beside its `declare module` entry. */
+export const checkDerivations = ({ graph, violate }: Context): void => {
+    for (const file of graph.tsPaths) {
+        if (isTest(file)) continue;
+        const module = graph.moduleOf(file);
+        walk(module, node => {
+            if (node.type !== 'CallExpression' || !isMember(node.callee) || node.callee.property.name !== 'derive' || !isEcs(module, node.callee.object, 'Component')) return;
+            const [derived] = node.arguments;
+            if (derived?.type !== 'Identifier') return;
+            const origin = isLocal(module, derived, derived.name) ? undefined : bindingOrigin(graph, file, derived.name);
+            if (origin === undefined || origin.file === file) return;
+            violate(file, 'derive-beside-component', `\`Component.derive(${derived.name}, ...)\` derives a component declared in ${origin.file}, not this file.`,
+                `Move it into ${origin.file}, below \`export const ${origin.name} = Symbol()\` and its declare module entry: a derived component is defined where it's declared, so whoever imports it gets its derivations.`);
+        });
     }
 };

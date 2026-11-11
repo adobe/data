@@ -31,6 +31,9 @@ export const sameItem = (a: object, b: object): boolean => {
 /** The value first registered as this item, which stands for it wherever items compare; any other value as it is. */
 export const firstItemOf = (item: object): object => entries.get(item)?.first ?? item;
 
+/** How messages name the kinds of item whose words differ from their kinds. */
+const kindLabels: { readonly [kind: string]: string } = { finalizer: "removed system", changes: "changes system", rule: "derivation" };
+
 /**
  * The item already registered under `id` that `item` is: one of its kind with the same declaration, as a module
  * evaluated again declares it; undefined without an id or for an id not registered. Throws for an id registered as
@@ -40,7 +43,7 @@ export const registeredAs = <T extends Registered>(item: T, id: string | undefin
     if (id === undefined) return undefined;
     const entry = identified.get(id);
     if (entry === undefined) return undefined;
-    if (entry.kind !== item.kind) throw new Error(`Cannot declare "${item.name}" (${id}): its id is a ${entry.kind}'s.`);
+    if (entry.kind !== item.kind) throw new Error(`Cannot declare "${item.name}" (${id}): its id is a ${kindLabels[entry.kind] ?? entry.kind}'s.`);
     if (!same(entry.declaration, item.declaration)) {
         throw new Error(`Cannot declare "${item.name}" (${id}): its id is another item's, with another declaration; if a module was evaluated again with a changed declaration, reload the page.`);
     }
@@ -69,7 +72,7 @@ const anonymous = new Map<string, number>();
  * it's in, or an internal factory gave it; else its binding, from its id (`spawn` for `src/setup.ts#spawn`); else its
  * kind numbered by creation (`system #3`).
  */
-export const nameOf = (value: object, id: string | undefined, kind: "system" | "rule" | "finalizer" | "index"): string => {
+export const nameOf = (value: object, id: string | undefined, kind: "system" | "rule" | "index"): string => {
     const label = takeLabelOfDeclaration(value);
     if (label !== undefined) return label;
     if (id !== undefined) return id.slice(id.lastIndexOf("#") + 1);

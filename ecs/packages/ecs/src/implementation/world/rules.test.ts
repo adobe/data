@@ -2,7 +2,6 @@
 import { describe, expect, it } from "vitest";
 import { Component } from "../../interface/component/component.js";
 import { Entity } from "../../interface/entity/entity.js";
-import { Rule } from "../../interface/rule/rule.js";
 import { System } from "../../interface/system/system.js";
 import { createWorld } from "./create.js";
 import { count, read } from "./reads.test-helper.js";
@@ -47,10 +46,10 @@ declare module "@adobe/ecs" {
 }
 
 
-Rule.create(identify({ components: { with: [source], not: [hidden] }, derive: [slot] }, "rulesTest/rules.ts#slots"));
-Rule.create({ components: { with: [slot] }, derive: [visible] });
-Rule.create({ components: { with: [sprite] }, derive: [visible] });
-Rule.create({ components: { with: [tagged] }, derive: [tag] });
+Component.derive(slot, { from: [source], not: [hidden] });
+Component.derive(visible, { from: [slot] });
+Component.derive(visible, { from: [sprite] });
+Component.derive(tag, { from: [tagged] });
 
 /** Runs `edit` with commands once, as its own run. */
 const edit = System.create({}, ({ commands }, input: { readonly step: number }) => {
@@ -69,11 +68,12 @@ const components = async (world: ReturnType<typeof createWorld>, entity: Entity)
 };
 
 describe("rules", () => {
-    it("accept a rule declared again the same under its id, as a module evaluated again declares it, and reject a different one", () => {
+    it("accept a derivation declared again the same under its id, as a module evaluated again declares it, and reject a different one", () => {
         const rules = programRules().length;
-        Rule.create(identify({ components: { with: [source], not: [hidden] }, derive: [slot] }, "rulesTest/rules.ts#slots"));
-        expect(() => Rule.create(identify({ components: { with: [source] }, derive: [slot] }, "rulesTest/rules.ts#slots"))).toThrow("reload the page");
-        expect(programRules()).toHaveLength(rules);
+        Component.derive(slot, identify({ from: [source], not: [hidden] }, "rulesTest/again.ts#derive(slot)"));
+        Component.derive(slot, identify({ from: [source], not: [hidden] }, "rulesTest/again.ts#derive(slot)"));
+        expect(() => Component.derive(slot, identify({ from: [source] }, "rulesTest/again.ts#derive(slot)"))).toThrow("reload the page");
+        expect(programRules()).toHaveLength(rules + 1);
     });
     it("derive components where they match, from their start, and remove them where they stop", async () => {
         const world = createWorld({ [workers]: 0 });
@@ -127,7 +127,7 @@ describe("rules", () => {
         await world.run(spawn);
         await world.run(observe);
         expect(await count(world, { required: [late] })).toBe(0);
-        Rule.create({ components: { with: [mark] }, derive: [late] });
+        Component.derive(late, { from: [mark] });
         await world.run(spawn);
         expect(await count(world, { required: [late] })).toBe(6);
         await world.run(observe);
@@ -137,8 +137,8 @@ describe("rules", () => {
 
     it("are rejected when they can't hold", async () => {
         // @ts-expect-error a rule derives only derived components
-        expect(() => Rule.create({ components: { with: [source] }, derive: [mark] })).toThrow(`derives "rulesTest/mark", which isn't declared derived`);
-        expect(() => Rule.create({ components: { with: [source], not: [visible] }, derive: [slot] })).toThrow("cycle through a negation, which could oscillate");
+        expect(() => Component.derive(mark, { from: [source] })).toThrow(`derives "rulesTest/mark", which isn't declared derived`);
+        expect(() => Component.derive(slot, { from: [source], not: [visible] })).toThrow("cycle through a negation, which could oscillate");
         // @ts-expect-error a reference changes only through commands
         expect(() => System.create({ components: { with: [owned] } }, row => { row[owned] = Entity.none; })).toThrow("a reference, which changes only through commands");
         // The component closing a cycle of within declarations is rejected when it's registered.

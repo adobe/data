@@ -2,7 +2,6 @@
 import { describe, expect, it } from "vitest";
 import { giveAccess } from "../../interface/registry/ids.test-helper.js";
 import { Entity } from "../../interface/entity/entity.js";
-import { Finalizer } from "../../interface/finalizer/finalizer.js";
 import { Index } from "../../interface/indexes/index-type.js";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
@@ -226,10 +225,10 @@ describe("an index lookup's changed: true", () => {
 
     it("is only for a system's index lookups", () => {
         const untypedSystem = (declaration: object): unknown => Reflect.apply(System.create, undefined, [giveAccess(declaration), () => {}]);
-        const untypedFinalizer = (declaration: object): unknown => Reflect.apply(Finalizer.create, undefined, [giveAccess(declaration), () => {}]);
+        const untypedFinalizer = (declaration: object): unknown => Reflect.apply(System.removed, undefined, [giveAccess(declaration), () => {}]);
         expect(() => untypedSystem({ lookup: { weights: { with: [weight], changed: true } } }))
             .toThrow(`lookup "weights"'s changed is true, which only an index lookup takes; name the components it watches.`);
         expect(() => untypedFinalizer({ components: { with: [group] }, lookup: { byGroup: { index: byGroup, changed: true } } }))
-            .toThrow(`lookup "byGroup"'s changed is true, which only a system's index lookup takes; a finalizer runs on each entity that stops matching.`);
+            .toThrow(`lookup "byGroup"'s changed is true, which only a system's index lookup takes.`);
     });
 });

@@ -1,9 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
+import { Component } from "../../interface/component/component.js";
 import { describe, expect, it } from "vitest";
 import { identify } from "../../interface/registry/ids.test-helper.js";
 import { Entity } from "../../interface/entity/entity.js";
-import { Finalizer } from "../../interface/finalizer/finalizer.js";
-import { Rule } from "../../interface/rule/rule.js";
 import { System } from "../../interface/system/system.js";
 import { createWorld, recorderOf } from "./create.js";
 import { count, read, readEach, readResource, select } from "./reads.test-helper.js";
@@ -20,7 +19,7 @@ const released = Symbol("finalizersTest/released");
 const late = Symbol("finalizersTest/late");
 const level = Symbol("finalizersTest/level");
 const written = Symbol("finalizersTest/written");
-// Finalizers apply in every world, so each test's finalizers match components of their own.
+// Each test's changes and removed systems match components of their own.
 const counted = Symbol("finalizersTest/counted");
 const pendingHandle = Symbol("finalizersTest/pendingHandle");
 const respawned = Symbol("finalizersTest/respawned");
@@ -54,7 +53,7 @@ declare module "@adobe/ecs" {
 }
 
 
-Rule.create({ components: { with: [source] }, derive: [slot] });
+Component.derive(slot, { from: [source] });
 
 let steps: ((commands: System.Commands) => void)[] = [];
 const edit = System.create({}, ({ commands }, input: { readonly step: number }) => {
@@ -65,11 +64,12 @@ const step = (world: ReturnType<typeof createWorld>) => (run: (commands: System.
     return world.run(edit, { step: steps.length - 1 });
 };
 
-describe("finalizers", () => {
+describe("removed systems", () => {
     it("run for each entity that stops matching, by any cause, reading its values before the sync point applies", async () => {
         const seen: [Entity, number][] = [];
-        Finalizer.create({ components: { with: [handle], not: [hidden] } }, row => { seen.push([row.entity, row[handle]]); });
+        const release = System.removed({ components: { with: [handle], not: [hidden] } }, row => { seen.push([row.entity, row[handle]]); });
         const world = createWorld({ [workers]: 0 });
+        world.add(release);
         const run = step(world);
         const spawned: Entity[] = [];
         await run(commands => { for (let i = 0; i < 6; i++) spawned.push(commands.spawn([handle])({ [handle]: i * 10 })); });
@@ -92,8 +92,9 @@ describe("finalizers", () => {
 
     it("run for rules' and references' removals too, and at disposal for every live match", async () => {
         const seen: number[] = [];
-        Finalizer.create({ components: { with: [slot, source] } }, row => { seen.push(row[source]); });
+        const release = System.removed({ components: { with: [slot, source] } }, row => { seen.push(row[source]); });
         const world = createWorld({ [workers]: 0 });
+        world.add(release);
         const run = step(world);
         let root = Entity.none, child = Entity.none;
         await run(commands => {
@@ -110,7 +111,7 @@ describe("finalizers", () => {
 
     it("write resources at the sync point, queue commands for the next one, and see lookups as they were", async () => {
         const found: (number | null)[] = [];
-        Finalizer.create({
+        const release = System.removed({
             components: { with: [counted] },
             lookup: { handles: { with: [counted] } },
         }, (row, { resources, lookup, commands }) => {
@@ -119,6 +120,7 @@ describe("finalizers", () => {
             commands.spawn([label])({ [label]: `after ${row[counted]}` });
         });
         const world = createWorld({ [workers]: 0 });
+        world.add(release);
         const run = step(world);
         let a = Entity.none;
         await run(commands => { a = commands.spawn([counted])({ [counted]: 5 }); });
@@ -133,7 +135,7 @@ describe("finalizers", () => {
 
     it("leave their commands for the next run's sync point, even when that run first adds resources", async () => {
         let other = Entity.none;
-        Finalizer.create({ components: { with: [pendingHandle] } }, (_, { commands }) => { commands.despawn(other); });
+        const release = System.removed({ components: { with: [pendingHandle] } }, (_, { commands }) => { commands.despawn(other); });
         const reads = System.create({}, ({ resources }) => { void resources[level]; });
         // Read after every run, as a read through a run of its own would apply the commands left for it.
         let seen: string | null = null;
@@ -142,6 +144,7 @@ describe("finalizers", () => {
         });
         const world = createWorld({ [workers]: 0 });
         world.add(watch);
+        world.add(release);
         const run = step(world);
         let a = Entity.none;
         await run(commands => { a = commands.spawn([pendingHandle])({ [pendingHandle]: 1 }); other = commands.spawn([label])({ [label]: "other" }); });
@@ -153,10 +156,11 @@ describe("finalizers", () => {
     });
 
     it("keep reservations they make apart from the indexes their sync point frees", async () => {
-        Finalizer.create({ components: { with: [respawned] } }, (row, { commands }) => {
+        const respawn = System.removed({ components: { with: [respawned] } }, (row, { commands }) => {
             commands.spawn([respawned])({ [respawned]: row[respawned] + 100 });
         });
         const world = createWorld({ [workers]: 0 });
+        world.add(respawn);
         const run = step(world);
         const first: Entity[] = [];
         await run(commands => { for (let i = 0; i < 8; i++) first.push(commands.spawn([respawned])({ [respawned]: i })); });
@@ -171,11 +175,11 @@ describe("finalizers", () => {
 
     it("run in their order, and a throw still applies the sync point and is reported", async () => {
         const order: string[] = [];
-        const second = Finalizer.create({ components: { with: [ordered] } }, () => { order.push("second"); });
-        Finalizer.create({ components: { with: [ordered] }, before: [second] }, () => { order.push("first"); });
-        const throwing = Finalizer.create({ components: { with: [ordered] } }, () => { throw new Error("finalizer failed"); });
-        void throwing;
+        const second = System.removed({ components: { with: [ordered] } }, () => { order.push("second"); });
+        const first = System.removed({ components: { with: [ordered] }, before: [second] }, () => { order.push("first"); });
+        const throwing = System.removed({ components: { with: [ordered] } }, () => { throw new Error("finalizer failed"); });
         const world = createWorld({ [workers]: 0 });
+        world.add(System.create([second, first, throwing]));
         recorderOf(world);
         const run = step(world);
         let a = Entity.none;
@@ -183,52 +187,54 @@ describe("finalizers", () => {
         const { outcome, error } = await outcomeOf(world, run(commands => commands.despawn(a)));
         expect(outcome.failures.map(({ kind, name, message }) => ({ kind, name, message }))).toEqual([{ kind: "finalizer", name: "throwing", message: "finalizer failed" }]);
         // The run rejects, naming it, once its sync point applied.
-        expect(error instanceof Error && error.message).toMatch(/^Finalizer "throwing" .*failed: finalizer failed$/);
+        expect(error instanceof Error && error.message).toMatch(/^System "throwing" .*failed: finalizer failed$/);
         expect(order).toEqual(["first", "second"]);
         expect(await read(world, a, handle)).toBeNull();
         const writer = (name: "writerA" | "writerB") =>
-            Finalizer.create({ components: { with: [writing] } }, (_, { resources }) => { resources[written] = 1; });
-        writer("writerA");
-        expect(() => writer("writerB")).toThrow("order them with before or after");
+            System.removed({ components: { with: [writing] } }, (_, { resources }) => { resources[written] = 1; });
+        world.add(writer("writerA"));
+        expect(() => world.add(writer("writerB"))).toThrow("order them with before or after");
         await world.dispose();
     });
 });
 
-describe("a finalizer declared again the same, as a module evaluated again declares it", () => {
+describe("a removed system declared again the same, as a module evaluated again declares it", () => {
     it("keeps its place in each world, and runs its new body once", async () => {
         const seen: string[] = [];
-        const first = Finalizer.create(identify({ components: { with: [reloaded] } }, "finalizersTest/finalizers.ts#reloaded"), () => { seen.push("first"); });
+        const first = System.removed(identify({ components: { with: [reloaded] } }, "finalizersTest/finalizers.ts#reloaded"), () => { seen.push("first"); });
         const world = createWorld({ [workers]: 0 });
+        world.add(first);
         let entity = Entity.none;
         await step(world)(commands => { entity = commands.spawn([reloaded])({ [reloaded]: 1 }); });
-        const again = Finalizer.create(identify({ components: { with: [reloaded] } }, "finalizersTest/finalizers.ts#reloaded"), () => { seen.push("again"); });
+        const again = System.removed(identify({ components: { with: [reloaded] } }, "finalizersTest/finalizers.ts#reloaded"), () => { seen.push("again"); });
         expect(again).toBe(first);
         await step(world)(commands => { commands.despawn(entity); });
         expect(seen).toEqual(["again"]);
-        expect(() => Finalizer.create(identify({ components: { with: [handle] } }, "finalizersTest/finalizers.ts#reloaded"), () => {})).toThrow("reload the page");
+        expect(() => System.removed(identify({ components: { with: [handle] } }, "finalizersTest/finalizers.ts#reloaded"), () => {})).toThrow("reload the page");
         await world.dispose();
     });
 });
 
-describe("a finalizer created after a world has entities it matches", () => {
+describe("a removed system added after a world has entities it matches", () => {
     it("releases them at disposal", async () => {
         const world = createWorld({ [workers]: 0 });
         await step(world)(commands => { commands.spawn([disposing])({ [disposing]: 4 }); });
         const seen: number[] = [];
-        Finalizer.create({ components: { with: [disposing] } }, row => { seen.push(row[disposing]); });
+        world.add(System.removed({ components: { with: [disposing] } }, row => { seen.push(row[disposing]); }));
         await world.dispose();
         expect(seen).toEqual([4]);
     });
 });
 
-describe("changes finalizers", () => {
+describe("changes systems", () => {
     it("watch by default every component that isn't derived, including ones first used later, and no resources", async () => {
         const seen: unknown[] = [];
-        Finalizer.changes({  }, (changes, { resources }) => {
+        const watch = System.changes({  }, (changes, { resources }) => {
             void resources[level];
             for (const group of changes.groups) seen.push(group.to);
         });
         const world = createWorld({ [workers]: 0 });
+        world.add(watch);
         await step(world)(commands => { commands.spawn([late])({ [late]: 1 }); });
         expect(seen).toEqual([[late]]);
         await world.dispose();
@@ -237,13 +243,14 @@ describe("changes finalizers", () => {
     it("see each sync point's structural changes to their components, grouped, with values before and after", async () => {
         const groups: unknown[] = [];
         const values: unknown[] = [];
-        Finalizer.changes({ watch: [handle, label] }, ({ groups: seen, previous, next }) => {
+        const watch = System.changes({ watch: [handle, label] }, ({ groups: seen, previous, next }) => {
             for (const group of seen) {
                 groups.push({ ...group, entities: group.entities.length });
                 for (const entity of group.entities) values.push([previous(entity, handle), next(entity, handle)]);
             }
         });
         const world = createWorld({ [workers]: 0 });
+        world.add(watch);
         const run = step(world);
         let a = Entity.none, b = Entity.none;
         await run(commands => { a = commands.spawn([handle])({ [handle]: 1 }); b = commands.spawn([handle, label])({ [handle]: 2, [label]: "b" }); commands.spawn([hidden])({ [hidden]: true }); });
@@ -265,13 +272,14 @@ describe("changes finalizers", () => {
     it("see a value an add gives a component the entity keeps as replaced, removed and added again or not", async () => {
         const groups: unknown[] = [];
         const values: unknown[] = [];
-        Finalizer.changes({ watch: [handle, label] }, ({ groups: seen, previous, next }) => {
+        const watch = System.changes({ watch: [handle, label] }, ({ groups: seen, previous, next }) => {
             for (const group of seen) {
                 groups.push({ ...group, entities: group.entities.length });
                 for (const entity of group.entities) values.push([previous(entity, handle), next(entity, handle)]);
             }
         });
         const world = createWorld({ [workers]: 0 });
+        world.add(watch);
         const run = step(world);
         let a = Entity.none, b = Entity.none, c = Entity.none;
         await run(commands => { a = commands.spawn([handle, label])({ [handle]: 1, [label]: "a" }); b = commands.spawn([handle, label])({ [handle]: 2, [label]: "b" }); c = commands.spawn([handle, label])({ [handle]: 3, [label]: "c" }); });

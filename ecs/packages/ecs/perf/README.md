@@ -1032,7 +1032,7 @@ Ticks of ten consecutive tiers on a joined worker, empty systems, which run as o
 
 ### despawn objects 10K
 
-A sync point despawning 10K entities whose objects a joined worker fills, with a finalizer there reading the object and a vec3: releasing DOM nodes or GPU handles, which the world's thread doesn't wait for.
+A sync point despawning 10K entities whose objects a joined worker fills, with a removed system there reading the object and a vec3: releasing DOM nodes or GPU handles, which the world's thread doesn't wait for.
 
 - **N:** 10K despawns; usually 1–10K.
 - **Best:** 56 bytes per N at the copy bandwidth of one thread, the fastest it measured. Each despawn frees its 8-byte location and entity, and writes its stop: its entity, archetype, row and tag, 20 bytes, and its 12-byte vec3, read and written.
@@ -1459,14 +1459,14 @@ The same with 10K numbers in place of the captions, as `joined observer strings 
 
 ### despawn objects 10K string resource
 
-`despawn objects 10K` with the finalizer reading a string resource too, whose record the sync point's stop list holds a copy of, so the thread reads it as it was before apply.
+`despawn objects 10K` with the removed system reading a string resource too, whose record the sync point's stop list holds a copy of, so the thread reads it as it was before apply.
 
 - **N:** 10K despawns; usually 1–10K.
 - **Best:** 56 bytes per N at the copy bandwidth of one thread, the fastest it measured. As `despawn objects 10K`: the resource's copy is once per sync point.
 
 ### despawn objects 10K linear resource
 
-`despawn objects 10K` with the finalizer reading a number and a vec3 resource too, which the sync point's stop list holds copies of, so the thread reads them as they were before apply.
+`despawn objects 10K` with the removed system reading a number and a vec3 resource too, which the sync point's stop list holds copies of, so the thread reads them as they were before apply.
 
 - **N:** 10K despawns; usually 1–10K.
 - **Best:** 56 bytes per N at the copy bandwidth of one thread, the fastest it measured. As `despawn objects 10K`: the resources' copies are once per sync point.
@@ -1578,7 +1578,7 @@ A main-thread row system reading a five-number struct and writing it to another 
 
 ### struct replace kernel watched
 
-As `struct replace kernel main`, with a changes finalizer watching both components: an edit history recording each commit's replaced values.
+As `struct replace kernel main`, with a changes system watching both components: an edit history recording each commit's replaced values.
 
 - **N:** 200K commands; usually 1K–100K.
 - **Best:** 32 bytes per N at the copy bandwidth of one thread, the fastest it measured. Each command writes its 40-byte struct or 8-byte vec2 and reads its entity's 8-byte location.

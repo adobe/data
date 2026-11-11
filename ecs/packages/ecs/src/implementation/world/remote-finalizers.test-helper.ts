@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Entity } from "../../interface/entity/entity.js";
-import { Finalizer } from "../../interface/finalizer/finalizer.js";
 import { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
 import type { Schema } from "../../interface/schema/schema.js";
@@ -77,7 +76,7 @@ export const finalized: Entity[] = [];
 export const throwing = new Set<number>();
 
 /** On the finalizers' thread: what each stop held there, its structs before the sync point applied. */
-export const release = Finalizer.create({ components: { with: [serial, place, marked, widget, label] } }, (row, { resources }) => {
+export const release = System.removed({ components: { with: [serial, place, marked, widget, label] } }, (row, { resources }) => {
     finalized.push(row.entity);
     released.push({ serial: row[serial], place: [...row[place]], marked: row[marked], widget: row[widget]?.tag ?? null, label: row[label]?.text ?? null, tone: resources[tone].text });
     if (throwing.has(row[serial])) throw new Error(`remoteFinalizersTest: ${row[serial]} throws`);
@@ -87,7 +86,7 @@ export const release = Finalizer.create({ components: { with: [serial, place, ma
 export const entitled: { readonly serial: number; readonly title: string }[] = [];
 
 /** On the finalizers' thread: what each titled stop's title was before its sync point applied. */
-export const entitle = Finalizer.create({ components: { with: [serial, title, widget] } }, row => {
+export const entitle = System.removed({ components: { with: [serial, title, widget] } }, row => {
     // Reading its widget places it on the widget's thread.
     void row[widget];
     entitled.push({ serial: row[serial], title: row[title] });
@@ -97,7 +96,7 @@ export const entitle = Finalizer.create({ components: { with: [serial, title, wi
 export const headlined: { readonly serial: number; readonly heading: string }[] = [];
 
 /** On the finalizers' thread: the heading as it was before each headed stop's sync point applied. */
-export const headline = Finalizer.create({ components: { with: [serial, widget, headed] } }, (row, { resources }) => {
+export const headline = System.removed({ components: { with: [serial, widget, headed] } }, (row, { resources }) => {
     void row[widget];
     headlined.push({ serial: row[serial], heading: resources[heading] });
 });
@@ -106,7 +105,7 @@ export const headline = Finalizer.create({ components: { with: [serial, widget, 
 export const headlinedBoth: { readonly serial: number; readonly heading: string; readonly subheading: string }[] = [];
 
 /** On the finalizers' thread: two string resources as they were before each headed stop's sync point applied. */
-export const headlines = Finalizer.create({ components: { with: [serial, widget, headed] } }, (row, { resources }) => {
+export const headlines = System.removed({ components: { with: [serial, widget, headed] } }, (row, { resources }) => {
     void row[widget];
     headlinedBoth.push({ serial: row[serial], heading: resources[heading], subheading: resources[subheading] });
 });
@@ -115,7 +114,7 @@ export const headlines = Finalizer.create({ components: { with: [serial, widget,
 export const gauged: { readonly serial: number; readonly level: number; readonly origin: readonly number[] }[] = [];
 
 /** On the finalizers' thread: a number and a struct resource as they were before each headed stop's sync point applied. */
-export const gauge = Finalizer.create({ components: { with: [serial, widget, headed] } }, (row, { resources }) => {
+export const gauge = System.removed({ components: { with: [serial, widget, headed] } }, (row, { resources }) => {
     void row[widget];
     gauged.push({ serial: row[serial], level: resources[level], origin: [...resources[origin]] });
 });
@@ -125,7 +124,7 @@ export type Surveyed = { readonly serial: number; readonly caption: string; read
 export const surveyed: Surveyed[] = [];
 
 /** On the finalizers' thread: resources of mixed widths as they were before each headed stop's sync point applied. */
-export const survey = Finalizer.create({ components: { with: [serial, widget, headed] } }, (row, { resources }) => {
+export const survey = System.removed({ components: { with: [serial, widget, headed] } }, (row, { resources }) => {
     void row[widget];
     const { alpha, color, glossy } = resources[material];
     surveyed.push({
@@ -133,6 +132,9 @@ export const survey = Finalizer.create({ components: { with: [serial, widget, he
         sample: { ...resources[sample] }, material: { alpha, color: [...color], glossy },
     });
 });
+
+/** Every removed system of these tests, which their worlds add. */
+export const finalizers = System.create([release, entitle, headline, headlines, gauge, survey]);
 
 /** What `regauge` writes to the resources of mixed widths at a level. */
 export const surveyOf = (at: number): Omit<Surveyed, "serial"> => ({

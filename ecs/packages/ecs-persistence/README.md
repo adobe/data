@@ -33,8 +33,8 @@ declare module "@adobe/ecs" {
 
 A trait covers each key whose declaration gives it a string. A name only has to be unique among the keys one trait
 covers, and a key may carry several traits, under the same or different names, and is saved in each place. Only data
-is saved: a value with a schema. A derived component isn't, as its rule derives it again once its entity is loaded; a
-trait covering one fails as data.
+is saved: a value with a schema. A derived component isn't, as `Component.derive` derives it again once its entity is
+loaded; a trait covering one fails as data.
 
 ## Saving and loading
 

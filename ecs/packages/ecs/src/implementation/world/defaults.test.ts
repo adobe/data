@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
+import { Component } from "../../interface/component/component.js";
 import { describe, expect, it } from "vitest";
-import { Rule } from "../../interface/rule/rule.js";
 import { System } from "../../interface/system/system.js";
 import { createWorld } from "../index.js";
 import { readResource } from "./reads.test-helper.js";
@@ -37,7 +37,7 @@ declare module "@adobe/ecs" {
     }
 }
 
-Rule.create({ components: { with: [tagged] }, derive: [index] });
+Component.derive(index, { from: [tagged] });
 
 describe("a resource declared without a default", () => {
     it("starts at its type's zero value, and a ReadonlyMap or ReadonlySet at an empty one of its world's own", async () => {

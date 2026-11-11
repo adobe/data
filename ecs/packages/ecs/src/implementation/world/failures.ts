@@ -48,7 +48,7 @@ export const failureOf = (kind: Failure["kind"], of: { readonly name: string; re
     return { kind, name, id, message: error instanceof Error ? error.message : String(error), error, subject };
 };
 
-const kinds = { system: "System", finalizer: "Finalizer", gpu: "GPU work of system", thread: "System" } as const;
+const kinds = { system: "System", finalizer: "System", gpu: "GPU work of system", thread: "System" } as const;
 
 /** One failure as an Error: what failed, by its label and id, and its message, with what was thrown as its cause. */
 export const errorOfFailure = (failure: Failure): Error => {

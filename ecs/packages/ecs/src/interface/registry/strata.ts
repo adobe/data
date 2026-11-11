@@ -78,7 +78,7 @@ export const strataOf = (rules: readonly RuleFacts[], hosts: readonly number[], 
             for (const { to, negative, within } of edges.get(member) ?? []) {
                 if (!inside.has(to)) continue;
                 const cycle = members.map(nameOf).sort().join(", ");
-                if (negative) throw new Error(`Rules derive in a cycle through a negation, which could oscillate: ${cycle}.`);
+                if (negative) throw new Error(`Derivations derive in a cycle through a negation, which could oscillate: ${cycle}.`);
                 if (within) throw new Error(`Components are within each other in a cycle: ${cycle}.`);
             }
         }

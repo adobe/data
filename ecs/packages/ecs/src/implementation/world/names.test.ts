@@ -1,9 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
+import { Component } from "../../interface/component/component.js";
 import { describe, expect, it } from "vitest";
-import { Finalizer } from "../../interface/finalizer/finalizer.js";
 import { identify } from "../../interface/registry/ids.test-helper.js";
 import { workers } from "../../interface/resources/workers.js";
-import { Rule } from "../../interface/rule/rule.js";
 import { System } from "../../interface/system/system.js";
 import { createWorld } from "./create.js";
 import { count } from "./reads.test-helper.js";
@@ -27,14 +26,16 @@ declare module "@adobe/ecs" {
 
 // Two libraries, written apart, each declare a rule, a finalizer and a system labeled "linked".
 const library = (finalizer: (row: { readonly [value]: number }) => void, derived: typeof first | typeof second) => {
-    Rule.create({ components: { with: [value] }, derive: [derived] });
+    Component.derive(derived, { from: [value] });
     // Its body is written in place, so the build reads it, and calls what it's given with the row.
-    Finalizer.create({ components: { with: [value] } }, row => finalizer(row));
+    return System.removed({ components: { with: [value] } }, row => finalizer(row));
 };
 const released: string[] = [];
 let failing = false;
-library(row => { released.push(`first ${row[value]}`); }, first);
-library(row => { released.push(`second ${row[value]}`); if (failing) throw new Error("second failed"); }, second);
+const libraries = [
+    library(row => { released.push(`first ${row[value]}`); }, first),
+    library(row => { released.push(`second ${row[value]}`); if (failing) throw new Error("second failed"); }, second),
+];
 
 const ran: string[] = [];
 const spawn = System.create({}, ({ commands }) => { commands.spawn([value])({ [value]: 1 }); });
@@ -54,8 +55,9 @@ describe("systems, rules and finalizers of one label", () => {
         expect(report.failures.map(({ kind, name, id, message }) => ({ kind, name, id, message }))).toEqual([{ kind: "system", name: "linked", id: null, message: "b failed" }]);
         expect(report.skipped).toEqual(["linked"]);
     });
-    it("both apply, as rules and as finalizers", async () => {
+    it("both apply, as derivations and as removed systems", async () => {
         await using world = createWorld({ [workers]: 0 });
+        for (const release of libraries) world.add(release);
         await world.run(spawn);
         expect(await count(world, { required: [value, first, second] })).toBe(1);
         released.length = 0;

@@ -23,7 +23,7 @@ export type Parse = (code: string) => Program;
  * The copy of the package an import specifier, resolved from the module being transformed, is a module of that exports
  * `namespace`; null when it's no such module. Compiled code imports the runtime from that copy.
  */
-export type ResolveSystemImport = (source: string, namespace: "System" | "Finalizer") => Promise<PackageCopy | null>;
+export type ResolveSystemImport = (source: string, namespace: "System") => Promise<PackageCopy | null>;
 /**
  * The JS expression for kernel `index`'s module url. `identity` is everything the description and module are
  * compiled to (the description without its url, plus the module source), so it can version the url.
@@ -39,40 +39,39 @@ export type TransformResult =
 
 type Edit = { readonly start: number; readonly end: number; readonly text: string };
 
-/** The local names of the package's `System` and `Finalizer` namespaces, by the namespace each names. */
-/** The module's local names of `System` and `Finalizer`, and the copy of the package the first of them comes from. */
-const systemLocals = async (program: Program, resolveSystemImport: ResolveSystemImport): Promise<{ readonly locals: ReadonlyMap<string, "System" | "Finalizer">; readonly copy: PackageCopy | null }> => {
-    const locals = new Map<string, "System" | "Finalizer">();
+/** The module's local names of the package's `System`, and the copy of the package the first of them comes from. */
+const systemLocals = async (program: Program, resolveSystemImport: ResolveSystemImport): Promise<{ readonly locals: ReadonlyMap<string, "System">; readonly copy: PackageCopy | null }> => {
+    const locals = new Map<string, "System">();
     let copy: PackageCopy | null = null;
     for (const statement of program.body) {
         if (statement.type !== "ImportDeclaration" || typeof statement.source.value !== "string") continue;
         const specifiers = statement.specifiers.flatMap(specifier => specifier.type === "ImportSpecifier" && specifier.imported.type === "Identifier"
-            && (specifier.imported.name === "System" || specifier.imported.name === "Finalizer") ? [{ local: specifier.local.name, imported: specifier.imported.name }] : []);
-        for (const { local, imported } of specifiers) {
-            const namespace = imported === "System" ? "System" : "Finalizer";
-            const resolved = await resolveSystemImport(statement.source.value, namespace);
+            && specifier.imported.name === "System" ? [specifier.local.name] : []);
+        for (const local of specifiers) {
+            const resolved = await resolveSystemImport(statement.source.value, "System");
             if (resolved === null) continue;
             copy ??= resolved;
-            locals.set(local, namespace);
+            locals.set(local, "System");
         }
     }
     return { locals, copy };
 };
 
+/** What made a body: `System.create`, `System.render`, `System.removed` (a finalizer internally) or `System.changes`. */
 export type Created = "system" | "render" | "finalizer" | "changes";
 
-/** `System.create` or `System.render`, or `Finalizer.create` or `Finalizer.changes`, whose bodies the build reads; null for any other call. */
-export const createdBy = (node: SimpleCallExpression, locals: ReadonlyMap<string, "System" | "Finalizer">): Created | null => {
+const createdByMethod: { readonly [method: string]: Created } = { create: "system", render: "render", removed: "finalizer", changes: "changes" };
+
+/** `System.create`, `System.render`, `System.removed` or `System.changes`, whose bodies the build reads; null for any other call. */
+export const createdBy = (node: SimpleCallExpression, locals: ReadonlyMap<string, "System">): Created | null => {
     if (node.callee.type !== "MemberExpression" || node.callee.computed || node.callee.object.type !== "Identifier" || node.callee.property.type !== "Identifier") return null;
-    const namespace = locals.get(node.callee.object.name);
-    const method = node.callee.property.name;
-    if (namespace === "System") return method === "create" ? "system" : method === "render" ? "render" : null;
-    return namespace === "Finalizer" && (method === "create" || method === "changes") ? (method === "create" ? "finalizer" : "changes") : null;
+    if (locals.get(node.callee.object.name) !== "System") return null;
+    return Object.hasOwn(createdByMethod, node.callee.property.name) ? createdByMethod[node.callee.property.name] : null;
 };
 
 /**
  * Which parameters are the row and the context: a system without `components` takes only its context, a render
- * system its GPU context first, and a changes finalizer its changes first.
+ * system its GPU context first, and a changes system its changes first.
  */
 export const positionsOf = (created: Created, declaration: ObjectExpression): { readonly row: number; readonly context: number } => {
     if (created === "changes" || created === "render") return { row: -1, context: 1 };
@@ -166,13 +165,13 @@ const compileLinked = async (declaration: ObjectExpression, body: Node, module: 
 
 /**
  * What describing a module's systems reads of its transform (`describe.ts`), made only when asked: the module as
- * transformed, its names of `System` and `Finalizer`, each kernel it compiled and each body it tried that left the
+ * transformed, its names of `System`, each kernel it compiled and each body it tried that left the
  * subset, by the call, and a compile of any system's body as a kernel required for `target`.
  */
 export type TransformedSites = {
     readonly program: Program;
     readonly module: Module;
-    readonly locals: ReadonlyMap<string, "System" | "Finalizer">;
+    readonly locals: ReadonlyMap<string, "System">;
     readonly link: Link | null;
     readonly kernels: ReadonlyMap<Node, { readonly kernel: CompiledKernel; readonly required: boolean }>;
     readonly tried: ReadonlyMap<Node, Failure>;
@@ -185,7 +184,7 @@ type KernelSite = { readonly node: SimpleCallExpression; readonly declaration: O
  * The module's `System.create` calls that compile to kernels, required or, when `automatic`, tried: at module scope,
  * with an inline body. Throws for a required one elsewhere or without one; a tried one there runs as written.
  */
-const kernelSites = (program: Program, locals: ReadonlyMap<string, "System" | "Finalizer">, automatic: boolean, module: Module): readonly KernelSite[] => {
+const kernelSites = (program: Program, locals: ReadonlyMap<string, "System">, automatic: boolean, module: Module): readonly KernelSite[] => {
     const sites: KernelSite[] = [];
     const visit = (node: Node, nested: boolean): void => {
         if (node.type === "CallExpression" && createdBy(node, locals) === "system") {
@@ -230,7 +229,7 @@ export const transformKernels = async (
     /** Reads what describing the module's systems needs, after its kernels compiled; the plugin never passes it. */
     describe?: (sites: TransformedSites) => Promise<void>,
 ): Promise<TransformResult | null> => {
-    if ((!code.includes("System") && !code.includes("Finalizer")) || id.includes("\0")) return null;
+    if (!code.includes("System") || id.includes("\0")) return null;
     const program = parse(code);
     const { locals, copy } = await systemLocals(program, resolveSystemImport);
     if (copy === null) return null;
@@ -453,8 +452,8 @@ export const transformKernels = async (
     return { code: [...imports, result, ...prepared, ...marking, ...giving, ...indexed].join("\n"), kernels, dependencies: [...dependencies], warnings };
 };
 
-/** The specifiers a module imports the package's `System` or `Finalizer` from: the package's own, whose values are fixed. */
-const packageSpecifiersOf = (program: Program, locals: ReadonlyMap<string, "System" | "Finalizer">): ReadonlySet<string> => new Set(program.body.flatMap(statement =>
+/** The specifiers a module imports the package's `System` from: the package's own, whose values are fixed. */
+const packageSpecifiersOf = (program: Program, locals: ReadonlyMap<string, "System">): ReadonlySet<string> => new Set(program.body.flatMap(statement =>
     statement.type === "ImportDeclaration" && typeof statement.source.value === "string" && statement.specifiers.some(specifier => locals.has(specifier.local.name)) ? [statement.source.value] : []));
 
 /**
@@ -462,7 +461,7 @@ const packageSpecifiersOf = (program: Program, locals: ReadonlyMap<string, "Syst
  * constants and pure functions, failing the build otherwise, and records the resources they read by the call, as the
  * build infers a body's. Loads what they import as checking reaches it.
  */
-const checkPredicates = async (program: Program, module: Module, locals: ReadonlyMap<string, "System" | "Finalizer">, link: Link | null, reads: Map<Node, ReadonlySet<string> | null>): Promise<void> => {
+const checkPredicates = async (program: Program, module: Module, locals: ReadonlyMap<string, "System">, link: Link | null, reads: Map<Node, ReadonlySet<string> | null>): Promise<void> => {
     const specifiers = packageSpecifiersOf(program, locals);
     const sites: { readonly call: Node; readonly predicates: readonly Node[]; readonly outer: ReadonlySet<string> }[] = [];
     const collect = (node: Node, outermost: Node | null): void => {

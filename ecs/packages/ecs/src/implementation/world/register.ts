@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Leaf } from '../../interface/system/leaf.js';
-import { idOfItem, idOfKey, labelOf, requireDefinition, threadOf, type Definition } from '../../interface/registry/index.js';
+import { idOfItem, idOfKey, labelOf, membersOf, requireDefinition, threadOf, type Definition } from '../../interface/registry/index.js';
 import { createRemoteRunner, unplaceable } from './remote-systems.js';
 import { createJoinedObserverRunner, type ObserverTarget } from './joined-observer.js';
 import { createRunner, releaseHoldings, removedRunner, stopHoldings, type Holdings, type Runner } from './runner.js';
@@ -60,7 +60,7 @@ const systemsOf = (root: Definition): Definition[] => {
     const visit = (system: Definition): void => {
         if (all.has(system)) return;
         all.add(system);
-        if (!isLeaf(system)) for (const member of system.declaration.systems) visit(requireDefinition(member));
+        for (const member of membersOf(system)) visit(member);
     };
     visit(root);
     return [...all];

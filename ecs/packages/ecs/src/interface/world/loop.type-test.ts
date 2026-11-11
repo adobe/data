@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import {
-    Finalizer, System, always, cadence, clock, gpuDevice, wake, workers,
+    System, always, cadence, clock, gpuDevice, wake, workers,
     type Component, type Resource, type World,
 } from '../index.js';
 import type { Create } from './create.js';
@@ -58,7 +58,7 @@ System.create({}, ({ resources }) => {
     // @ts-expect-error wake is reduced, never written
     resources[wake] = 0;
 });
-Finalizer.create({ components: {} }, (_row, { resources }) => {
+System.removed({ components: {} }, (_row, { resources }) => {
     // @ts-expect-error a finalizer doesn't write clock either
     resources[clock] = resources[clock];
 });

@@ -7,3 +7,4 @@ export * from "./resource.list.js";
 export * from "./system.bind-rows.js";
 export * from "./system.create-rows.js";
 export * from "./system.place-rows.js";
+export * from "./system.remove-rows.js";

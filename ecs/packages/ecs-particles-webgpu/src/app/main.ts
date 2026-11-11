@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { System, World, gpuDevice } from '@adobe/ecs';
-import { Device, Surface, Target } from '@adobe/ecs-gpu';
+import { Device, Frame, Surface, Target } from '@adobe/ecs-gpu';
 import { enabled, move, moveOnCpu, position, spawn, systems as model, visible } from '../features/particles/model/index.js';
 import { spawnView, systems as view } from '../features/particles/view/index.js';
 
@@ -53,6 +53,8 @@ const start = async (): Promise<void> => {
     const height = Math.floor(canvas.clientHeight * devicePixelRatio);
 
     const world = World.create({ [gpuDevice]: device });
+    // Frames are run rather than added, so what their updates make is released by these, added.
+    world.add(Frame.releases);
     const target = { ...Target.Options.default, depthFormat: null };
     const surface = await world.run(Surface.attach, { canvas: canvas.transferControlToOffscreen(), width, height, target });
     Surface.observe(canvas, world, surface);

@@ -14,6 +14,8 @@ decisions about ecs here rather than in a personal memory, so every machine and 
 - **Humans own the interface, agents own the implementation** (`src/interface/CLAUDE.md`). Agents add or widen nothing
   public: no exported types, built-in components or resources, fields, options, union members or observable behaviour.
   Any change that can't be avoided is proposed for review before it lands.
+- **Changes and removed systems are added explicitly, like systems;** a resource's release is paired with what creates
+  it in one composite. Derived components are defined by `Component.derive` in their own file.
 - **Export a type only if a consumer would declare something with it.** Check the guide and samples; if they never name
   it, consumers infer it with `Parameters<>`, `ReturnType<>` or indexed access. Agents may remove such exports and say
   what they removed.

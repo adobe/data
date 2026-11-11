@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import type { Finalizer } from '../../interface/finalizer/created.js';
-import type { Rule } from '../../interface/rule/created.js';
-import { definitionOf, requireDefinition, type Definition } from '../../interface/registry/index.js';
+import type { Finalizer } from '../../interface/system/finalizer.js';
+import type { Rule } from '../../interface/component/rule.js';
+import { definitionOf, finalizerOf, finalizersOf, requireDefinition, type Definition } from '../../interface/registry/index.js';
 import type { World } from '../../interface/world/world.js';
 import type { Input } from '../../interface/system/input.js';
 import type { System } from '../../interface/system/system.js';
@@ -34,7 +34,8 @@ import { refreshDirectories } from './directories.js';
 import { createRegistrar, type Registration } from './register.js';
 import type { Schedule } from '../../interface/registry/schedule.js';
 import { ensureResources, findResource, initialOf, setResource } from './resources.js';
-import { ensureProgramResources, activate, finalizerCrossing, placeFinalizers, programResourcesChanged, type Ensured } from './activate.js';
+import { activate, addedResourcesChanged, ensureAddedResources, finalizerCrossing, placeFinalizers, releaseFinalizers, reorderRunners, type Ensured } from './activate.js';
+import { orderFinalizers } from './finalizer-order.js';
 import { isObserver, isWorldWritten, kindOf, scheduleOf, type Composite } from '../../interface/registry/index.js';
 import { always } from '../../interface/resources/always.js';
 import { cadence, type Cadence } from '../../interface/resources/cadence.js';
@@ -45,7 +46,7 @@ import { createLoop, platformFrame, platformTimer, type Clock, type LoopPlatform
 import { presetLevelsOf } from './lists.js';
 import { createState, defaultOf, idOf, reside, startTicking, type Key } from './state.js';
 import { asksForChanges, changesOf, resourcesWrittenBy, startRecording, takesInput } from './run-changes.js';
-import type { ChangeSet } from '../../interface/finalizer/body.js';
+import type { ChangeSet } from '../../interface/system/finalizer-body.js';
 import type { Essential } from '../../interface/component/value.js';
 import type { Resource } from '../../interface/resource/resource.js';
 import { indexOf } from './entities.js';
@@ -570,8 +571,8 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
     /** Follows what changed since the last run: program resources, change watches, workers and the device; null when nothing did. */
     const prepareRun = (): Promise<void> | null => {
         // Resources added between runs move the resource entity, whose structs a tail may still read.
-        if (programResourcesChanged(ensured) && (state.channels.length > 0 || state.observer.posts.length > 0)) return drainThenPrepare();
-        ensureProgramResources(state, ensured);
+        if (addedResourcesChanged(state, ensured) && (state.channels.length > 0 || state.observer.posts.length > 0)) return drainThenPrepare();
+        ensureAddedResources(state, ensured);
         if (startWatches(state)) return followChanges(true, false);
         if (workersChanged()) return followChanges(false, true);
         if (deviceChanged()) return followChanges(false, false);
@@ -579,7 +580,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
     };
     const drainThenPrepare = async (): Promise<void> => {
         await drainTails();
-        ensureProgramResources(state, ensured);
+        ensureAddedResources(state, ensured);
         await followChanges(startWatches(state), false);
     };
     /**
@@ -907,7 +908,11 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
             checkLive();
             definition = requireDefinition(system);
             // A system registers in the world the first time it runs here.
-            if (registrar.registered(definition) === undefined) registration = registrar.register(definition);
+            if (registrar.registered(definition) === undefined) {
+                const held = finalizersOf(definition);
+                if (held.length > 0) throw new Error(`System "${definition.name}" holds "${held[0].name}", a changes or removed system, which runs in sync points while it's added; add the composite to the world rather than run it.`);
+                registration = registrar.register(definition);
+            }
         }
         catch (error) {
             return Promise.reject(error);
@@ -967,7 +972,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         state,
         run: runWith,
         report: failure => outOfBand.report(failure),
-        crossing: (threads, imported) => registrar.crossing(threads, imported) ?? finalizerCrossing(threads, imported),
+        crossing: (threads, imported) => registrar.crossing(threads, imported) ?? finalizerCrossing(state, threads, imported),
         placed: () => {
             registrar.place();
             placeFinalizers(state);
@@ -1040,6 +1045,41 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         return runChanging(definition, input ? args[0] : undefined);
     }
 
+    /**
+     * The values added that hold changes or removed systems, each with those it holds; the world's finalizers are those
+     * of all of them. And every finalizer added, in the order it was first added, which orders those `before` and
+     * `after` leave unordered.
+     */
+    const holding: { readonly value: object; readonly finalizers: readonly Finalizer[] }[] = [];
+    let addOrder: readonly Finalizer[] = [];
+
+    /**
+     * The world's finalizers in run order once `holding` changes as `change` does, without changing it, and the add
+     * order they come from. Throws for an order that cycles, crosses threads or leaves a resource conflict.
+     */
+    const finalizersOnce = (change: (values: typeof holding) => typeof holding): { readonly order: readonly Finalizer[]; readonly ordered: readonly Finalizer[] } => {
+        const kept = new Set(change(holding).flatMap(entry => entry.finalizers));
+        const order = [...addOrder.filter(finalizer => kept.has(finalizer)), ...[...kept].filter(finalizer => !addOrder.includes(finalizer))];
+        return { order, ordered: orderFinalizers(order) };
+    };
+
+    /** Makes the world's finalizers `ordered`, from the next sync point on. */
+    const setFinalizers = (order: readonly Finalizer[], ordered: readonly Finalizer[]): void => {
+        addOrder = order;
+        state.added = ordered;
+        state.addedVersion++;
+        state.activation.met = true;
+        reorderRunners(state);
+    };
+
+    /** Between runs: the finalizers no longer added stop, a removed system running for every entity it still matches. */
+    const releaseRemoved = async (): Promise<void> => {
+        if (!state.finalizers.some(runner => !state.added.includes(runner.finalizer))) return;
+        await drainTails();
+        if (state.gpu?.anyAhead() === true) await state.gpu.readback();
+        for (const { finalizer, error } of releaseFinalizers(state)) outOfBand.report(failureOf("finalizer", finalizer, error));
+    };
+
     const world: CreatedWorld = {
         // A run gives what its system's body returned, `R` by the system's type.
         run,
@@ -1050,16 +1090,33 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         },
         add: system => {
             checkLive();
-            const definition = requireDefinition(system);
-            loop.add(definition);
-            if (isObserver(definition)) registerObserver(definition);
-            else for (const leaf of scheduleOf(definition).observer) registerObserver(leaf);
+            const finalizer = finalizerOf(system);
+            const definition = finalizer === undefined ? requireDefinition(system) : null;
+            const held = finalizer === undefined ? finalizersOf(system) : [finalizer];
+            const holds = held.length > 0 && !holding.some(entry => entry.value === system);
+            const next = holds ? finalizersOnce(values => [...values, { value: system, finalizers: held }]) : null;
+            if (definition !== null) {
+                loop.add(definition);
+                if (isObserver(definition)) registerObserver(definition);
+                else for (const leaf of scheduleOf(definition).observer) registerObserver(leaf);
+            }
+            if (next === null) return;
+            holding.push({ value: system, finalizers: held });
+            setFinalizers(next.order, next.ordered);
         },
         remove: system => {
-            const definition = requireDefinition(system);
+            const finalizer = finalizerOf(system);
+            const definition = finalizer === undefined ? requireDefinition(system) : null;
             if (disposed) return;
-            const change = loop.remove(definition);
-            if (change === null) return;
+            const at = holding.findIndex(entry => entry.value === system);
+            const next = at < 0 ? null : finalizersOnce(values => values.filter((_, k) => k !== at));
+            const change = definition === null ? null : loop.remove(definition);
+            if (next !== null) {
+                holding.splice(at, 1);
+                setFinalizers(next.order, next.ordered);
+                void enqueue(releaseRemoved);
+            }
+            if (change === null || definition === null) return;
             let forgotten: readonly Definition[];
             if (isObserver(definition)) {
                 // An observer system added alone, which the composite ticks run doesn't hold: forgotten unless an added
@@ -1088,8 +1145,8 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
                 // Per-query finalizers release what every live entity they match holds, reading the GPU's writes first.
                 let errors: Thrown[] = [];
                 try {
-                    // A finalizer added since the last run still releases what the world's entities hold.
-                    ensureProgramResources(state, ensured);
+                    // A removed system added since the last run still releases what the world's entities hold.
+                    ensureAddedResources(state, ensured);
                     activate(state);
                     if (state.finalizers.length > 0) {
                         if (state.gpu?.anyAhead() === true) await state.gpu.readback();

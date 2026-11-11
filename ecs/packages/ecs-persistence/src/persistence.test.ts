@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Entity, Rule, System, World, workers, type Schema, type Vec3 } from "@adobe/ecs";
+import { Component, Entity, System, World, workers, type Schema, type Vec3 } from "@adobe/ecs";
 import { describe, expect, it } from "vitest";
 import { decode } from "./decode.js";
 import { encode } from "./encode.js";
@@ -71,7 +71,7 @@ declare module "@adobe/ecs" {
     }
 }
 
-Rule.create({ components: { with: [health] }, derive: [glow] });
+Component.derive(glow, { from: [health] });
 
 const inline = () => World.create({ [workers]: 0 });
 
@@ -279,7 +279,7 @@ describe("persistence", () => {
         };
         expect(await failure("document")).toBe("`by` is the key of the trait to save by, a symbol.");
         expect(await failure(counted)).toBe("A component's value of the trait isn't a name: 1.");
-        expect(await failure(derivedOnly)).toBe(`The component the trait names "glow" is derived, which its rule derives again once its entity is loaded.`);
+        expect(await failure(derivedOnly)).toBe(`The component the trait names "glow" is derived, which its derivation derives again once its entity is loaded.`);
         expect(await failure(clashing)).toBe(`The trait names two components "vitals".`);
         expect(decode(encode(await taken({ world, by: document })), { by: clashing })).toEqual({ failure: `The trait names two components "vitals".` });
         // Types only: the trait's value is a name, the trait an application's own, and decode takes it too.

@@ -6,7 +6,7 @@ import { workers } from "../../interface/resources/workers.js";
 import { createWorld, type CreatedWorld } from "./create.js";
 import { indexOf } from "./entities.js";
 import type { FromRemoteFinalizersWorker, ToRemoteFinalizersWorker } from "./remote-finalizers-worker.fixture.js";
-import { despawn, regauge, rehead, released, retitle, scenario, serial, sorted, spawn, spawnHeaded, spawnTitled, type Released, type Surveyed } from "./remote-finalizers.test-helper.js";
+import { despawn, finalizers, regauge, rehead, released, retitle, scenario, serial, sorted, spawn, spawnHeaded, spawnTitled, type Released, type Surveyed } from "./remote-finalizers.test-helper.js";
 import { runReported } from "./outcomes.test-helper.js";
 
 /**
@@ -86,10 +86,12 @@ const releasedThere = async (worker: Worker): Promise<readonly Released[]> => {
 export const sameStops = async () => {
     released.length = 0;
     const inline = createWorld({ [workers]: 0 });
+    inline.add(finalizers);
     const counts = await scenario(inline, () => released.length);
     const expected = sorted(released);
     await inline.dispose();
     const world = createWorld({ [workers]: 0 });
+    world.add(finalizers);
     const { worker } = await joined(world);
     const seen = await scenario(world, async () => (await releasedThere(worker)).length, counts);
     const actual = sorted(await releasedThere(worker));
@@ -104,6 +106,7 @@ export const sameStops = async () => {
  */
 export const diesHolding = async () => {
     const world = createWorld({ [workers]: 0 });
+    world.add(finalizers);
     const { worker } = await joined(world);
     await world.run(spawn, { from: 0, count: 4 });
     const stopped: Entity[] = [];
@@ -132,6 +135,7 @@ export const diesHolding = async () => {
  */
 export const titledStops = async () => {
     const world = createWorld({ [workers]: 0 });
+    world.add(finalizers);
     const { worker } = await joined(world);
     await world.run(spawnTitled, { from: 0, count: 50 });
     const release = await hold(worker);
@@ -160,6 +164,7 @@ export const titledStops = async () => {
  */
 export const headedStops = async () => {
     const world = createWorld({ [workers]: 0 });
+    world.add(finalizers);
     const { worker } = await joined(world);
     await world.run(rehead, { heading: "h0" });
     await world.run(spawnHeaded, { from: 0, count: 20 });
@@ -190,6 +195,7 @@ export const headedStops = async () => {
  */
 export const gaugedStops = async () => {
     const world = createWorld({ [workers]: 0 });
+    world.add(finalizers);
     const { worker } = await joined(world);
     await world.run(regauge, { level: 0 });
     await world.run(spawnHeaded, { from: 0, count: 20 });

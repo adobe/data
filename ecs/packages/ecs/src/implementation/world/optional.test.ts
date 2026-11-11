@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Entity, Finalizer, Index, System, workers } from "../../index.js";
+import { Entity, Index, System, workers } from "../../index.js";
 import { kernelOf } from "./attach-kernel.js";
 import { createWorld, join, type CreatedWorld } from "./create.js";
 import { runReported } from "./outcomes.test-helper.js";
@@ -75,13 +75,13 @@ const copySpeedKernel = System.create({
 const speeds: number[] = [];
 const readSpeeds = System.create({ readonly: true, components: { with: [other, order] } }, row => { speeds.push(row[order]); });
 
-/** What finalizers read of rows that stopped, on the world's thread and on the markers'. */
+/** What removed systems read of rows that stopped, on the world's thread and on the markers'. */
 const stopped: string[] = [];
 const stoppedThere: string[] = [];
-export const finalizeHere = Finalizer.create({ components: { with: [position, order], optional: [velocity] } }, row => {
+export const finalizeHere = System.removed({ components: { with: [position, order], optional: [velocity] } }, row => {
     stopped.push(`${row[position]}:${row[velocity] ?? "none"}`);
 });
-export const finalizeThere = Finalizer.create({ components: { with: [position, marker], optional: [velocity] } }, row => {
+export const finalizeThere = System.removed({ components: { with: [position, marker], optional: [velocity] } }, row => {
     stoppedThere.push(`${row[position]}:${row[velocity] ?? "none"}:${row[marker] === null ? "null" : "marked"}`);
 });
 const despawnAll = System.create({ components: { with: [position] } }, (row, { commands }) => { commands.despawn(row.entity); });
@@ -284,16 +284,18 @@ describe("optional components", () => {
         }
     });
 
-    it("are read by finalizers where an entity had them, never deciding a stop", async () => {
+    it("are read by removed systems where an entity had them, never deciding a stop", async () => {
         await using world = inline();
+        world.add(finalizeHere);
         await world.run(spawn);
         stopped.length = 0;
         await world.run(despawnAll);
         expect(stopped.sort()).toEqual(["100:50", "10:5", "1:none"]);
     });
 
-    it("are read by finalizers on a joined thread where an entity had them", async () => {
+    it("are read by removed systems on a joined thread where an entity had them", async () => {
         const { world, remote } = await joined();
+        world.add(finalizeThere);
         await world.run(spawnMarked);
         stoppedThere.length = 0;
         await world.run(despawnAll);

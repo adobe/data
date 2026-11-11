@@ -1012,12 +1012,12 @@ describe("terminal bodies", () => {
         const result = await transform(`const system = System.create({}, function () { console.log(arguments); });`);
         expect(result !== null && "code" in result ? result.code : "").not.toContain("terminal$(");
     });
-    test("mark a system made from its body alone, and no kernel or finalizer", async () => {
+    test("mark a system made from its body alone, and no kernel or removed system", async () => {
         const alone = await transform("const system = System.create(() => { console.log(1); });");
         expect(alone !== null && "code" in alone ? alone.code : "").toContain("System.create(access$(terminal$(() =>");
         const kernel = await transform(`const kernel = System.create({ kernel: true, components: { with: [score] } }, (row) => { row[score] = 1; });`);
         expect(kernel !== null && "code" in kernel ? kernel.code : "").not.toContain("terminal$");
-        const finalizer = await transformKernels(`import { Finalizer } from "ecs";\nconst f = Finalizer.create({ components: { with: [] } }, () => {});`, "/x.js", parse, async () => ownCopy, () => "");
+        const finalizer = await transformKernels(`import { System } from "ecs";\nconst f = System.removed({ components: { with: [] } }, () => {});`, "/x.js", parse, async () => ownCopy, () => "");
         expect(finalizer !== null && "code" in finalizer ? finalizer.code : "").not.toContain("terminal$(");
     });
 });
@@ -1553,8 +1553,8 @@ describe("inferred access", () => {
             .toBe("position isn't in lookup.targets.with or optional, so the system doesn't require it: add it there to use it");
     });
 
-    test("finalizers, in files that import only Finalizer", async () => {
-        const result = await transformKernels(`import { Finalizer } from "ecs";\nconst handle = "handle";\nconst count = "count";\nconst f = Finalizer.create({ components: { with: [handle, count] } }, (row, { resources }) => { console.log(row[handle], resources[count]); });`,
+    test("removed systems", async () => {
+        const result = await transformKernels(`import { System } from "ecs";\nconst handle = "handle";\nconst count = "count";\nconst f = System.removed({ components: { with: [handle, count] } }, (row, { resources }) => { console.log(row[handle], resources[count]); });`,
             "/finalizer.js", parse, async specifier => specifier === "ecs" ? ownCopy : null, index => JSON.stringify(`kernel:${index}`));
         expect(result !== null && "code" in result ? result.code : "").toContain("{ components: { read: [handle], write: [] }, resources: { read: [count], write: [], reduce: [] }");
     });

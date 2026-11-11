@@ -1,6 +1,6 @@
 # Identity and ids
 
-A key, system, index, rule or finalizer is the value its constructor returns. Two written alike are two, and code
+A key, system or index is the value its constructor returns. Two written alike are two, and code
 written apart can't collide.
 
 The build gives each one bound at a module's top level an *id*: its package's name and version, its module's path,

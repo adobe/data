@@ -1,7 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
 import type { Entity } from "../../interface/entity/entity.js";
-import { Finalizer } from "../../interface/finalizer/finalizer.js";
 import { Observe } from "../../observe/index.js";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
@@ -72,7 +71,8 @@ const readCaptions = System.create({ components: { with: [caption] } }, (row, { 
 });
 const idle = System.create({}, () => {});
 const after = System.create({}, () => {});
-Finalizer.create({ components: { with: [guarded] } }, row => { void row[guarded]; });
+/** Declared without a binding, so the build gives it no id. */
+const [guard] = [System.removed({ components: { with: [guarded] } }, row => { void row[guarded]; })];
 
 /** A world shared with a thread on this one, which claims `threads`. */
 const joined = async (): Promise<{ readonly world: CreatedWorld; readonly remote: World }> => {
@@ -171,9 +171,9 @@ describe("objects a joined thread fills", () => {
         await expect(join(channel.port2, { threads: ["remoteTest"] })).rejects.toThrow(refusedSystem);
         await shared;
         await statusOf(world, "gone");
-        // Declared without a binding, so the build gives it no id.
-        const refusedFinalizer = /Finalizer "finalizer #\d+" runs on thread "remoteTestFinalized" and has no id, so a joined thread can't run it/;
+        const refusedFinalizer = /Removed system "system #\d+" runs on thread "remoteTestFinalized" and has no id, so a joined thread can't run it/;
         const other = createWorld({ [workers]: 0 });
+        other.add(guard);
         const otherChannel = new MessageChannel();
         const otherShared = expect(other.share(otherChannel.port1)).rejects.toThrow(refusedFinalizer);
         await expect(join(otherChannel.port2, { threads: ["remoteTestFinalized"] })).rejects.toThrow(refusedFinalizer);

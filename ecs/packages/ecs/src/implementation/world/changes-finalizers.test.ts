@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { expect, it } from "vitest";
-import { Finalizer, System, World } from "../../index.js";
+import { System, World } from "../../index.js";
 import { Observe } from "../../observe/index.js";
 import { createWorld } from "../index.js";
 
@@ -19,9 +19,9 @@ declare module "@adobe/ecs" {
 }
 
 
-// A changes finalizer sees each sync point's structural changes to the components it watches, grouped by how
+// A changes system sees each sync point's structural changes to the components it watches, grouped by how
 // they changed, with values before and after: for persistence, replication and undo.
-Finalizer.changes({ watch: [name, score] }, (changes, { resources }) => {
+const record = System.changes({ watch: [name, score] }, (changes, { resources }) => {
     const lines = changes.groups.flatMap(group => group.entities.map(entity =>
         `${changes.previous(entity, name) ?? changes.next(entity, name)}: +${group.added.length} -${group.removed.length} score ${changes.previous(entity, score)} → ${changes.next(entity, score)}`));
     resources[journal] = [...resources[journal], ...lines];
@@ -32,6 +32,7 @@ const retire = System.create({ components: { with: [score] } }, (row, { commands
 
 it("records each sync point's structural changes", async () => {
     await using world = createWorld();
+    world.add(record);
     await world.run(spawn);
     await world.run(retire);
     expect(await Observe.toPromise(Observe.resource(world, journal))).toEqual(["ada: +2 -0 score null → 3", "ada: +0 -1 score 3 → null"]);

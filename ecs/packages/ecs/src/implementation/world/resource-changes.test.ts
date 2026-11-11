@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { expect, it } from "vitest";
-import { Finalizer, System } from "../../index.js";
+import { System } from "../../index.js";
 import { Observe } from "../../observe/index.js";
 import { createWorld } from "../index.js";
 import { sameValue } from "./resource-changes.js";
@@ -24,7 +24,7 @@ declare module "@adobe/ecs" {
 }
 
 // Watching only resources, it sees no component's changes.
-Finalizer.changes({ watch: [size, corner] }, (changes, { resources }) => {
+const record = System.changes({ watch: [size, corner] }, (changes, { resources }) => {
     const lines = changes.resources.map(change => change.key === size ? `size ${change.previous} → ${change.next}` : `corner ${change.previous.join(",")} → ${change.next.join(",")}`);
     resources[log] = [...resources[log], ...changes.groups.map(() => "group"), ...lines];
 });
@@ -40,6 +40,7 @@ const read = System.create({ readonly: true }, ({ resources }) => resources[log]
 
 it("reports each watched resource written since its finalizers last ran, with its first and last value, once", async () => {
     await using world = createWorld();
+    world.add(record);
     // A run writing nothing else still has a sync point, so its finalizers see the write.
     await world.run(resize, { to: 4 });
     expect(await world.run(read)).toEqual(["size 1 → 5"]);

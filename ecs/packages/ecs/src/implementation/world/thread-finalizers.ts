@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import type { Leaf } from '../../interface/finalizer/created.js';
+import type { Leaf } from '../../interface/system/finalizer.js';
 import { labelOf } from '../../interface/registry/index.js';
 import { objectLayout, viewsOf, type Layout } from '../../interface/registry/layout.js';
 import { writeOf } from './archetype.js';
@@ -396,29 +396,40 @@ export const createThreadFinalizers = <A extends FinalizedArchetype>(host: Threa
         return Atomics.load(u32, (anchor >> 2) + blockNextWord) !== 0;
     };
 
-    /** Once the world is disposed: every finalizer runs for every row it matches, reading this thread's objects there. */
-    const all = (): void => {
-        views();
-        for (let index = 0; index < finalizers.length; index++) {
-            const finalizer = finalizers[index];
-            if (finalizer === null || finalizer === undefined) continue;
-            finalizer.cells(-1);
-            for (let id = 0; id < host.tableCount(); id++) {
-                const archetype = host.archetypeAt(id);
-                if (archetype === undefined || archetype.resource) continue;
-                const { components } = archetype;
-                if (!finalizer.required.every(component => components.includes(component)) || finalizer.excluded.some(component => components.includes(component))) continue;
-                const count = host.countOf(archetype);
-                if (count === 0) continue;
-                const row = finalizer.bind(archetype);
-                for (let i = 0; i < count; i++) {
-                    row.index = i;
-                    guarded(index, finalizer, row);
-                }
+    /** Runs the finalizer at `index` for every row it matches, reading this thread's objects there. */
+    const everyRow = (index: number): void => {
+        const finalizer = finalizers[index];
+        if (finalizer === null || finalizer === undefined) return;
+        finalizer.cells(-1);
+        for (let id = 0; id < host.tableCount(); id++) {
+            const archetype = host.archetypeAt(id);
+            if (archetype === undefined || archetype.resource) continue;
+            const { components } = archetype;
+            if (!finalizer.required.every(component => components.includes(component)) || finalizer.excluded.some(component => components.includes(component))) continue;
+            const count = host.countOf(archetype);
+            if (count === 0) continue;
+            const row = finalizer.bind(archetype);
+            for (let i = 0; i < count; i++) {
+                row.index = i;
+                guarded(index, finalizer, row);
             }
         }
+    };
+
+    /** Once the world is disposed: every finalizer runs for every row it matches. */
+    const all = (): void => {
+        views();
+        for (let index = 0; index < finalizers.length; index++) everyRow(index);
         report();
     };
 
-    return { setup, through, pending, all };
+    /** Once the world removed the finalizer at `index`, and the stops published before ran: it runs for every row it matches, then is dropped. */
+    const release = (index: number): void => {
+        views();
+        everyRow(index);
+        finalizers[index] = null;
+        report();
+    };
+
+    return { setup, through, pending, all, release };
 };

@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Finalizer, System, World } from "../index.js";
+import { System, World } from "../index.js";
 
 const handle = Symbol();
 
@@ -12,7 +12,7 @@ declare module "@adobe/ecs" {
 /** What handles name outside the world, as GPU buffers and DOM nodes are. */
 const open = new Set<number>();
 
-Finalizer.create({ components: { with: [handle] } }, row => {
+const release = System.removed({ components: { with: [handle] } }, row => {
     open.delete(row[handle]);
 });
 
@@ -29,14 +29,17 @@ const destroy = System.create({ components: { with: [handle] } }, (row, { comman
 
 const saved: string[] = [];
 
-Finalizer.changes({ watch: [handle] }, changes => {
+const save = System.changes({ watch: [handle] }, changes => {
     for (const group of changes.groups) {
         for (const entity of group.entities) saved.push(`${changes.previous(entity, handle)} → ${changes.next(entity, handle)}`);
     }
 });
 
+const handles = System.create([release, save]);
+
 export const main = async (): Promise<void> => {
     const world = World.create();
+    world.add(handles);
     await world.run(spawn);
     console.log("changed:", saved.sort().join(", "));
     saved.length = 0;

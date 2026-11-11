@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import type { Finalizer } from '../../interface/finalizer/created.js';
+import type { Finalizer } from '../../interface/system/finalizer.js';
 import { viewsOf, type Layout } from '../../interface/registry/layout.js';
 import type { Memory } from './memory.js';
 import type { StringStore } from './strings.js';

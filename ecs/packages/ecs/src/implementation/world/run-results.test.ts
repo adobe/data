@@ -225,7 +225,7 @@ describe("a body returning a promise", () => {
     it("fails its system, never awaited, so later runs and ticks go on", async () => {
         await using world = inline();
         // @ts-expect-error a body returns no promise
-        const waits = System.create(() => new Promise<number>(() => {}));
+        const waits: System = System.create(() => new Promise<number>(() => {}));
         const thenable = System.create(() => ({ then: (resolve: (value: number) => void) => resolve(1) }));
         expect(String(await within(world.run(waits).then(() => "resolved", (error: unknown) => error), 1000))).toMatch(/System "waits" failed: its body returned a promise/);
         expect(String(await within(world.run(thenable).then(() => "resolved", (error: unknown) => error), 1000))).toMatch(/System "thenable" failed: its body returned a promise/);

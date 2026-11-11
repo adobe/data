@@ -4,6 +4,7 @@ import type { Recording } from './run-changes.js';
 import { createHolds, type Holds } from './stop-lists.js';
 import type { Entity } from '../../interface/entity/entity.js';
 import type { Leaf } from '../../interface/system/leaf.js';
+import type { Finalizer } from '../../interface/system/finalizer.js';
 import { declarationOf, firstKeyOf, kindOf, labelOf, whyUnregistered } from '../../interface/registry/index.js';
 import type { Arrivals } from './arrivals.js';
 import { createArchetype, noShared, startTicks, type Archetype, type Storage } from './archetype.js';
@@ -145,7 +146,7 @@ export type State = {
     recording: Recording | null;
     /** The records strings' columns name, in shared memory; null without it, where strings are held as objects. */
     readonly strings: StringStore | null;
-    /** Whether each component is derived, so only rules add and remove it. */
+    /** Whether each component is derived, so only its derivations add and remove it. */
     readonly derived: boolean[];
     /** Whether each component is declared `transfer`, so a value whose command drops is released; and whether any is. */
     readonly transfers: boolean[];
@@ -252,11 +253,20 @@ export type State = {
     /** While finalizers run: by batch target archetype id, the first row its batches added this sync point, which lookups don't see. */
     born: Map<number, number> | null;
     readonly structure: Structure;
-    /** The program's finalizers this world has activated, in their order. */
+    /** The finalizers this world has activated, in their order. */
     readonly finalizers: FinalizerRunner[];
-    /** The program's rules and finalizers active here, which apply from the first sync point after the world meets their components. */
+    /**
+     * The changes and removed systems added to the world, finalizers internally, in run order, and how many times that
+     * list changed.
+     */
+    added: readonly Finalizer[];
+    addedVersion: number;
+    /**
+     * The program's rules and the added finalizers active here, which apply from the first sync point after the world
+     * meets their components.
+     */
     readonly activated: Set<object>;
-    /** The program's version when the world last activated, and whether it has met a component since. */
+    /** The program's version when the world last activated, and whether it has met a component, or had a finalizer added, since. */
     activation: { version: number; met: boolean };
     /** Resource values given at creation, in place of their defaults. */
     readonly initial: Map<Key, unknown>;
@@ -384,6 +394,8 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
         born: null,
         structure: createStructure(),
         finalizers: [],
+        added: [],
+        addedVersion: 0,
         activated: new Set(),
         activation: { version: -1, met: true },
         initial,
@@ -523,7 +535,7 @@ export const defaultOf = (key: Key): unknown => {
 
 /**
  * The id of a component a command names. Throws for a key that isn't a symbol, isn't registered, or is a resource,
- * for a derived component, which only rules add and remove, and for one only the world writes.
+ * for a derived component, which only its derivations add and remove, and for one only the world writes.
  */
 export const commandIdOf = (state: State, key: unknown): number => {
     const known = typeof key === "symbol" ? state.ids.get(key) : undefined;
@@ -532,7 +544,7 @@ export const commandIdOf = (state: State, key: unknown): number => {
     if (typeof key !== "symbol") throw new Error(`"${labelOf(key)}" isn't a component: a component's key is a symbol.`);
     if (kindOf(key) === "resource") throw new Error(`"${labelOf(key)}" is a resource, not a component.`);
     const id = idOf(state, key);
-    if (state.derived[id]) throw new Error(`"${labelOf(key)}" is derived, so only rules add and remove it.`);
+    if (state.derived[id]) throw new Error(`"${labelOf(key)}" is derived, so only its derivations add and remove it.`);
     state.commandable[id] = true;
     return id;
 };

@@ -1,8 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Component } from '../../interface/component/component.js';
 import type { Entity } from '../../interface/entity/entity.js';
-import type { Finalizer } from '../../interface/finalizer/created.js';
-import type { ChangeSet } from '../../interface/finalizer/body.js';
+import type { Finalizer } from '../../interface/system/finalizer.js';
+import type { ChangeSet } from '../../interface/system/finalizer-body.js';
 import type { Commands } from '../../interface/system/commands.js';
 import type { Archetype } from './archetype.js';
 import { createBuffer, valueAt, type CommandBuffer } from './buffer.js';
@@ -13,9 +13,9 @@ import { createContext, rowBinder, type Context } from './rows.js';
 import { idOf, type Key, type State } from './state.js';
 import type { Queued } from './synchronize.js';
 import type { Essential, ReadonlyType } from '../../interface/component/value.js';
-import type { Leaf } from '../../interface/finalizer/created.js';
+import type { Leaf } from '../../interface/system/finalizer.js';
 import { declaredOf, declaresTrait, newestKeyOf, threadOf, threadOfDeclaration } from '../../interface/registry/index.js';
-import type { ResolvedChanges } from '../../interface/finalizer/declaration.js';
+import type { ResolvedChanges } from '../../interface/system/finalizer.js';
 import type { Layout } from '../../interface/registry/layout.js';
 import type { TaskChannel } from './remote-systems.js';
 import { resourceOffsetsOf, writeStops, type StopsOf } from './stop-lists.js';
@@ -71,7 +71,7 @@ export const createFinalizerRunner = (state: State, finalizer: Finalizer): Final
         const { watch } = finalizer.declaration;
         followResources(state, watch, resourceWatches);
         if (watch.components !== true) {
-            // `Finalizer.changes` rejected derived components.
+            // `System.changes` rejected derived components.
             const listed = new Set(watch.components.map(key => idOf(state, key)));
             const traits = watch.componentTraits;
             if (traits.length === 0) watches = id => listed.has(id);
@@ -85,7 +85,7 @@ export const createFinalizerRunner = (state: State, finalizer: Finalizer): Final
     const target = { buffer: createBuffer() };
     const commands = createCommands(state, target);
     // One on another thread than the world's runs there after the sync point, so it issues none, wherever it runs.
-    const thread = finalizer.kind === "finalizer" ? threadOf(finalizer.declaration, "Finalizer", finalizer.name) : null;
+    const thread = finalizer.kind === "finalizer" ? threadOf(finalizer.declaration, "Removed system", finalizer.name) : null;
     const commanding = thread === null || thread === "world";
     const indexes = acquireLookups(state, declaration.lookup);
     // Followed for the world's life, as finalizers are; their ticks start before the next run.
@@ -480,24 +480,29 @@ export const runFinalizers = (state: State, queued: readonly Queued[], born: Map
     return errors;
 };
 
-/** At disposal: every per-query finalizer runs for every live entity it matches, so the handles they release are. */
-export const finalizeAll = (state: State): Thrown[] => {
+/** A removed system on the world's thread runs for every live entity it matches, as at its release or the world's disposal. */
+export const finalizeEvery = (state: State, runner: FinalizerRunner): Thrown[] => {
     const errors: Thrown[] = [];
-    for (const runner of state.finalizers) {
-        const { finalizer: leaf } = runner;
-        // A joined thread finalizes its own, once it hears the world is disposed.
-        if (leaf.kind !== "finalizer" || runner.remote !== null) continue;
-        const finalizer: Untyped = leaf;
-        runner.context.bind();
-        const bind = rowBinder(state, runner.reads, [], runner.optional);
-        for (const archetype of state.archetypes) {
-            if (archetype.count === 0 || !matches(runner, archetype)) continue;
-            const row = bind(archetype);
-            for (let index = 0; index < archetype.count; index++) {
-                row.index = index;
-                guarded(state, errors, leaf, () => finalizer.body(row.value, runner.context.value));
-            }
+    const { finalizer: leaf } = runner;
+    if (leaf.kind !== "finalizer") return errors;
+    const finalizer: Untyped = leaf;
+    runner.context.bind();
+    const bind = rowBinder(state, runner.reads, [], runner.optional);
+    for (const archetype of state.archetypes) {
+        if (archetype.count === 0 || !matches(runner, archetype)) continue;
+        const row = bind(archetype);
+        for (let index = 0; index < archetype.count; index++) {
+            row.index = index;
+            guarded(state, errors, leaf, () => finalizer.body(row.value, runner.context.value));
         }
     }
+    return errors;
+};
+
+/** At disposal: every removed system runs for every live entity it matches, so the handles they release are. */
+export const finalizeAll = (state: State): Thrown[] => {
+    const errors: Thrown[] = [];
+    // A joined thread finalizes its own, once it hears the world is disposed.
+    for (const runner of state.finalizers) if (runner.remote === null) errors.push(...finalizeEvery(state, runner));
     return errors;
 };

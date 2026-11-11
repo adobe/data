@@ -549,6 +549,28 @@ describe('what review found', () => {
     });
 });
 
+describe('derived components', () => {
+    const glow = "import { Component } from '@adobe/ecs';\nimport { thing } from './component.thing.js';\n\n/** A glow. */\nexport const glow = Symbol();\n\ndeclare module '@adobe/ecs' {\n    interface Components {\n        [glow]: { type: true; derived: true };\n    }\n}\n\nComponent.derive(glow, { from: [thing] });\n";
+    const withGlow = (files: Files): Files => ({ ...files, 'thing/model/component.glow.ts': glow, 'thing/model/index.ts': files['thing/model/index.ts'] + "export * from './component.glow.js';\n", 'samples/app.ts': files['samples/app.ts'] + "import { glow } from '../thing/model/index.js';\nexport const glowing = glow;\n" });
+    it('are derived in the file that declares them', async () => {
+        expect(await rules(withGlow(valid()))).toEqual([]);
+    });
+    it('rejects Component.derive anywhere else, saying where it belongs', async () => {
+        const files = withGlow(valid());
+        const moved = {
+            ...files,
+            'thing/model/component.glow.ts': glow.replace("import { Component } from '@adobe/ecs';\nimport { thing } from './component.thing.js';\n\n", '').replace('\nComponent.derive(glow, { from: [thing] });\n', ''),
+            'thing/model/component.thing.ts': "import { Component } from '@adobe/ecs';\nimport { glow } from './component.glow.js';\n\n" + files['thing/model/component.thing.ts'] + '\nComponent.derive(glow, { from: [thing] });\n',
+        };
+        const violations = await check(moved);
+        expect(violations.map(violation => [violation.file, violation.rule, violation.problem, violation.fix])).toEqual([[
+            'thing/model/component.thing.ts', 'derive-beside-component',
+            '`Component.derive(glow, ...)` derives a component declared in thing/model/component.glow.ts, not this file.',
+            "Move it into thing/model/component.glow.ts, below `export const glow = Symbol()` and its declare module entry: a derived component is defined where it's declared, so whoever imports it gets its derivations.",
+        ]]);
+    });
+});
+
 describe('what the second review found', () => {
     const modelWith = (source: string): Files => ({ ...valid(), 'thing/model/component.thing.ts': valid()['thing/model/component.thing.ts'] + source });
 

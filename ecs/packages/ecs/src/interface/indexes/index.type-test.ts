@@ -1,7 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Component } from '../component/component.js';
 import { Entity } from '../entity/entity.js';
-import { Finalizer } from '../finalizer/finalizer.js';
 import { Vec3 } from '../math/index.js';
 import { System } from '../system/system.js';
 import { Index } from './index-type.js';
@@ -154,7 +153,7 @@ System.create({ components: { with: [start, playhead] }, order: inOrder }, row =
 });
 
 // Finalizers look up through indexes too.
-Finalizer.create({ components: { with: [owner] }, lookup: { tasks: { index: tasksOf } } }, (row, { lookup }) => {
+System.removed({ components: { with: [owner] }, lookup: { tasks: { index: tasksOf } } }, (row, { lookup }) => {
     const tasks = lookup.tasks(row[owner]);
     void tasks.at(0).entity;
 });
@@ -241,4 +240,4 @@ System.create({
     lookup: { living: { index: living, changed: false } },
 }, () => {});
 // @ts-expect-error a finalizer runs on each entity that stops matching, so its lookups' `changed` is never true
-Finalizer.create({ components: { with: [owner] }, lookup: { tasks: { index: tasksOf, changed: true } } }, () => {});
+System.removed({ components: { with: [owner] }, lookup: { tasks: { index: tasksOf, changed: true } } }, () => {});

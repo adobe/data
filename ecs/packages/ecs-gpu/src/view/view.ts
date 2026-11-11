@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { type Entity, Finalizer, type Mat4x4, type Vec4 } from "@adobe/ecs";
+import { type Entity, type Mat4x4, System, type Vec4 } from "@adobe/ecs";
 import { perDevice } from "../cache/cache.js";
 import * as Target from "../target/public.js";
 
@@ -97,7 +97,7 @@ export const updated = (device: GPUDevice | null, targets: ReadonlyMap<Entity, T
 };
 
 /** Destroys a view's uniform buffer when it stops being one. */
-export const release = Finalizer.create({ components: { with: [target, viewport, projection] } }, (view, { resources }) => {
+export const release = System.removed({ components: { with: [target, viewport, projection] } }, (view, { resources }) => {
     const current = resources[states];
     const state = current?.get(view.entity);
     if (current === null || state === undefined) return;

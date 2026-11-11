@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Rule, System, World } from "../index.js";
+import { Component, System, World } from "../index.js";
 
 const mesh = Symbol();
 const sprite = Symbol();
@@ -17,9 +17,9 @@ declare module "@adobe/ecs" {
     }
 }
 
-Rule.create({ components: { with: [mesh], not: [hidden] }, derive: [drawn] });
-Rule.create({ components: { with: [sprite], not: [hidden] }, derive: [drawn] });
-Rule.create({ components: { with: [drawn] }, derive: [layer] });
+Component.derive(drawn, { from: [mesh], not: [hidden] });
+Component.derive(drawn, { from: [sprite], not: [hidden] });
+Component.derive(layer, { from: [drawn] });
 
 const spawn = System.create(({ commands }) => {
     commands.spawn([mesh])({ [mesh]: 1 });

@@ -25,7 +25,7 @@ export type Placed = {
 };
 
 /** Throws unless each key is registered as `kind`. */
-export const requireRegistered = (what: "System" | "Finalizer", name: string, kind: "component" | "resource", keys: readonly Key[] | undefined): void => {
+export const requireRegistered = (what: "System" | "Removed system" | "Changes system", name: string, kind: "component" | "resource", keys: readonly Key[] | undefined): void => {
     for (const key of keys ?? []) {
         if (declarationOf(key) === undefined || kindOf(key) !== kind) {
             throw new Error(`${what} "${name}" uses ${kind} "${labelOf(key)}", which isn't a registered ${kind}: ${whyUnregistered(key)}.`);
@@ -37,7 +37,7 @@ export const requireRegistered = (what: "System" | "Finalizer", name: string, ki
  * The thread a system or finalizer runs on: the one its object components and resources live on, or null when it uses
  * none. Throws when they live on different threads, or a name it's placed by isn't registered as its kind.
  */
-export const threadOf = (declaration: Placed, what: "System" | "Finalizer", name: string): string | null => {
+export const threadOf = (declaration: Placed, what: "System" | "Removed system" | "Changes system", name: string): string | null => {
     /** By thread, the labels of the keys placing it there. */
     const threads = new Map<string, Set<string>>();
     const add = (kind: "component" | "resource", keys: readonly Key[] | undefined): void => {

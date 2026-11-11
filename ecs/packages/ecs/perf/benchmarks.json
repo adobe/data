@@ -1012,7 +1012,7 @@
         }
     },
     "despawn objects 10K": {
-        "operation": "A sync point despawning 10K entities whose objects a joined worker fills, with a finalizer there reading the object and a vec3: releasing DOM nodes or GPU handles, which the world's thread doesn't wait for.",
+        "operation": "A sync point despawning 10K entities whose objects a joined worker fills, with a removed system there reading the object and a vec3: releasing DOM nodes or GPU handles, which the world's thread doesn't wait for.",
         "per": "despawns",
         "n": 10000,
         "typical": [
@@ -1808,7 +1808,7 @@
         }
     },
     "despawn objects 10K string resource": {
-        "operation": "`despawn objects 10K` with the finalizer reading a string resource too, whose record the sync point's stop list holds a copy of, so the thread reads it as it was before apply.",
+        "operation": "`despawn objects 10K` with the removed system reading a string resource too, whose record the sync point's stop list holds a copy of, so the thread reads it as it was before apply.",
         "per": "despawns",
         "n": 10000,
         "typical": [
@@ -1821,7 +1821,7 @@
         }
     },
     "despawn objects 10K linear resource": {
-        "operation": "`despawn objects 10K` with the finalizer reading a number and a vec3 resource too, which the sync point's stop list holds copies of, so the thread reads them as they were before apply.",
+        "operation": "`despawn objects 10K` with the removed system reading a number and a vec3 resource too, which the sync point's stop list holds copies of, so the thread reads them as they were before apply.",
         "per": "despawns",
         "n": 10000,
         "typical": [
@@ -2029,7 +2029,7 @@
         }
     },
     "struct replace kernel watched": {
-        "operation": "As `struct replace kernel main`, with a changes finalizer watching both components: an edit history recording each commit's replaced values.",
+        "operation": "As `struct replace kernel main`, with a changes system watching both components: an edit history recording each commit's replaced values.",
         "per": "commands",
         "n": 200000,
         "typical": [

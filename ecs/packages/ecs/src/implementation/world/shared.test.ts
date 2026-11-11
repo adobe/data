@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Entity, Finalizer, Index, Rule, System, workers } from "../../index.js";
+import { Component, Entity, Index, System, workers } from "../../index.js";
 import type { F32, Vec2 } from "../../interface/math/index.js";
 import { registerComponent } from "../../interface/registry/declarations.js";
 import type { Commands } from "../../interface/system/commands.js";
@@ -33,7 +33,7 @@ declare module "@adobe/ecs" {
     }
 }
 
-export const arming = Rule.create({ components: { with: [team, health] }, derive: [armed] });
+export const arming = Component.derive(armed, { from: [team, health] });
 
 const inline = () => createWorld({ [workers]: 0 });
 
@@ -49,9 +49,9 @@ export const writeBanners = System.create({ components: { with: [team, health, b
     row[banner] = { text: `${row[team]} ${row[health]}` };
 });
 const banners: string[] = [];
-// A finalizer reading the joined thread's objects runs there, reading each stop's shared value as of before it applied.
+// A removed system reading the joined thread's objects runs there, reading each stop's shared value as of before it applied.
 const finalized: string[] = [];
-export const finalizeBanners = Finalizer.create({ components: { with: [team, health, banner] } }, row => { finalized.push(`${row[team]} ${row[health]} ${row[banner]?.text ?? "none"}`); });
+export const finalizeBanners = System.removed({ components: { with: [team, health, banner] } }, row => { finalized.push(`${row[team]} ${row[health]} ${row[banner]?.text ?? "none"}`); });
 export const despawnBanners = System.create({ components: { with: [banner] } }, (row, { commands }) => { commands.despawn(row.entity); });
 // On the joined thread: two lists spawned with one constants object, each spawner its own list's.
 const base = { [health]: 7 } as const;
@@ -240,7 +240,7 @@ describe("a shared component", () => {
     it("gives a change's previous and next values, its archetypes told apart by value", async () => {
         await using world = inline();
         const seen: string[] = [];
-        const changes = Finalizer.changes({ watch: [team, health] }, (changed) => {
+        const changes = System.changes({ watch: [team, health] }, (changed) => {
             for (const change of changed.groups) {
                 for (const entity of change.entities) {
                     if (change.replaced.includes(team)) seen.push(`${String(changed.previous(entity, team))} to ${String(changed.next(entity, team))}`);
@@ -248,7 +248,8 @@ describe("a shared component", () => {
             }
         });
         const stops: string[] = [];
-        const stopped = Finalizer.create({ components: { with: [team, health] } }, row => { stops.push(`${row[team]} ${row[health]}`); });
+        const stopped = System.removed({ components: { with: [team, health] } }, row => { stops.push(`${row[team]} ${row[health]}`); });
+        world.add(System.create([changes, stopped]));
         let entity = Entity.none;
         await world.run(System.create(({ commands }) => { entity = commands.spawn([team, health], { [team]: "red" })({ [health]: 1 }); }));
         await world.run(System.create(({ commands }) => { commands.add(entity, team, "blue"); }));
@@ -256,13 +257,12 @@ describe("a shared component", () => {
         await world.run(System.create(({ commands }) => { commands.despawn(entity); }));
         // A change of value moves the entity, and stops nothing: it holds every component it did.
         expect(stops).toEqual(["blue 1"]);
-        void changes;
-        void stopped;
     });
 
     it("is read on a joined thread, by the systems placed there and the observer systems added there", async () => {
         const channel = new MessageChannel();
         await using world = createWorld({ [workers]: 0 });
+        world.add(finalizeBanners);
         const [joined] = await Promise.all([
             join(channel.port2, { threads: ["sharedTest"] }).then(thread => {
                 thread.add(listen);

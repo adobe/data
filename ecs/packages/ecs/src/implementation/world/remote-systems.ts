@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Leaf } from '../../interface/system/leaf.js';
 import { entityWatchesOf, lookupComponentsOf } from './lookup-keys.js';
-import type { Leaf as FinalizerLeaf } from '../../interface/finalizer/created.js';
+import type { Leaf as FinalizerLeaf } from '../../interface/system/finalizer.js';
 import type { Warning } from './failures.js';
 import { declarationOf, idOfItem, idOfKey, idOrNull, indexOfLookup, labelOf, threadOf, watchedBy, watchesEntries } from '../../interface/registry/index.js';
 import { unsharedKeyOf } from './index-keys.js';
@@ -117,6 +117,8 @@ export type TaskChannel = {
     readonly placeFinalizer: (state: State, finalizer: FinalizerLeaf) => number;
     /** The finalizer placed at an index there, for its failures there. */
     readonly finalizerAt: (index: number) => FinalizerLeaf | undefined;
+    /** Releases the finalizer at an index there, which the world removed: it runs there for every row it matches, then is dropped. */
+    readonly releaseFinalizer: (index: number) => void;
     /** Its finalizers' stop lists. */
     readonly stops: StopWriter;
     /** Whether a command giving one of its staged `transfer` values dropped this sync point, so it's woken to release it. */
@@ -355,7 +357,7 @@ export const createTaskChannel = (state: State, log: MoveLog, post: (message: To
     /** An item's setup there: its id, and the world's numbers for the keys it names, by their ids. Throws without them. */
     const setupOf = (state: State, item: Leaf | FinalizerLeaf, what: string, named: readonly symbol[]): { readonly id: string; readonly keys: readonly (readonly [number, string])[] } => {
         const id = idOfItem(item);
-        if (id === undefined) throw new Error(`${what} "${item.name}" runs on thread "${label}", which a joined thread fills, and has no id, so that thread can't name it; the build gives top-level ${what === "System" ? "systems" : "finalizers"} one.`);
+        if (id === undefined) throw new Error(`${what} "${item.name}" runs on thread "${label}", which a joined thread fills, and has no id, so that thread can't name it; the build gives top-level systems one.`);
         const keys: (readonly [number, string])[] = [];
         for (const key of named) {
             const keyId = idOfKey(key);
@@ -415,7 +417,7 @@ export const createTaskChannel = (state: State, log: MoveLog, post: (message: To
 
     const finalizers: FinalizerLeaf[] = [];
     const placeFinalizer = (state: State, finalizer: FinalizerLeaf): number => {
-        const { id, keys } = setupOf(state, finalizer, "Finalizer", finalizerKeysOf(finalizer));
+        const { id, keys } = setupOf(state, finalizer, "Removed system", finalizerKeysOf(finalizer));
         const index = finalizers.push(finalizer) - 1;
         post({ protocol: "@adobe/ecs/join@1", kind: "finalizers", finalizers: [{ index, id, keys }] });
         return index;
@@ -445,6 +447,7 @@ export const createTaskChannel = (state: State, log: MoveLog, post: (message: To
         placed: () => placed - freeIndexes.length,
         placeFinalizer,
         finalizerAt: index => finalizers[index],
+        releaseFinalizer: index => post({ protocol: "@adobe/ecs/join@1", kind: "release finalizer", index }),
         stops,
         dropped: false,
         wake,

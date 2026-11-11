@@ -88,15 +88,14 @@ export const descriptions = [kernelOf(doubled), kernelOf(tripled)];
 /** A module of keys and what it declares with them, which serving evaluates again under another query. */
 const keys = (declaration: string, released = "score") => `import { System as Systems } from ${source("../../interface/system/system.ts")};
 import { registerComponent } from ${source("../../interface/registry/declarations.ts")};
-import { Finalizer } from ${source("../../interface/finalizer/finalizer.ts")};
-import { Rule } from ${source("../../interface/rule/rule.ts")};
+import { Component } from ${source("../../interface/component/component.ts")};
 import { labelOf } from ${source("../../interface/registry/names.ts")};
 export const score = Symbol("score");
 const shown = Symbol("shown");
 registerComponent(score, ${declaration});
 registerComponent(shown, { type: { const: true }, derived: true });
-export const rule = Rule.create({ components: { with: [score] }, derive: [shown] });
-export const release = Finalizer.create({ components: { with: [${released}] } }, () => {});
+Component.derive(shown, { from: [score] });
+export const release = Systems.removed({ components: { with: [${released}] } }, () => {});
 export const system = Systems.create({ components: { with: [score] } }, (row) => { row[score] = 1; });
 export const kernel = Systems.create({ kernel: true, components: { with: [score] } }, (row) => { row[score] = 2; });
 export const label = labelOf(score);
@@ -470,23 +469,25 @@ export const slow = System.create({ kernel: true, components: { with: [speed] } 
     expect(code).not.toContain("identify$");
 });
 
-test("serve accepts a module of keys evaluated again, which makes the same keys, systems, rules and finalizers by their ids", async () => {
+test("serve accepts a module of keys evaluated again, which makes the same keys, systems, derivations and removed systems by their ids", async () => {
     await serve(async server => {
         const first = await server.ssrLoadModule(evaluated);
+        const { programRules } = await server.ssrLoadModule(JSON.parse(source("../../interface/registry/program.ts")));
+        const rules = programRules().length;
         const again = await server.ssrLoadModule(`${evaluated}?evaluated=again`);
         const { sameItem } = await server.ssrLoadModule(JSON.parse(source("../../interface/registry/items.ts")));
         expect(again.score).not.toBe(first.score);
         expect([first.label, again.label]).toEqual(["score", "score"]);
         expect(again.system).not.toBe(first.system);
         expect([sameItem(again.system, first.system), sameItem(again.kernel, first.kernel), sameItem(again.kernel, again.system)]).toEqual([true, true, false]);
-        expect(again.rule).toBe(first.rule);
+        expect(programRules()).toHaveLength(rules);
         expect(again.release).toBe(first.release);
         // Each is labeled by its binding.
         expect([again.system.name, first.kernel.name]).toEqual(["system", "kernel"]);
     });
 });
 
-test("serve reports a finalizer evaluated again under its id with another declaration", async () => {
+test("serve reports a removed system evaluated again under its id with another declaration", async () => {
     await serve(async server => {
         await server.ssrLoadModule(changedItems);
         writeFileSync(changedItems, keys(`{ type: { type: "number" } }`, "shown"));

@@ -27,11 +27,11 @@ describe("traits", () => {
         const derived = System.create({}, ({ commands }) => {
             const entity = commands.spawn([score])({ [score]: 1 });
             const attempts = [
-                // @ts-expect-error derived components are added only by rules
+                // @ts-expect-error derived components are added only by derivations
                 () => commands.spawn([slot])({ [slot]: 1 }),
-                // @ts-expect-error derived components are added only by rules
+                // @ts-expect-error derived components are added only by derivations
                 () => commands.add(entity, slot, 1),
-                // @ts-expect-error derived components are removed only by rules
+                // @ts-expect-error derived components are removed only by derivations
                 () => commands.remove(entity, slot),
             ];
             for (const attempt of attempts) {
@@ -41,7 +41,7 @@ describe("traits", () => {
         });
         const world = createWorld({ [workers]: 0 });
         await world.run(derived);
-        expect(errors).toEqual(Array.from({ length: 3 }, () => `"traitsTest/slot" is derived, so only rules add and remove it.`));
+        expect(errors).toEqual(Array.from({ length: 3 }, () => `"traitsTest/slot" is derived, so only its derivations add and remove it.`));
         expect(await count(world, { required: [score] })).toBe(1);
         await world.dispose();
     });

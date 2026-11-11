@@ -3,7 +3,7 @@ import type { Entity } from '../../interface/entity/entity.js';
 import type { Commands } from '../../interface/system/commands.js';
 import type { Leaf } from '../../interface/system/leaf.js';
 import type { SystemLookupLists } from '../../interface/system/access.js';
-import { declarationOf, definitionOf, firstKeyOf, indexOfLookup, isLeaf, itemOfId, kindOf, labelOf, programFinalizers, threadOfDeclaration, watchedBy, whyUnregistered } from '../../interface/registry/index.js';
+import { declarationOf, definitionOf, firstKeyOf, indexOfLookup, isLeaf, finalizerOf, itemOfId, kindOf, labelOf, threadOfDeclaration, watchedBy, whyUnregistered } from '../../interface/registry/index.js';
 import { layoutOf, objectLayout, viewsOf, type Layout, type Views } from '../../interface/registry/layout.js';
 import type { StringStore } from './strings.js';
 import { stampChanged, writeOf } from './archetype.js';
@@ -154,7 +154,7 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
         }
         const declaration = declarationOf(key);
         if (declaration === undefined || kindOf(key) !== "component") throw new Error(kindOf(key) === "resource" ? `"${labelOf(key)}" is a resource, not a component.` : `"${labelOf(key)}" has no registered schema: ${whyUnregistered(key)}.`);
-        if (declaration.derived === true) throw new Error(`"${labelOf(key)}" is derived, so only rules add and remove it.`);
+        if (declaration.derived === true) throw new Error(`"${labelOf(key)}" is derived, so only its derivations add and remove it.`);
         const layout = layoutOf(declaration.type);
         const own = ownObject(key);
         const thread = threadOfDeclaration(declaration);
@@ -403,9 +403,16 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
         name(setups);
         finalizers.setup(setups.map(({ index, id }) => {
             const item = itemOfId(id);
-            const leaf = programFinalizers().find(finalizer => finalizer === item);
+            const leaf = item === undefined ? undefined : finalizerOf(item);
             return { index, leaf: leaf?.kind === "finalizer" ? leaf : null };
         }));
+    };
+
+    /** Finalizers the world removed, by index, which run for every row they match once the mirror is current. */
+    const releasing: number[] = [];
+    const release = (): void => {
+        if (releasing.length === 0 || !current()) return;
+        for (const index of releasing.splice(0)) finalizers.release(index);
     };
 
     /**
@@ -637,6 +644,12 @@ export const createThreadSystems = (host: ThreadSystemsHost) => {
          */
         finalize: (): void => {
             if (finalizers.pending() || mirror.stagedTransfers > 0) current();
+            release();
+        },
+        /** A finalizer the world removed: it runs for every row it matches once the stops published before ran, then is dropped. */
+        releaseFinalizer: (index: number): void => {
+            releasing.push(index);
+            release();
         },
         /** Once the world is disposed: finalizers run for the stops published, then for every row they match. */
         disposed: (): void => {

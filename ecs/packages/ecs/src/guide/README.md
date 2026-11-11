@@ -21,8 +21,8 @@ and run in the browser.
 6. [Sync points](06-sync-points.md)
 7. [Change filters and conditions](07-change-filters.md)
 8. [Input](08-input.md)
-9. [Rules](09-rules.md)
-10. [Finalizers and change sets](10-finalizers.md)
+9. [Derived components](09-derived-components.md)
+10. [Changes and removed systems](10-changes-and-removed.md)
 11. [Traits, within and references](11-traits.md)
 
 ## Advanced

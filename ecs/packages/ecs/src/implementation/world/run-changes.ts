@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Entity } from '../../interface/entity/entity.js';
 import type { Essential, ReadonlyType } from '../../interface/component/value.js';
-import type { ChangeSet } from '../../interface/finalizer/body.js';
+import type { ChangeSet } from '../../interface/system/finalizer-body.js';
 import type { Resource } from '../../interface/resource/resource.js';
 import { isLeaf, newestKeyOf, scheduleOf, type Definition, type Leaf } from '../../interface/registry/index.js';
 import type { Archetype } from './archetype.js';

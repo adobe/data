@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { perDevice } from "../cache/cache.js";
 import * as Frame from "../frame/public.js";
 import { bytesIn, gpu, testDevice } from "../gpu.test-helper.js";
-import { despawn, spawnTarget, spawnView, targetStates, viewStates } from "../test-systems.test-helper.js";
+import { despawn, frame, spawnTarget, spawnView, targetStates, viewStates } from "../test-systems.test-helper.js";
 import * as Target from "../target/public.js";
 import * as View from "./public.js";
 
@@ -54,10 +54,11 @@ describe("views", () => {
     it.runIf(gpu)("draw into their part of their target, each binding its own size", async () => {
         const device = await testDevice();
         await using world = World.create({ [workers]: 0, [gpuDevice]: device });
+        world.add(Frame.releases);
         const target = await world.run(spawnTarget, { width: 8, height: 4, clear: [0, 0, 1, 1] });
         const left = await world.run(spawnView, { target, viewport: [0, 0, 0.5, 1] });
         const corner = await world.run(spawnView, { target, viewport: [0.75, 0.5, 0.25, 0.5] });
-        await world.run(System.create({ systems: [Frame.systems, draw] }));
+        await world.run(System.create({ systems: [frame, draw] }));
         const views = await world.run(viewStates);
         expect([views?.get(left)?.rectangle, views?.get(corner)?.rectangle]).toEqual([[0, 0, 4, 4], [6, 2, 2, 2]]);
         const state = (await world.run(targetStates))?.get(target);
@@ -71,12 +72,13 @@ describe("views", () => {
     it.runIf(gpu)("follow their target's size and go with their target", async () => {
         const device = await testDevice();
         await using world = World.create({ [workers]: 0, [gpuDevice]: device });
+        world.add(Frame.releases);
         const target = await world.run(spawnTarget, { width: 8, height: 4 });
         const view = await world.run(spawnView, { target, viewport: [0.5, 0, 0.5, 0.5] });
-        await world.run(Frame.systems);
+        await world.run(frame);
         const before = (await world.run(viewStates))?.get(view);
         await world.run(Target.resize, { target, width: 20, height: 10 });
-        await world.run(Frame.systems);
+        await world.run(frame);
         const after = (await world.run(viewStates))?.get(view);
         expect([before?.rectangle, after?.rectangle]).toEqual([[4, 0, 4, 2], [10, 0, 10, 5]]);
         expect(after?.buffer).toBe(before?.buffer);

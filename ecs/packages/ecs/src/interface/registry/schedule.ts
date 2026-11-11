@@ -3,7 +3,7 @@ import type { Schema } from '../schema/schema.js';
 import type { Definition } from '../system/definition.js';
 import type { Leaf } from '../system/leaf.js';
 import { firstItemOf } from './items.js';
-import { requireDefinition } from './program.js';
+import { membersOf } from './program.js';
 import { declarationOf, firstKeyOf, labelOf, sameDeclaration } from './names.js';
 import { indexDefinitionOf, lookupKeysOf, orderKeysOf } from './indexes.js';
 
@@ -73,7 +73,8 @@ const graphOf = (root: Definition): Graph => {
         if (known !== undefined) return known;
         const unit = units.push(system) - 1;
         indexOf.set(first, unit);
-        members[unit] = isLeaf(system) ? [] : system.declaration.systems.map(member => visit(requireDefinition(member)));
+        // Changes and removed systems run in sync points, not in tiers.
+        members[unit] = membersOf(system).map(visit);
         return unit;
     };
     visit(root);

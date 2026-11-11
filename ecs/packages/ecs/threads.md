@@ -18,7 +18,7 @@ Referenced from `design.md`.
   one declared `transfer: true` may be moved, never copied.
 - **Logical thread:** a name in the augmentable `Threads` interface. `world` and `main` are built in. A joined thread
   fills the logical threads it claims; the world's thread fills every one no joined thread claims.
-- **Remote:** an object component, resource, system or finalizer whose logical thread a joined thread fills. Only
+- **Remote:** an object component, resource, system or removed system whose logical thread a joined thread fills. Only
   remote ones pay for anything below; an object of `main` in a world on the main thread isn't remote.
 
 ## Model
@@ -41,12 +41,11 @@ Referenced from `design.md`.
   system naming one fails to register. Ids name packages and their versions, not directories, so threads bundled apart
   agree on them, and the plugin adds itself to `worker.plugins`, so worker bundles' keys get them too. Every declared
   key has one, since a declaration names only a top-level `Symbol()` constant.
-- **Systems, rules and finalizers are their values,** labeled by their bindings, so a value is different on each
-  thread too. Threads agree on them through the ids the plugin gives top-level `System.create`, `System.render`,
-  `Rule.create`, `Finalizer.create` and `Finalizer.changes` bindings, composites included, by which the registry
+- **Systems are their values,** labeled by their bindings, so a value is different on each thread too. Threads agree on them through the ids the plugin gives top-level `System.create`, `System.render`,
+  `System.removed`, `System.changes` and `Component.derive`, composites included, by which the registry
   already takes values of one id as one item. A threaded world rejects an item without one where it crosses threads:
-  a system or finalizer placed on a joined thread, and a system a joined thread runs, at join or at that run; a
-  composite crosses only if every member has an id. Rules run only at `world`'s sync points, so they never cross. A
+  a system or removed system placed on a joined thread, and a system a joined thread runs, at join or at that run; a
+  composite crosses only if every member has an id. Derivations run only at `world`'s sync points, so they never cross. A
   kernel crosses as its chunk's url and the world's index for it, as pool workers load it now; kernel chunks keep
   their exports' signatures, so every thread's import finds them.
 - **Threads number what crosses locally.** A joined thread gives each key and item it sends its own number, and posts
@@ -84,7 +83,7 @@ declare module "@adobe/ecs" {
 const world = World.create(resources?);
 const shared = world.share(port);   // lets another thread join through the port: a MessagePort, a Worker, or a worker's own scope
 
-// On another thread, after importing the modules whose systems and finalizers run there.
+// On another thread, after importing the modules whose systems and removed systems run there.
 const joined = await World.join(port, { threads: ["main"] });
 joined.add(listen);
 
@@ -116,8 +115,8 @@ All derived from declarations and, for terminal systems, the plugin's analysis o
   indexes it looks up through or orders its rows by. Strings and structs don't place it. Components it only requires,
   in `with`, and those in `not` are structural, and read a shared presence word, so they don't place it. With no objects, a kernel runs on the pool and any other system on `world`.
   Render systems and `kernel: "gpu"` systems are on `world`, with `gpuDevice`.
-- **Errors when declared:** objects of two threads in one system or finalizer, in types and when it's created, which
-  registers it. **Errors when joining:** a thread claimed twice; a claimed thread whose systems or finalizers that
+- **Errors when declared:** objects of two threads in one system or removed system, in types and when it's created, which
+  registers it. **Errors when joining:** a thread claimed twice; a claimed thread whose systems or removed systems that
   joined thread hasn't imported (checked by id, once), or one of them without an id.
 - **A terminal system** writes only objects of its own thread, issues no commands, writes no struct component or
   struct resource, reduces into nothing, and looks nothing up, since a lookup reads the entity table the next sync
@@ -127,9 +126,9 @@ All derived from declarations and, for terminal systems, the plugin's analysis o
   a body by wrapping it, as it gives ids. A system the plugin can't prove is not terminal. A tail's context has no
   `commands`. DOM-writing systems and render systems are terminal. A remote terminal system that no system of a later
   tier conflicts with runs as a tail (see Tails). Any other remote system is a blocking tier.
-- **Finalizers** run on the thread of the objects they read, after the sync point where a joined thread fills it. So
+- **Removed systems** run on the thread of the objects they read, after the sync point where a joined thread fills it. So
   one on another thread than the world's, which a joined thread may fill, has no `commands` in its context, writes no
-  resources and declares no `lookup`, and `Finalizer.changes` watches and reads only the world's thread's values, in
+  resources and declares no `lookup`, and `System.changes` watches and reads only the world's thread's values, in
   types and at creation; `before`/`after` across threads is an error at creation.
 - **Values for another thread's objects:** a command issued on one thread may give an object component of another
   thread only its start or `null`, as tags the owning thread resolves, and a command issued on a joined thread gives a
@@ -303,7 +302,7 @@ thread as its only writer, drained by the world's thread at the sync point. Comm
 - **Values:** structs are written as bytes in the target storage's layout, through each component's layout writer,
   with numbers and f32 lane tuples written straight in. The world's `CommandBuffer` for a segment keeps those values
   as bytes in the ring, at the offsets its column gives: `writeRange` copies them, by 32-bit word, and the plan's
-  references, finalizers' `commandValue` and holder-index changes decode only what they read. Any other value is a tag:
+  references, removed systems' `commandValue` and holder-index changes decode only what they read. Any other value is a tag:
   start, `null`, a number or a boolean, which the world resolves, start to the component's start; a value left out is
   the start tag, struct or not; from phase 5, a slot, which names an object of the issuing thread's own logical thread,
   kept there in a staging array with its entity and component.
@@ -333,21 +332,21 @@ thread as its only writer, drained by the world's thread at the sync point. Comm
 
 - **The handshake** (`sharing.ts`, `join.ts`, `joining.ts`): a joined thread's first message names the threads it
   claims, whether it can wait with `Atomics.waitAsync`, and a Web Lock it holds while it lives, where the platform has
-  Web Locks, and with claims the ids of the systems and finalizers it imported; it posts nothing else until the lock is
+  Web Locks, and with claims the ids of the systems and removed systems it imported; it posts nothing else until the lock is
   held. The world refuses a thread claiming `world`, one thread twice, one another joined thread claims, or one a
-  registered system or a finalizer of the program runs on that the thread can't run: one without an id, naming a key
+  registered system or a removed system added to the world runs on that the thread can't run: one without an id, naming a key
   without one, declaring `up`, or one it didn't import, checked again between runs as its claims are made; it's refused
   with a message saying why, which its `join` and the world's `share` reject with, its status `"gone"`. Else the world places the thread's control words and slots in the
   memory, and writes `"joined"` and the claims. With claims, between runs, the claimed threads' object components and
   object resources become the thread's (see Object columns on other threads), each announced by message with its id; it
   places the thread's task block; it posts the memory, the offsets of its control words, its move log and its task
-  block, and its number; then the systems and finalizers on the claimed threads are placed there, each posted to the
+  block, and its number; then the systems and removed systems on the claimed threads are placed there, each posted to the
   thread with its index there, its id and the world's numbers for the keys it names. The thread's `join` resolves as
   `joined` arrives; on its next turn of its event loop it posts `ready`, after what it did as its join resolved, so its
   readonly systems added then are declared and added when the world's `share` resolves on `ready`. A thread gone before
   `ready` rejects the world's `share`. Claims are released when the
   thread is gone, between runs, its objects coming back as each row's tag names them, `null` or the start, since a value
-  the thread staged or wrote was its own, and its systems and finalizers placed on the world's thread again, each system
+  the thread staged or wrote was its own, and its systems and removed systems placed on the world's thread again, each system
   keeping its `lastRun`.
 - **A thread's end** is a `leave` from its `dispose`, its `MessagePort`'s `close`, a node worker's `exit`, or the
   world's request for its Web Lock being granted, which happens however the thread ends, so a browser worker ended from
@@ -415,7 +414,7 @@ publishes "through position P, sync N" in the log's header after each sync point
 turns even.
 
 **Replay.** A thread replays lazily, only syncs published: before a task whose payload names sync S, or a readonly system
-post, it processes each pending sync in order: its finalizers first, against values still at their pre-apply
+post, it processes each pending sync in order: its removed systems first, against values still at their pre-apply
 rows, then its log. It copies the entries out, then checks the writer hasn't lapped it: the writer stores a limit 64
 entries ahead of where it writes before writing past it, and the copy holds if the limit is within the ring's size of
 where it started. A staged slot that no entry of a sync it was for names was dropped, and is cleared without a
@@ -492,19 +491,20 @@ consecutive tiers all on that thread are one task, which stops after a tier with
   A task's completion, rather than the next sync point, is what makes the drop safe: a thread left with no system gets
   no more tasks, and replays nothing until one comes.
 
-### Finalizers on other threads
+### Removed systems on other threads
 
-A finalizer whose thread a joined thread claims is placed there, as systems are, each posted to the thread with its
-index there, its id and the world's numbers for its keys (`finalizers.ts`, `activate.ts`); one created after the claim
-is placed when it activates, and one the thread can't name, without an id or naming a key without one, doesn't activate
+A removed system added to the world whose thread a joined thread claims is placed there, as systems are, each posted to
+the thread with its index there, its id and the world's numbers for its keys (`finalizers.ts`, `activate.ts`); adding it
+on the world's thread is enough, and the joined thread knows it by its id, among what it imported. One added after the
+claim is placed when it activates, and one the thread can't name, without an id or naming a key without one, doesn't activate
 and is reported once in a sync point's failures. Once the thread is gone, they run on the world's thread again.
 
 - **Stop lists** (`stop-lists.ts`): before apply, the world's thread writes one block per sync point with stops for that
-  thread: per finalizer, in the world's finalizer order, a group of its stops as columns: each entity, its pre-apply
+  thread: per removed system, in the world's removed system order, a group of its stops as columns: each entity, its pre-apply
   archetype and row, the tag of each object it reads, and a copy of each linear struct it reads, in that component's
   layout, and of each string's record, by its handle; then, once per group, the resources it reads that aren't its
   thread's objects, as they were before apply: a copy of each string resource's record, by its handle, then each linear
-  resource's value in its layout, from the resource entity's row; a constant needs none. A finalizer reading no such
+  resource's value in its layout, from the resource entity's row; a constant needs none. A removed system reading no such
   resource adds no bytes. The records' copies are let go once the thread acknowledged the block: it may finalize sync
   points after the row's or resource's own record was let go and freed. The world copies a column at a time, finding each column's storage once per run of an archetype. Blocks are
   linked in sync order, the first from the log header's stops word, each block's next offset stored once that block is
@@ -512,7 +512,7 @@ and is reported once in a sync point's failures. Once the thread is gone, they r
   one, since the thread reads the next offset from the newest block it ran. The world wakes the thread after each sync
   point that published stops for it, so a thread with no task or post of a readonly system still finalizes.
 - **Running them** (`thread-finalizers.ts`): the thread runs a sync's stop list as it replays that sync, at its sync
-  entry, before the sync's entries apply, or at replay's end for a sync with no entries for it; its finalizers read the
+  entry, before the sync's entries apply, or at replay's end for a sync with no entries for it; its removed systems read the
   linear structs from the block, constants as they are, and its objects by each stop's tag: the start or `null` as
   tagged, any other at the stop's row in its mirror. After its log lapped, it runs them before it rebuilds, reading a
   value it wrote or a settled slot's by entity in its old rows, and a live slot's from its staging array. Its thread's
@@ -520,22 +520,24 @@ and is reported once in a sync point's failures. Once the thread is gone, they r
   be behind the entity table, its old rows before a rebuild, and the start where no row holds it, as before its first
   rebuild. That's what the rebuild keeps: only its systems write those values, and the world gives them only their start,
   when they're added or claimed. Its string and linear resources are read from the group's copies, so every resource
-  it reads is as of before its stops' sync point applied. Then it stores "finalized through sync N" in the log header. A stop list naming a finalizer
+  it reads is as of before its stops' sync point applied. Then it stores "finalized through sync N" in the log header. A stop list naming a removed system
   whose setup hasn't arrived holds replay before its sync, as a component without a key does; one this thread never
-  imported fails each of its groups. What its finalizers throw is posted, and the world reports it out of band.
-- **The guarantee:** each such finalizer runs exactly once per stop, on its thread, before that thread's next task or
+  imported fails each of its groups. What its removed systems throw is posted, and the world reports it out of band.
+- **The guarantee:** each such removed system runs exactly once per stop, on its thread, before that thread's next task or
   post of a readonly system after the sync point and before the entity's index is reused, seeing its declared struct and string
   reads, its thread's objects and every resource it reads as of before apply.
 - **Held indexes:** the index of an entity despawned with such stops is held, counted by index for each thread that
   hasn't acknowledged it, apart from `released`, so the leak scan never sees it and the free list never has it; the
   sync point after a thread acknowledges releases it once no thread holds it. A thread that's gone has its held indexes
-  returned, and each finalizer with stops it never acknowledged is a `"thread"` failure of the next sync point's run. A thread finalizes what was published before it leaves.
-- **Dispose:** once the world is disposed, a joined thread runs the stop lists published, then its finalizers for every
-  row they match, as the world's thread runs its own.
-- **Restriction:** a finalizer on a thread other than `world` issues no commands, writes no resources and looks
+  returned, and each removed system with stops it never acknowledged is a `"thread"` failure of the next sync point's run. A thread finalizes what was published before it leaves.
+- **Dispose and remove:** once the world is disposed, a joined thread runs the stop lists published, then its removed
+  systems for every row they match, as the world's thread runs its own. Once one is removed from the world, which posts
+  `release finalizer` between runs, the thread runs the stop lists published, then that one for every row it matches,
+  and drops it.
+- **Restriction:** a removed system on a thread other than `world` issues no commands, writes no resources and looks
   nothing up, wherever it runs, so the world's thread never waits for one. Kept open, to revisit when a use case needs
   it: (a) allow commands and resource writes, applied at the next or a later sync point, with lookups read under the
-  structure epoch; (b) the world waits for remote finalizers inside the sync point, exact timing for about a 10 µs
+  structure epoch; (b) the world waits for remote removed systems inside the sync point, exact timing for about a 10 µs
   round trip per sync point with such stops.
 
 ### Readonly systems on joined threads
@@ -714,7 +716,7 @@ Memory isn't shared, so the world runs inline, and `share` and `join` reject.
 | A readonly system on a joined thread, per sync point | a check of its filters, a post into its block and at most one notify per thread; one reading only struct resources posts copies of them and is never waited for: `joined observer resource` 4.3–5.0 µs a tick, in node; otherwise the next writer copies what it hasn't read, the next sync point waits only for a post in progress: `joined observer 10K` 0.41–0.51 ms |
 | Structural change touching archetypes with remote objects | one log entry per row moved, replayed once on that thread, `log replay` 21 ns a move in node |
 | A thread rebuilding after its log dropped entries | a pass over its archetypes' rows, `log rebuild 100K` 3.2 ns a row in node |
-| Despawning entities with remote finalizers | stop-list copy of declared reads, a column at a time; the world's thread doesn't wait: `despawn objects 10K` 83 ns a despawn in node |
+| Despawning entities with remote removed systems | stop-list copy of declared reads, a column at a time; the world's thread doesn't wait: `despawn objects 10K` 83 ns a despawn in node |
 | A transferred asset | one message, loader to its thread, and one acknowledgement to the world; one run: `transfer` 134 µs a 1 MB ArrayBuffer and a 1024 by 1024 ImageBitmap, in chromium |
 
 ## Memory
@@ -734,7 +736,7 @@ Memory isn't shared, so the world runs inline, and `share` and `join` reject.
   snapshots of its resources when they're over 80 bytes.
 - **Tail buffers:** only once a fallback snapshot was taken: passing rows times their declared struct reads, kept for
   the next.
-- **Stop lists:** per sync point with stops, a 16-byte header, and per finalizer 16 bytes and per stop 16 bytes, 4 per
+- **Stop lists:** per sync point with stops, a 16-byte header, and per removed system 16 bytes and per stop 16 bytes, 4 per
   object read and its linear reads' bytes, each column on 8 bytes, kept until a later block is acknowledged; and on the
   world's thread, 4 bytes per entity index up to the highest held.
 
@@ -746,11 +748,11 @@ then green type tests, then runtime with red then green runtime tests. Each phas
 
 ### Built: threads in declarations, the loop, and the pool
 
-- `Threads`, `thread`, `transfer` and the DOM rule, in the build and registration's checks; a system's and finalizer's
+- `Threads`, `thread`, `transfer` and the DOM rule, in the build and registration's checks; a system's and removed system's
   thread derived, and two threads rejected, when it's created. With every thread filled by `world`, nothing changes at
   runtime.
-- Ids: the plugin gives top-level keys and `System.create`, `System.render`, `Rule.create`, `Finalizer.create` and
-  `Finalizer.changes` bindings ids, in worker bundles too; the registry takes symbols or values of one id as one key or
+- Ids: the plugin gives top-level keys and `System.create`, `System.render`, `System.removed`, `System.changes` and
+  `Component.derive` ids, in worker bundles too; the registry takes symbols or values of one id as one key or
   item. Nothing rejects a key or item without one yet.
 - The loop, inline: `add`, `cadence` with `maxSteps`, `always`, `wake`, `clock`, `report`, beats on animation frames or
   timers, and the `workers` resource sizing the pool at sync points. `World.Report` has no `"thread"` failure kind.
@@ -804,7 +806,7 @@ back, so none finishes after it and leaves workers' kernels behind the main thre
 
 Worker kernels write their commands into their worker's ring as a `CommandBuffer`'s columns, with merge tags, values
 as bytes, tags for the rest, and their staged spawn batches as blocks with their unused reservation ranges; the spill of
-a segment past the ring's size and the needed word; `CommandBuffer`'s byte values, which `writeRange` copies and the plan's references, finalizers and holder-index
+a segment past the ring's size and the needed word; `CommandBuffer`'s byte values, which `writeRange` copies and the plan's references, removed systems and holder-index
 changes decode. `FromWorker` carries a task's completion, ring extent and error, and a spill. The world's own commands,
 the sync point's commit of staged rows and its plan's order are unchanged. Kernel setups carry only linear components'
 starts, the rest being the world's to resolve, and `terminate` waits for every worker that ran a task by message, as
@@ -849,7 +851,7 @@ their entity, component and sync, the world's storages holding each row's tag an
 the move log over every apply path with its added flags (`move-log.ts`), its published-through
 words, replay with its lap check, and rebuild from the directory's counts and the tags; directory
 counts. The structure epoch and counts are kept only while a joined thread holds claims, and the epoch notifies only
-waiting readers. A claim whose systems or finalizers exist is refused until 5b and 5c, which the joined thread's
+waiting readers. A claim whose systems or removed systems exist is refused until 5b and 5c, which the joined thread's
 commands and runners come with; until then a slot is staged only through the mirror's `stage`, and the world names it in
 a command buffer as a thread's ring will.
 
@@ -865,7 +867,7 @@ a command buffer as a thread's ring will.
   chromium, a worker watching an entity whose objects change and move archetype every tick while the world ticks back
   to back, every value's objects agreeing with its structs; on one thread through a `MessageChannel`, the
   thread's objects at their starts and `null`, commands and kernels giving them other values failing,
-  systems here unable to read them, a claim refused for a thread whose systems or finalizers exist, and
+  systems here unable to read them, a claim refused for a thread whose systems or removed systems exist, and
   the objects coming back once the thread is gone.
 - Must not regress: every benchmark, inline.
 - New: `log replay` (10,000 swap-removes and moves per sync point, time per move); `log rebuild 100K` (a forced
@@ -901,37 +903,37 @@ joined thread reads again rather than wait while its unread word is set, which l
 - New: `handoff` (10 tiers alternating `world` and a joined worker, empty systems, N = 1,000 ticks), 11.5 µs a tick in
   node and 13.2 in chromium; `fused tiers` (10 consecutive tiers on a joined worker), 7.5 and 9.4 µs.
 
-### Built: phase 5c, remote finalizers
+### Built: phase 5c, remote removed systems
 
-Finalizers on claimed threads run there (`stop-lists.ts`, `thread-finalizers.ts`): placed as systems are, with their
+Removed systems on claimed threads run there (`stop-lists.ts`, `thread-finalizers.ts`): placed as systems are, with their
 setups posted, one created after a claim placed when it activates; stop lists written before apply, a column at a
-time, one block per sync point linked in sync order, and the thread woken; finalizers run as the thread replays each
+time, one block per sync point linked in sync order, and the thread woken; removed systems run as the thread replays each
 sync, before its entries apply, or before it rebuilds once its log lapped, against its objects by tag and entity;
-replay held before a sync whose finalizer's setup hasn't arrived; "finalized through" acknowledged in the log header;
+replay held before a sync whose removed system's setup hasn't arrived; "finalized through" acknowledged in the log header;
 indexes of despawned entities held, counted by index, until every thread finalizing them acknowledged; held indexes
 returned and unacknowledged stops reported once the thread is gone; what was published finalized before a thread
-leaves, and every match once the world is disposed. Claims check by id that the joined thread imported the finalizers
+leaves, and every match once the world is disposed. Claims check by id that the joined thread imported the removed systems
 placed on it.
 
-- Interface: a finalizer on another thread than the world's has no `commands` in its context, and writes no resources
-  and looks up nothing, in types and at creation; a changes finalizer watching or reading another thread's values is
-  rejected in types and at creation; finalizers hold any body, as systems do, their parameters checked where created.
-- Contract: such finalizers run after the sync point, under the guarantee above, their failures in a later run's
-  report; a finalizer ordered with one on another thread is rejected at creation; a claim is refused for a finalizer
+- Interface: a removed system on another thread than the world's has no `commands` in its context, and writes no resources
+  and looks up nothing, in types and at creation; a changes system watching or reading another thread's values is
+  rejected in types and at creation; removed systems hold any body, as systems do, their parameters checked where created.
+- Contract: such removed systems run after the sync point, under the guarantee above, their failures in a later run's
+  report; a removed system ordered with one on another thread is rejected when added; a claim is refused for a removed system
   there the joined thread can't run, without an id, naming a key without one, or not imported; one created after the
   claim that the thread can't name doesn't activate, reported once; stops of a thread that's gone are `"thread"`
-  failures; once the world is disposed, a joined thread finalizes every row its finalizers match.
+  failures; once the world is disposed, a joined thread finalizes every row its removed systems match.
 - Tests: types and creation rejecting what can't run on another thread; on one thread through a `MessageChannel`, an
   inline world's stops, with structs as before the sync point applies, the thread's objects at their starts, `null`,
-  written or staged, and its object resource, after its log lapped too; a finalizer placed by its object resource alone;
-  an index reused only once its stop was finalized (red without holds); failures there in a later report; finalizers
+  written or staged, and its object resource, after its log lapped too; a removed system placed by its object resource alone;
+  an index reused only once its stop was finalized (red without holds); failures there in a later report; removed systems
   created after the claim, one without an id reported once; every match finalized there once the world is disposed;
-  stops published finalized when the thread leaves, then finalizers on the world's thread. In node and chromium, the
+  stops published finalized when the thread leaves, then removed systems on the world's thread. In node and chromium, the
   same stops against a joined worker; a worker that never yields holding indexes, which are reused and its stops
   reported once it's ended.
 - Must not regress: every benchmark, inline.
-- New: `despawn objects 10K` (a sync point despawning 10K entities whose objects a joined worker fills, a finalizer
-  there reading the object and a vec3), 83 ns a despawn in node, against 77 with the finalizer run inline.
+- New: `despawn objects 10K` (a sync point despawning 10K entities whose objects a joined worker fills, a removed system
+  there reading the object and a vec3), 83 ns a despawn in node, against 77 with the removed system run inline.
 
 ### Built: phase 6, tails
 
@@ -1057,7 +1059,7 @@ there the same way (`joined-observer.ts`, `thread-observer.ts`, `thread-director
 - **Objects by entity index,** dense or as a sparse set: memory by index space, or a load per row.
 - **A shared heap for asset payloads:** `WebAssembly.Memory` never shrinks, `TextDecoder` rejects shared views, and an
   `ImageBitmap` isn't bytes.
-- **Several world threads, or moving one:** merges stop being deterministic, and plan and finalizer state would have to
+- **Several world threads, or moving one:** merges stop being deterministic, and plan and removed system state would have to
   migrate.
 - **Inferring threads from values:** it fails late, and a worker can't test for DOM types.
 - **Remoting through a JS Proxy.**

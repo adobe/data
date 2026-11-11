@@ -19,7 +19,7 @@ export type ReadonlyType<K extends Key> = Type<K> extends Primitive ? Type<K> : 
 export type With<T extends TraitKey, V = unknown> = { [K in Key]: Components[K] extends { readonly [P in T]: V } ? K : never }[Key];
 
 
-/** Components only rules add and remove. */
+/** Components only their derivations (`Component.derive`) add and remove. */
 export type Derived = With<"derived">;
 
 /** Components user code adds and removes: the only ones commands take. */

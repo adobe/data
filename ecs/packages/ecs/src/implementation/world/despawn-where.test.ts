@@ -1,8 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
+import { Component } from "../../interface/component/component.js";
 import { describe, expect, it } from "vitest";
 import { Entity } from "../../interface/entity/entity.js";
-import { Finalizer } from "../../interface/finalizer/finalizer.js";
-import { Rule } from "../../interface/rule/rule.js";
 import type { Commands } from "../../interface/system/commands.js";
 import { System } from "../../interface/system/system.js";
 import type { World } from "../../interface/world/world.js";
@@ -64,12 +63,12 @@ declare module "@adobe/ecs" {
     }
 }
 
-Rule.create({ components: { with: [host, derivedFrom] }, derive: [slot] });
+Component.derive(slot, { from: [host, derivedFrom] });
 
 const seen: number[] = [];
-Finalizer.create({ components: { with: [finalized] } }, row => { seen.push(row[finalized]); });
+const release = System.removed({ components: { with: [finalized] } }, row => { seen.push(row[finalized]); });
 
-Finalizer.changes({ watch: [watched, mark] }, (changes, { resources }) => {
+const record = System.changes({ watch: [watched, mark] }, (changes, { resources }) => {
     const lines = changes.groups.map(group => `${group.entities.map(entity => changes.previous(entity, watched)).join(",")}: +${group.added.length} -${group.removed.length}`);
     resources[journal] = [...resources[journal], ...lines];
 });
@@ -77,6 +76,7 @@ Finalizer.changes({ watch: [watched, mark] }, (changes, { resources }) => {
 /** A world, and a function running `body` once in a system with the world's commands, rejecting with what it threw. */
 const withCommands = () => {
     const world = createWorld({ [workers]: 0 });
+    world.add(System.create([release, record]));
     let body: (commands: Commands) => void = () => {};
     const issue = System.create({}, ({ commands }) => body(commands));
     const run = async (next: (commands: Commands) => void): Promise<void> => {

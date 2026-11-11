@@ -1,13 +1,13 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { asksForChanges, takesInput } from './run-changes.js';
-import type { ChangeSet } from '../../interface/finalizer/body.js';
+import type { ChangeSet } from '../../interface/system/finalizer-body.js';
 import type { Essential } from '../../interface/component/value.js';
 import type { Resource } from '../../interface/resource/resource.js';
 import type { Thread } from '../../interface/thread/thread.js';
 import type { World } from '../../interface/world/world.js';
 import type { Input } from '../../interface/system/input.js';
 import type { System } from '../../interface/system/system.js';
-import { declarationOf, definitionOf, identifiedItems, idOfItem, idOfKey, indexOfLookup, keyOfId, labelOf, requireDefinition, threadOf, threadOfDeclaration, watchedBy, type Definition } from '../../interface/registry/index.js';
+import { declarationOf, definitionOf, finalizersOf, identifiedItems, idOfItem, idOfKey, indexOfLookup, keyOfId, labelOf, requireDefinition, threadOf, threadOfDeclaration, watchedBy, type Definition } from '../../interface/registry/index.js';
 import { unsharedKeyOf } from './index-keys.js';
 import { layoutOf, type Views } from '../../interface/registry/layout.js';
 import {
@@ -518,6 +518,14 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
                 observer?.process();
                 return;
             }
+            case "release finalizer": {
+                if (systems === null) {
+                    // Never set up here, so it ran for no stop.
+                    for (let k = finalizerSetups.length - 1; k >= 0; k--) if (finalizerSetups[k].index === message.index) finalizerSetups.splice(k, 1);
+                    return;
+                }
+                return systems.releaseFinalizer(message.index);
+            }
             case "observer": {
                 observer?.setup(message.systems);
                 process();
@@ -699,6 +707,8 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
         // A run gives what its system's body returned, `R` by the system's type.
         run,
         add: system => {
+            const held = finalizersOf(system);
+            if (held.length > 0) throw new Error(`"${held[0].name}" is a changes or removed system, which a joined thread doesn't add: add it on the world's thread, which runs a removed system here by its id when its objects live here.`);
             const definition = requireDefinition(system);
             const leaves = observerLeavesOf(definition);
             if (leaves === null) throw new Error(`System "${definition.name}" isn't readonly, and a joined thread adds only readonly systems: declare it readonly: true to read the world from this thread, or add it on the world's thread.`);

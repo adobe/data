@@ -10,7 +10,7 @@ export const defaults: Required<Omit<Config, 'agents'>> = {
         ports: ['model', 'ports'],
         view: ['model', 'elements', 'view'],
     },
-    kinds: ['type', 'constant', 'component', 'resource', 'archetype', 'index', 'function', 'system', 'rule', 'finalizer', 'element'],
+    kinds: ['type', 'constant', 'component', 'resource', 'archetype', 'index', 'function', 'system', 'element'],
     apps: ['app', 'apps', 'samples', 'perftest'],
     headless: ['model'],
     systems: ['model', 'view'],

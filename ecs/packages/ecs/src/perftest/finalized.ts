@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 /// <reference types="node" />
-import { Finalizer } from "../interface/finalizer/finalizer.js";
 import { workers } from "../interface/resources/workers.js";
 import { System } from "../interface/system/system.js";
 import { createWorld, type CreatedWorld } from "../implementation/index.js";
@@ -8,10 +7,11 @@ import type { Benchmark } from "./benchmark.js";
 import { runReported } from "../implementation/world/outcomes.test-helper.js";
 import type { Vec3 } from "../interface/math/index.js";
 
-// Despawning entities whose objects a joined thread fills, with a finalizer on that thread: the world's thread writes
-// each stop's declared struct reads into the thread's stop list and doesn't wait for it. The joined thread is
-// `joined.ts`, which imports this module, so it runs the finalizers. A second finalizer, over other entities, reads a
-// string resource too, and a third two linear resources, which each sync point's stop list holds copies of.
+// Despawning entities whose objects a joined thread fills, with a removed system on that thread: the world's thread
+// writes each stop's declared struct reads into the thread's stop list and doesn't wait for it. The joined thread is
+// `joined.ts`, which imports this module, so it runs the removed systems the world adds. A second removed system, over
+// other entities, reads a string resource too, and a third two linear resources, which each sync point's stop list holds
+// copies of.
 
 const spot = Symbol("finalized/spot");
 const handle = Symbol("finalized/handle");
@@ -41,24 +41,27 @@ declare module "@adobe/ecs" {
 /** Entities each timed sync point despawns. */
 export const despawnedObjects = 10_000;
 
-/** On the joined thread: what the finalizer released. */
+/** On the joined thread: what the removed systems released. */
 export const releases = { count: 0 };
-export const release = Finalizer.create({ components: { with: [handle, spot] } }, row => {
+export const release = System.removed({ components: { with: [handle, spot] } }, row => {
     row[handle]?.release();
     if (row[spot][0] >= 0) releases.count++;
 });
 
 /** On the joined thread: the same, reading the world's string resource too. */
-export const releaseNoted = Finalizer.create({ components: { with: [noted, spot] } }, (row, { resources }) => {
+export const releaseNoted = System.removed({ components: { with: [noted, spot] } }, (row, { resources }) => {
     row[noted]?.release();
     if (row[spot][0] >= 0 && resources[note].length > 0) releases.count++;
 });
 
 /** On the joined thread: the same, reading two linear resources of the world's too. */
-export const releaseMeasured = Finalizer.create({ components: { with: [measured, spot] } }, (row, { resources }) => {
+export const releaseMeasured = System.removed({ components: { with: [measured, spot] } }, (row, { resources }) => {
     row[measured]?.release();
     if (row[spot][0] * resources[scale] + resources[offset][0] >= 0) releases.count++;
 });
+
+/** Every removed system of these benchmarks, which each world adds. */
+const releasing = System.create([release, releaseNoted, releaseMeasured]);
 
 const spawn = System.create({}, ({ commands }) => {
     for (let k = 0; k < despawnedObjects; k++) commands.spawn([spot, handle])({ [spot]: [k, 0, 0], [handle]: null });
@@ -117,6 +120,7 @@ const startClaiming = async (world: CreatedWorld): Promise<{ readonly terminate:
  */
 const despawnObjects = async (spawning: typeof spawn = spawn, despawning: typeof despawn = despawn, rounds = 30): Promise<number> => {
     const world = createWorld({ [workers]: 0 });
+    world.add(releasing);
     const joined = await startClaiming(world);
     let best = Infinity;
     try {
@@ -142,7 +146,7 @@ const despawnObjects = async (spawning: typeof spawn = spawn, despawning: typeof
 export const finalizedBenchmarks: readonly Benchmark[] = [
     {
         name: "despawn objects 10K",
-        operation: "A sync point despawning 10K entities whose objects a joined worker fills, with a finalizer there reading the object and a vec3: releasing DOM nodes or GPU handles, which the world's thread doesn't wait for.",
+        operation: "A sync point despawning 10K entities whose objects a joined worker fills, with a removed system there reading the object and a vec3: releasing DOM nodes or GPU handles, which the world's thread doesn't wait for.",
         per: "despawns",
         n: despawnedObjects,
         typical: [1, 10_000],
@@ -151,7 +155,7 @@ export const finalizedBenchmarks: readonly Benchmark[] = [
     },
     {
         name: "despawn objects 10K string resource",
-        operation: "`despawn objects 10K` with the finalizer reading a string resource too, whose record the sync point's stop list holds a copy of, so the thread reads it as it was before apply.",
+        operation: "`despawn objects 10K` with the removed system reading a string resource too, whose record the sync point's stop list holds a copy of, so the thread reads it as it was before apply.",
         per: "despawns",
         n: despawnedObjects,
         typical: [1, 10_000],
@@ -160,7 +164,7 @@ export const finalizedBenchmarks: readonly Benchmark[] = [
     },
     {
         name: "despawn objects 10K linear resource",
-        operation: "`despawn objects 10K` with the finalizer reading a number and a vec3 resource too, which the sync point's stop list holds copies of, so the thread reads them as they were before apply.",
+        operation: "`despawn objects 10K` with the removed system reading a number and a vec3 resource too, which the sync point's stop list holds copies of, so the thread reads them as they were before apply.",
         per: "despawns",
         n: despawnedObjects,
         typical: [1, 10_000],

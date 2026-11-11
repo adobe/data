@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { layoutOf } from '../registry/layout.js';
 import { declarationOf, kindOf, labelOf, whyUnregistered } from '../registry/names.js';
-import { definitionOf } from '../registry/program.js';
+import { definitionOf, finalizerOf } from '../registry/program.js';
 import { reducedBy, scheduleOf } from '../registry/schedule.js';
 import { conditional, matchesSchema } from '../registry/schemas.js';
 import { requireRegistered, threadOf } from '../registry/threads.js';
@@ -197,6 +197,7 @@ const checkTables = (leaf: Leaf): void => {
  * reductions, conditions, `up` or placement can't hold.
  */
 export const checkLeaf = (leaf: Leaf): void => {
+    checkOrdered(leaf);
     const { name, declaration } = leaf;
     const { components, resources, lookup } = declaration;
     checkLists(name, "components", components);
@@ -273,22 +274,37 @@ const checkTarget = (leaf: Leaf): void => {
     if ((resources?.reduce?.length ?? 0) > 0) fail("reduces into nothing");
 };
 
-/** Every leaf under a system, each once. Throws for a member no System constructor returned. */
+/**
+ * Every leaf under a system, each once, changes and removed systems left out. Throws for a member no System
+ * constructor returned.
+ */
 const leavesOf = (system: Definition, leaves: Set<Leaf>): Set<Leaf> => {
     if (system.kind !== "composite") return leaves.add(system);
     for (const member of system.declaration.systems) {
         const definition = definitionOf(member);
-        if (definition === undefined) throw new Error(`System "${system.name}": member "${member.name}" isn't a system a System constructor returned.`);
-        leavesOf(definition, leaves);
+        if (definition !== undefined) leavesOf(definition, leaves);
+        else if (finalizerOf(member) === undefined) throw new Error(`System "${system.name}": member "${member.name}" isn't a system a System constructor returned.`);
     }
     return leaves;
 };
 
+/** Throws for `before`, `after` or `during` naming a changes or removed system, which are ordered only with each other. */
+const checkOrdered = (system: Definition): void => {
+    const { before, after, during } = system.declaration;
+    for (const other of [...before ?? [], ...after ?? [], ...during ?? []]) {
+        if (typeof other === "object" && finalizerOf(other) !== undefined) {
+            throw new Error(`System "${system.name}" is ordered with "${other.name}", a changes or removed system; those run in sync points and are ordered only with each other.`);
+        }
+    }
+};
+
 /**
  * Throws for a member no System constructor returned, members ordered in a cycle, two that conflict with no order
- * between them, or an input field two members declare with different schemas.
+ * between them, an input field two members declare with different schemas, or constraints naming a changes or
+ * removed system.
  */
 export const checkComposite = (composite: Composite): void => {
+    checkOrdered(composite);
     leavesOf(composite, new Set());
     scheduleOf(composite);
 };

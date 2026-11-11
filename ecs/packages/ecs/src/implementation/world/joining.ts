@@ -153,6 +153,11 @@ export type ToJoined = { readonly protocol: typeof protocolName } & (
     /** Finalizers the world places on the thread, as systems are: each one's index there, its id, and the world's numbers for its keys. */
     | { readonly kind: "finalizers"; readonly finalizers: readonly { readonly index: number; readonly id: string; readonly keys: readonly (readonly [number, string])[] }[] }
     /**
+     * A finalizer the world removed, by its index there: once the thread replayed every sync published before, it runs
+     * for every row it matches, then is dropped.
+     */
+    | { readonly kind: "release finalizer"; readonly index: number }
+    /**
      * The input of task `sequence`, which its payload says comes by message; or, with `held`, the input of run
      * `held[1]` of joined thread `held[0]`, which moved here when it was run.
      */

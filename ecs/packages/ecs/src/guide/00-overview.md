@@ -18,7 +18,7 @@ machine allows, on one thread, on every core or on the GPU, with the same result
 - **Changes:** every component keeps added and changed ticks, so a system sees each change once, and its filters skip
   unchanged chunks and blocks of rows.
 - **Queries:** hash, unique, sorted and keyless indexes, all kept incrementally; lookups; hierarchies that rerun only
-  below what changed; rules, finalizers and traits for derived components, cleanup and references.
+  below what changed; derived components, changes and removed systems, and traits: for derivation, cleanup and references.
 - **Threads and the GPU:** worlds share themselves with other threads, which run their own systems; GPU kernels and
   render systems keep their components on the GPU until the CPU reads them.
 

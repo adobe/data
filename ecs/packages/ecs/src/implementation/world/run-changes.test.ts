@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { expect, it } from "vitest";
-import { Entity, Finalizer, System } from "../../index.js";
+import { Entity, System } from "../../index.js";
 import { createWorld } from "../index.js";
 import type { Tables } from "../../interface/system/tables.js";
 import type { Table } from "../../interface/world/table/table.js";
@@ -24,7 +24,7 @@ declare module "@adobe/ecs" {
 }
 
 // An entity spent leaves an echo, which its finalizer spawns at the next sync point.
-Finalizer.create({ components: { with: [name, spent] } }, (row, { commands }) => { commands.spawn([echo])({ [echo]: row[name] }); });
+System.removed({ components: { with: [name, spent] } }, (row, { commands }) => { commands.spawn([echo])({ [echo]: row[name] }); });
 
 const spawn = System.create({}, ({ commands }, input: { readonly who: string }) => { commands.spawn([name])({ [name]: input.who }); });
 const score10 = System.create({ components: { with: [name], not: [score] }, after: [spawn] }, (row, { commands }) => { commands.add(row.entity, score, 10); });

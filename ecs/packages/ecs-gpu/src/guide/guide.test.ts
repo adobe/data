@@ -4,7 +4,7 @@ import { checkChapters } from "ecs-guide-checks";
 /** What each chapter teaches, which its prose names as code and its program does. */
 const teaches: { readonly [chapter: number]: readonly string[] } = {
     1: ["Target.options", "Target.size", "Target.Options.default", "View.target", "View.viewport", "View.projection", "View.wgsl(1)"],
-    2: ["Device.request()", "gpuDevice", "Surface.attach", "Surface.observe", "Frame.systems", "after: [Frame.update], before: [Frame.present]", "View.begin(encoder, view)", "View.states"],
+    2: ["Device.request()", "gpuDevice", "Surface.attach", "Surface.observe", "Frame.releases", "after: [Frame.update], before: [Frame.present]", "View.begin(encoder, view)", "View.states"],
 };
 
 /**

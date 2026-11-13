@@ -403,6 +403,12 @@ move, chromium, by worker count and entity count (a quarter of the entities move
 
 ## Tried and not kept
 
+- **Finding a sync point's pairs by scanning up to eight before using the map,** since `Map.prototype.clear` allocates
+  a new table: `sync point one spawn` 669 bytes and 0.40–0.42 µs mean before and after, `spawn singles` 0.57–0.59 µs
+  both. The allocations a sync point keeps, about 670 bytes with the benchmark's own, are its closures and records in
+  `preparePending` (the closure for derivations, the list of references written, the record of the sync point in
+  progress and of its reservations) and the run's promises; worth revisiting with the sync point's state kept in one
+  reused record.
 - **Shared components' runs through one loop with `where`'s,** the run list a match list or `where`'s passing one: `run 50 idle` 68.3–69.2 → 75.8–79.2 ns a system, the run's closure grown past what V8 inlines. Kept: `where`'s loop apart from the plain one, which runs as before: 68.3–70.8. Worth revisiting if the two loops grow apart in what they do.
 - **A shared value read through its storage's layout on every row,** `layout.kind === "constant" ? layout.value : …`, so copies of rows across archetypes could hold values by row: `shared read 100K` 5.37 ns a row against 4.20 for `column read 100K`. Kept: the value bound into the row's slot once per archetype, 4.04–4.10, and snapshots and stop lists bound a run of one archetype's rows at a time, each archetype its own copy.
 - **Interning every shared value by its canonical text,** a tuple of numbers included: `spawn singles shared` 604 ns a spawn against 229 for `spawn singles plain`, the text built and the value checked against its schema for every spawner looked up. Kept: tuples of numbers found through a tree of their stored leaves, 313–323. Worth revisiting for structs and strings once a workload looks up spawners of them often.

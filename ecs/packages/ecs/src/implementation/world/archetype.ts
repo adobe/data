@@ -132,20 +132,24 @@ export type Archetype = {
     emptiedAt: number;
     emptiedTick: number;
     edges: Edge[] | null;
-    /** By shared component id, then value number: the archetype with that value in place of its own, cached as moves first take it. */
-    readonly sharing: (Archetype | undefined)[][];
+    /**
+     * By shared component id, then value number: the archetype with that value in place of its own, cached as moves
+     * first take it. A map by number, since an array would hold a slot for every value below those it caches.
+     */
+    readonly sharing: (Map<number, Archetype> | undefined)[];
     readonly storages: readonly Storage[];
-    readonly storageOf: ReadonlyMap<number, Storage>;
-    /** Storages by component id, for hot paths. */
+    /** Storages by component id. */
     readonly storageById: readonly (Storage | undefined)[];
     /** The archetype with one more or one fewer component, by component id, cached as edges are first taken. */
     readonly adding: (Archetype | undefined)[];
     readonly removing: (Archetype | undefined)[];
     /** The archetypes several components added at once lead to, each with this one's components and more (`withComponents`). */
     readonly jumps: (Archetype | undefined)[];
-    /** For a move to another archetype: each component they share, as source and target storages. */
-    /** By target archetype id: the storages they share, as source and target pairs, flattened. */
-    readonly moves: (readonly Storage[] | undefined)[];
+    /**
+     * By target archetype id: the storages they share, as source and target pairs, flattened; null before its first
+     * move. A map, since an array by id would hold a slot for every archetype below its targets'.
+     */
+    moves: Map<number, readonly Storage[]> | null;
     entities: Float64Array;
     count: number;
     capacity: number;
@@ -170,8 +174,9 @@ export type Archetype = {
 };
 
 /**
- * A cached edge between two archetypes, one with shared values: `holder[key]` names its target, and holds `cleared`
- * once either end is reclaimed. Kept in each end's `edges` holding it.
+ * A cached edge between two archetypes, one with shared values: `holder[key]` names its target, or the map `holder`'s
+ * entry for `key`, and holds `cleared`, or is deleted, once either end is reclaimed. Kept in each end's `edges` holding
+ * it.
  */
 export type Edge = { readonly holder: object; readonly key: PropertyKey; readonly cleared: unknown; readonly ends: readonly Archetype[] };
 
@@ -290,12 +295,11 @@ export const createArchetype = (memory: Memory, strings: StringStore | null, id:
         edges: null,
         sharing: [],
         storages,
-        storageOf: new Map(storages.map(storage => [storage.component, storage])),
         storageById,
         adding: [],
         removing: [],
         jumps: [],
-        moves: [],
+        moves: null,
         entities: noEntities,
         count: 0,
         capacity: 0,

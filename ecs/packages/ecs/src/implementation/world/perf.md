@@ -248,10 +248,11 @@ is the command itself: resolving its keys and queuing it, and the scan of the wo
 
 Archetypes allocated as their first row arrives, adds of several components in one step, and the resource entity's
 left archetypes released (adobe/data#276), measured in `ArrayBuffer` bytes without shared memory, as a page that isn't
-cross-origin isolated has (`archetype-allocations.test.ts`): adding a 16 MiB typed-array resource and six numbers to the
-resource entity in one command 128 → 32 MiB, and with 23 numbers 384 → 32 MiB, the 32 being the column and the world's
-start of the resource, its zeros; adding three resources one run after another 48 → 16 MiB once the archetypes left are
-released. Node, three rounds each against `35428f95`: `walk to a new cell` 1.83–1.88 against 1.83–1.88 µs, once a
+cross-origin isolated has: adding a 16 MiB typed-array resource and six numbers to the resource entity in one command
+128 → 32 MiB, and with 23 numbers 384 → 32 MiB, the 32 being the column and the world's start of the resource, its
+zeros; adding three resources one run after another 48 → 16 MiB once the archetypes left are released. In the shared
+arena, which `archetype-allocations.test.ts` measures, each column a 32 MiB block: 224 → 32 MiB, 768 → 32 MiB, and
+96 → 0 MiB. Node, three rounds each against `35428f95`: `walk to a new cell` 1.83–1.88 against 1.83–1.88 µs, once a
 reclaimed archetype keeps its first capacity as before rather than letting it go and growing again (2.21 µs when it
 did); `create`, `create flat`, `create flat dynamic`, `churn`, `retag`, `move`, `spawn bulk`, `spawn bulk kernel`,
 `spawn singles`, `spawn sixteen archetypes`, `despawn bulk`, `add tag`, `add tag kernel`, `add value`, `add several`,
@@ -274,6 +275,15 @@ iterations `fastest` ran), each against the record above:
 - **A run's `start` makes no closure over its locals:** a fused group's own kernel call is made by a function outside
   it, so `start`'s `values`, `args` and `tick` no longer live in a context allocated on every run, matching or not.
   `run 50 idle` 1,985 → 336 bytes a run of fifty systems, 1.66–1.70 → 1.58–1.60 µs mean.
+- **Edges cached by archetype id or value number are maps:** a move's storage pairs by target archetype, made on its
+  first move, and a shared component's edges by value number, since an array holds a slot for every id or number below
+  those it caches; and an archetype's storages are found by `storageById` alone, without a map too. Measured over
+  `heapUsed` after collecting, for N entities each in an archetype of its own value of a shared component, then given a
+  tag, given two components, and moved to the next value: with 500 and 1,000 values, 4,111 and 4,953 → 3,110 and 2,952
+  bytes an archetype for its edges, and a move to the next value 4,054 and 6,974 → 1,066 and 968 bytes a walker; 60 to
+  130 bytes less an archetype without the map of storages. `walk to a new cell`, `flicker between 2 cells`, `circle 8
+  cells`, `spawn singles shared`, `retag` and `add tag` within noise; `spawn singles` +1–2%, from the map's lookup per
+  pair; `where 1K cells moving` 10.3 → 9.9 µs mean.
 - **The loop reads its settings into one object, and resources without making a cell:** `loop tick idle` 3,853 →
   3,414 bytes a tick; most of the rest is the platform's `MessageChannel` events and the tick's promises.
 

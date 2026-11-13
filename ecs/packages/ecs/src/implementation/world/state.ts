@@ -674,14 +674,14 @@ export const sharedNumberOf = (state: State, id: number, value: unknown): number
  */
 export const withShared = (state: State, archetype: Archetype, id: number, number: number): Archetype => {
     if (archetype.shared[id] === number) return archetype;
-    const edges = archetype.sharing[id] ??= [];
-    let next = edges[number];
+    const edges = archetype.sharing[id] ??= new Map();
+    let next = edges.get(number);
     if (next === undefined) {
         const values = [...archetype.shared];
         values[id] = number;
         const components = archetype.storageById[id] === undefined ? [...archetype.components, id].sort((a, b) => a - b) : archetype.components;
         next = archetypeOf(state, components, values);
-        edges[number] = next;
+        edges.set(number, next);
         noteEdge(edges, number, undefined, archetype, next);
     }
     return next;
@@ -794,13 +794,14 @@ export const withoutComponent = (state: State, archetype: Archetype, id: number)
 
 /** The storages two archetypes share, as source and target pairs, cached per pair. */
 export const movesOf = (from: Archetype, to: Archetype): readonly Storage[] => {
-    let moves = from.moves[to.id];
+    const cached = from.moves ??= new Map();
+    let moves = cached.get(to.id);
     if (moves === undefined) {
         moves = to.storages.flatMap(storage => {
             const source = from.storageById[storage.component];
             return source === undefined ? [] : [source, storage];
         });
-        from.moves[to.id] = moves;
+        cached.set(to.id, moves);
     }
     return moves;
 };

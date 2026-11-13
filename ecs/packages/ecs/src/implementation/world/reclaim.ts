@@ -118,7 +118,8 @@ const clearEdges = (archetype: Archetype): void => {
     if (edges === null) return;
     archetype.edges = null;
     for (const edge of edges) {
-        if (Reflect.get(edge.holder, edge.key) !== undefined) Reflect.set(edge.holder, edge.key, edge.cleared);
+        if (edge.holder instanceof Map) edge.holder.delete(edge.key);
+        else if (Reflect.get(edge.holder, edge.key) !== undefined) Reflect.set(edge.holder, edge.key, edge.cleared);
         for (const end of edge.ends) {
             if (end === archetype || end.edges === null) continue;
             const at = end.edges.indexOf(edge);

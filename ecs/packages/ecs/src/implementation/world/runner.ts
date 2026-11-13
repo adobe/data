@@ -209,7 +209,7 @@ export const resourceWritesOf = (state: State, declaration: Leaf["declaration"])
  * it, such as the tree its `up` shares, doesn't hold the runner.
  */
 const matcherOf = (required: readonly number[], excluded: readonly number[]) => (archetype: Archetype): boolean =>
-    !archetype.resource && required.every(id => archetype.storageOf.has(id)) && !excluded.some(id => archetype.storageOf.has(id));
+    !archetype.resource && required.every(id => archetype.storageById[id] !== undefined) && !excluded.some(id => archetype.storageById[id] !== undefined);
 
 const leafNumbers = new WeakMap<Leaf, number>();
 let leafCount = 0;

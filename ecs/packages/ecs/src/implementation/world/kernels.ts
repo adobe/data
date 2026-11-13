@@ -249,8 +249,8 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         const columns = sources.map(source => {
             if (source.kind === "entity") return archetype.entities;
             // An optional component's presence: any column that has rows where the archetype has it, empty where it doesn't.
-            if (source.kind === "present") return archetype.storageOf.has(source.id) ? archetype.entities : emptyViews.f64;
-            const storage = archetype.storageOf.get(source.id);
+            if (source.kind === "present") return archetype.storageById[source.id] !== undefined ? archetype.entities : emptyViews.f64;
+            const storage = archetype.storageById[source.id];
             // An optional component's columns are empty where the archetype lacks it: reads give undefined.
             if (storage === undefined && optional.has(source.id)) return absentColumn(state.layouts[source.id], source);
             if (storage === undefined) return fail(`column of "${labelOf(state.keys[source.id])}" isn't in its components.`);
@@ -363,7 +363,7 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         upColumnsOf,
         wasm: generate(muted),
         allPresent: archetype => {
-            for (const id of setup.optional) if (!archetype.storageOf.has(id)) return false;
+            for (const id of setup.optional) if (archetype.storageById[id] === undefined) return false;
             return true;
         },
         compiled: () => compiled,

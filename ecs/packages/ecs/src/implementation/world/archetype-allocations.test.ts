@@ -1,7 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { setFlagsFromString } from "node:v8";
-import { runInNewContext } from "node:vm";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { Entity } from "../../interface/entity/entity.js";
 import { workers } from "../../interface/resources/workers.js";
 import { System } from "../../interface/system/system.js";
@@ -74,17 +72,12 @@ declare module "@adobe/ecs" {
     }
 }
 
-const bigBytes = 2 ** 24;
-/** The world's start of the big resource, its zeros, and its one column. */
-const startAndColumn = 2 * bigBytes;
-
-/** A page that isn't cross-origin isolated: no shared memory, so each column is an `ArrayBuffer` of its own. */
-const isolated = Object.getOwnPropertyDescriptor(globalThis, "crossOriginIsolated");
-const notIsolated = (): void => { Object.defineProperty(globalThis, "crossOriginIsolated", { value: false, configurable: true }); };
-afterEach(() => {
-    if (isolated === undefined) Reflect.deleteProperty(globalThis, "crossOriginIsolated");
-    else Object.defineProperty(globalThis, "crossOriginIsolated", isolated);
-});
+/**
+ * The arena's block for the big resource's column: its 16 MiB and a byte past them, rounded up to a power of two.
+ * Counted in the arena rather than in `ArrayBuffer`s, which other test files running in the process allocate too; a page
+ * without shared memory makes an `ArrayBuffer` of each column instead, as many.
+ */
+const columnBlock = 2 ** 25;
 
 const readFirst = System.create({ readonly: true }, ({ resources }) => resources[first]);
 const readSeven = System.create({ readonly: true }, ({ resources }) =>
@@ -98,43 +91,37 @@ const readB = System.create({ readonly: true }, ({ resources }) => resources[b])
 const readC = System.create({ readonly: true }, ({ resources }) => resources[c]);
 const readD = System.create({ readonly: true }, ({ resources }) => resources[d]);
 
-setFlagsFromString("--expose-gc");
-const collect = runInNewContext("gc");
-
-/** `ArrayBuffer` bytes `step` holds on to, garbage collected before and after. */
-const bytesAdded = async (step: () => Promise<unknown>): Promise<number> => {
-    collect();
-    const before = process.memoryUsage().arrayBuffers;
+/** Bytes the world's arena holds once `step` ran, more than before it. */
+const bytesAdded = async (world: { readonly tables: () => Promise<{ readonly arena: number }> }, step: () => Promise<unknown>): Promise<number> => {
+    const before = (await world.tables()).arena;
     await step();
-    collect();
-    return process.memoryUsage().arrayBuffers - before;
+    return (await world.tables()).arena - before;
 };
 
 describe("adding resources", () => {
     it("allocates a 16 MiB resource's column once for 7 added in one command", async () => {
-        notIsolated();
         await using world = createWorld({ [workers]: 0 });
         await world.run(readFirst);
         const { archetypes } = await world.tables();
-        const added = await bytesAdded(() => world.run(readSeven));
-        expect(added).toBeLessThan(startAndColumn + bigBytes / 2);
+        const added = await bytesAdded(world, () => world.run(readSeven));
+        expect(added).toBeGreaterThanOrEqual(columnBlock);
+        expect(added).toBeLessThan(2 * columnBlock);
         // The resource entity's new archetype alone.
         expect((await world.tables()).archetypes).toBe(archetypes + 1);
     });
 
     it("allocates it once for 24 added in one command", async () => {
-        notIsolated();
         await using world = createWorld({ [workers]: 0 });
         await world.run(readFirst);
-        const added = await bytesAdded(() => world.run(readTwentyFour));
-        expect(added).toBeLessThan(startAndColumn + bigBytes / 2);
+        const added = await bytesAdded(world, () => world.run(readTwentyFour));
+        expect(added).toBeGreaterThanOrEqual(columnBlock);
+        expect(added).toBeLessThan(2 * columnBlock);
     });
 
     it("releases the arrays of the archetype the resource entity left", async () => {
-        notIsolated();
         await using world = createWorld({ [workers]: 0 });
         await world.run(readBig);
-        const added = await bytesAdded(async () => {
+        const added = await bytesAdded(world, async () => {
             await world.run(readB);
             await world.run(readC);
             await world.run(readD);
@@ -142,7 +129,7 @@ describe("adding resources", () => {
             for (let k = 0; k < 12; k++) await world.run(spawnOne);
         });
         // The column of the archetype it's in, made as it arrived, and nothing of those it left.
-        expect(added).toBeLessThan(bigBytes * 1.5);
+        expect(added).toBeLessThan(columnBlock);
     });
 });
 

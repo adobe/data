@@ -42,12 +42,22 @@ export type Entities = Reservations & {
     free: Int32Array;
     length: number;
     /** Indexes freed during the current sync point, reusable after it. */
-    readonly released: number[];
+    readonly released: Released;
     /** Incremented whenever `free`, `archetype`, `row` or `generation` is replaced, for the layout directory. */
     version: number;
 };
 
 const initialCapacity = 64;
+
+/**
+ * Indexes released, the first `count` of `list`: emptied by count, since emptying an array lets its storage go, which a
+ * sync point releasing as many would allocate again.
+ */
+export type Released = { readonly list: number[]; count: number };
+
+export const pushReleased = (released: Released, index: number): void => {
+    released.list[released.count++] = index;
+};
 
 /** Index 0 is never alive and never freed, so `Entity.none` and zeroed entity values name no entity. */
 export const createEntities = (memory: Memory): Entities => {
@@ -62,7 +72,7 @@ export const createEntities = (memory: Memory): Entities => {
         row: allocateArray(memory, Uint32Array, initialCapacity),
         generation: allocateArray(memory, Uint32Array, initialCapacity).fill(0),
         length: 1,
-        released: [],
+        released: { list: [], count: 0 },
         version: 0,
     };
 };
@@ -114,7 +124,7 @@ export const endBlock = (block: Block, unused: number[]): void => {
  */
 export const unreserve = (entities: Entities, { reused, firstNew }: Reserved, start: number, end: number): number => {
     const { length } = reused;
-    for (let position = start; position < end; position++) entities.released.push(position < length ? reused[length - 1 - position] : firstNew + position - length);
+    for (let position = start; position < end; position++) pushReleased(entities.released, position < length ? reused[length - 1 - position] : firstNew + position - length);
     return end - start;
 };
 
@@ -147,12 +157,15 @@ const capacityFor = (current: number, needed: number): number => {
 export type Reserved = { readonly reused: Int32Array; readonly firstNew: number };
 
 /** At the start of a sync point: makes reserved indexes addressable, not yet alive. */
+/** What a sync point reusing no index reuses: read only, so one is shared. */
+const noneReused = new Int32Array(0);
+
 export const materialize = (memory: Memory, entities: Entities): Reserved => {
     const { cursor } = entities;
     const count = Atomics.exchange(cursor, taken, 0);
     const reusedCount = Math.min(count, cursor[freeCount]);
     // A typed copy, since the sync point recycles freed indexes over these.
-    const reused = entities.free.slice(cursor[freeCount] - reusedCount, cursor[freeCount]);
+    const reused = reusedCount === 0 ? noneReused : entities.free.slice(cursor[freeCount] - reusedCount, cursor[freeCount]);
     cursor[freeCount] -= reusedCount;
     const firstNew = entities.length;
     const length = entities.length + count - reusedCount;
@@ -179,18 +192,21 @@ export const kill = (entities: Entities, index: number): void => {
 /** Kills an index; it becomes reusable after the current sync point. */
 export const release = (entities: Entities, index: number): void => {
     kill(entities, index);
-    entities.released.push(index);
+    pushReleased(entities.released, index);
 };
 
 /** At the end of a sync point: freed indexes become reservable. */
 export const recycle = (memory: Memory, entities: Entities): void => {
     const { cursor, released } = entities;
-    const count = cursor[freeCount] + released.length;
+    const first = cursor[freeCount];
+    const count = first + released.count;
     if (count > entities.free.length) {
-        entities.free = growArray(memory, entities.free, Int32Array, capacityFor(entities.free.length, count), cursor[freeCount]);
+        entities.free = growArray(memory, entities.free, Int32Array, capacityFor(entities.free.length, count), first);
         entities.version++;
     }
-    entities.free.set(released, cursor[freeCount]);
+    const { free } = entities;
+    const { list } = released;
+    for (let k = 0; k < released.count; k++) free[first + k] = list[k];
     cursor[freeCount] = count;
-    released.length = 0;
+    released.count = 0;
 };

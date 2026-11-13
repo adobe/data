@@ -259,6 +259,24 @@ did); `create`, `create flat`, `create flat dynamic`, `churn`, `retag`, `move`, 
 remove` 181–184 against 188–192 ms, +4%, where profiles show the same time in the same functions, registration and
 garbage collection.
 
+An allocation audit (node, `HeapProfiler` sampling every KiB with collected objects kept, bytes divided by the
+iterations `fastest` ran), each against the record above:
+
+- **A sync point empties its plan's arrays by count, not by `length = 0`,** which lets an array's storage go, so its
+  next `push` allocates it again (17 elements at the least); maps are cleared only when they hold something, since
+  `clear` allocates a new table; `born` is the plan's own map, the list of queued buffers swaps with a spare rather than
+  being spliced off, `sort` sums each target's rows in an array by archetype id rather than a new map, and a sync point
+  reusing no index shares one empty list of them. `sync point one spawn` 1,286 → 668 bytes, 0.51 → 0.43 µs mean;
+  `spawn singles` 1,249 → 632 bytes, 0.685 → 0.59 µs mean.
+- **Released entity indexes are kept by count** for the same reason: `despawn bulk` 5.46 → 2.58 MB an iteration of
+  100K despawns, 1.49 → 1.32–1.39 ms; `despawn bulk kernel` 1.49–1.55 → 1.38–1.40 ms; `despawn tagged 100K rows`
+  1.34–1.36 → 1.25–1.26 ms.
+- **A run's `start` makes no closure over its locals:** a fused group's own kernel call is made by a function outside
+  it, so `start`'s `values`, `args` and `tick` no longer live in a context allocated on every run, matching or not.
+  `run 50 idle` 1,985 → 336 bytes a run of fifty systems, 1.66–1.70 → 1.58–1.60 µs mean.
+- **The loop reads its settings into one object, and resources without making a cell:** `loop tick idle` 3,853 →
+  3,414 bytes a tick; most of the rest is the platform's `MessageChannel` events and the tick's promises.
+
 ## Where the gains came from
 
 Step figures marked (vitest) are from the node vitest lane: read them as relative.

@@ -174,8 +174,12 @@ export type State = {
     readonly referencesWritten: number[];
     /** The entities sync points spawned, despawned, moved or wrote references of, for `up` systems and indexes. */
     readonly journal: Journal;
-    /** Command buffers for the next sync point, in merge order. */
-    readonly queued: Queued[];
+    /**
+     * Command buffers for the next sync point, in merge order. A sync point takes the list, leaving `spareQueued`, empty,
+     * in its place, and its own list is the spare, emptied once it's done, so no sync point allocates one.
+     */
+    queued: Queued[];
+    spareQueued: Queued[];
     /** Buffers that workers' command ring segments drain into, the first `drained` in use until the sync point's end. */
     readonly drains: CommandBuffer[];
     drained: number;
@@ -382,6 +386,7 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
         resources: new Set(),
         tick: 0,
         queued: [],
+        spareQueued: [],
         drains: [],
         drained: 0,
         resourceEntity: -1,

@@ -29,6 +29,10 @@ export type Plan = {
     readonly more: Map<number, number[]>;
     /** Components removed and added again here, so their `added` tick is new although `from` had them. */
     readonly fresh: Map<number, number[]>;
+    /** By archetype id, the first row this sync point spawned into it: kept across sync points, emptied after each. */
+    readonly born: Map<number, number>;
+    /** By archetype id, the rows its pairs bring into it, while the sync point grows each once; all 0 between. */
+    incoming: Int32Array<ArrayBuffer>;
     /** Where each entity index's entry is, or -1; reset after each sync point. */
     slots: Int32Array;
     /**
@@ -60,6 +64,8 @@ export type Pairs = {
     readonly to: number[];
     readonly count: number[];
     readonly start: number[];
+    /** How many pairs there are: the arrays hold the last sync point's past it. */
+    length: number;
     /** Entries that leave a row, which is removed after the pairs arrive. */
     leaving: number;
     order: Int32Array<ArrayBuffer>;
@@ -77,12 +83,14 @@ export const createPlan = (): Plan => ({
     despawned: new Uint8Array(initialEntries),
     row: new Int32Array(initialEntries),
     pair: new Int32Array(initialEntries),
-    pairs: { byKey: new Map(), from: [], to: [], count: [], start: [], leaving: 0, order: new Int32Array(initialEntries) },
+    pairs: { byKey: new Map(), from: [], to: [], count: [], start: [], length: 0, leaving: 0, order: new Int32Array(initialEntries) },
     buffer: new Int32Array(initialEntries),
     start: new Int32Array(initialEntries),
     end: new Int32Array(initialEntries),
     more: new Map(),
     fresh: new Map(),
+    born: new Map(),
+    incoming: new Int32Array(0),
     slots: new Int32Array(0),
     cleared: [],
     clearing: new Uint8Array(0),

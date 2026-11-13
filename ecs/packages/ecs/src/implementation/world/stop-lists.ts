@@ -1,6 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { SyncSystem } from '../../interface/system/sync-system.js';
 import { viewsOf, type Layout } from '../../interface/registry/layout.js';
+import { pushReleased, type Released } from './entities.js';
 import type { Memory } from './memory.js';
 import type { StringStore } from './strings.js';
 import { logRanThroughWord, logStopsWord, type MoveLog } from './move-log.js';
@@ -318,12 +319,12 @@ const letGo = (writer: StopWriter, block: Written): void => {
 };
 
 /** Returns a held index once no thread will run its stop any more: it's reusable after the sync point. */
-const unhold = (holds: Holds, released: number[], held: readonly number[]): void => {
+const unhold = (holds: Holds, released: Released, held: readonly number[]): void => {
     const { counts } = holds;
     for (const index of held) {
         if (--counts[index] !== 0) continue;
         holds.size--;
-        released.push(index);
+        pushReleased(released, index);
     }
 };
 
@@ -331,7 +332,7 @@ const unhold = (holds: Holds, released: number[], held: readonly number[]): void
  * Takes up what the thread acknowledged: blocks through the sync it ran its stops through return their held indexes, and
  * all but the newest of them are freed, since the thread reads the next block's offset from that one.
  */
-export const settleStops = (writer: StopWriter, holds: Holds, released: number[]): void => {
+export const settleStops = (writer: StopWriter, holds: Holds, released: Released): void => {
     const { written, memory } = writer;
     if (written.length === 0) return;
     const ranThrough = Atomics.load(writer.log.header, logRanThroughWord) >>> 0;
@@ -354,7 +355,7 @@ export const settleStops = (writer: StopWriter, holds: Holds, released: number[]
  * Once the thread is gone: every held index returns, and each removed system with stops it never acknowledged is a `"thread"`
  * failure of the next sync point's run.
  */
-export const endStops = (writer: StopWriter, holds: Holds, released: number[], label: string): { readonly syncSystem: SyncSystem; readonly error: Error; readonly kind: "thread" }[] => {
+export const endStops = (writer: StopWriter, holds: Holds, released: Released, label: string): { readonly syncSystem: SyncSystem; readonly error: Error; readonly kind: "thread" }[] => {
     settleStops(writer, holds, released);
     const missed = new Map<SyncSystem, number>();
     for (const block of writer.written) {

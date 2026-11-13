@@ -705,6 +705,13 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         Reflect.apply(compiled.run, undefined, call);
     };
 
+    /**
+     * A run's own kernel call over an archetype, for a fused group to make: made here rather than in `start`, since a
+     * closure there would put its locals in a context `start` allocates on every run.
+     */
+    const ownRun = (bound: BoundKernel, values: readonly unknown[], args: unknown, tick: number) =>
+        (archetype: Archetype): void => runKernelLocally(bound, archetype, -1, values, args, tick);
+
     const runKernelLocally = (bound: BoundKernel, archetype: Archetype, since: number, values: readonly unknown[], args: unknown, tick: number): void => {
         const slot = partialCount === 0 ? 0 : takeSlots(1);
         if (bound.compiled() !== null && bound.wasm !== null && bound.allPresent(archetype)) return runWasm(bound, archetype, 0, archetype.count, since, values, args, tick, partialAddress(slot));
@@ -1328,7 +1335,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
                 return chunks;
             }
             if (group !== null && role !== null && !lastMember && kernel !== null) {
-                group.held[role.member] = { values, tick, runOwn: archetype => runKernelLocally(kernel, archetype, -1, values, args, tick) };
+                group.held[role.member] = { values, tick, runOwn: ownRun(kernel, values, args, tick) };
             }
             for (const archetype of matches) {
                 if (archetype.count === 0) continue;
@@ -1342,7 +1349,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
                     }
                     else {
                         if (archetype.count >= state.poolThreshold) state.poolWanted = true;
-                        runGroup(group, archetype, values, tick, covered => runKernelLocally(kernel, covered, -1, values, args, tick));
+                        runGroup(group, archetype, values, tick, ownRun(kernel, values, args, tick));
                     }
                 }
                 else if (workers !== null && archetype.count >= minimumFor(workers)) {

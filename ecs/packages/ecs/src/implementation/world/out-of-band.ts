@@ -13,8 +13,8 @@ export const raise = (error: Error): void => {
 };
 
 /**
- * Failures no run rejects with, raised out of band: once per subject, a system, finalizer, index or GPU work, while
- * it keeps failing. The world tells it what recovered: a system or finalizer that ran without failing, an index a
+ * Failures no run rejects with, raised out of band: once per subject, a system, sync system, index or GPU work, while
+ * it keeps failing. The world tells it what recovered: a system or sync system that ran without failing, an index a
  * tick found no conflict in, GPU work whose scopes gave no error. Once closed, as its world is disposed, it raises
  * nothing more. With nothing reported, what the world asks of it costs a size check.
  */

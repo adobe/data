@@ -2,7 +2,7 @@
 import type { Archetype } from './archetype.js';
 import { readCell } from './cells.js';
 import { generationOf, indexOf, locate } from './entities.js';
-import { commandValue, isMissing } from './finalizers.js';
+import { commandValue, isMissing } from './sync-systems.js';
 import { createHolders, fitHolders, forEachHolder, linkHolder, unlinkHolder } from './holders.js';
 import { closureOf, owner } from './structure.js';
 import { archetypeOf, withoutComponent, type State } from './state.js';
@@ -85,7 +85,7 @@ export const linkBorn = (state: State, born: ReadonlyMap<number, number>, writte
 
 /**
  * Despawns the holders that own a reference to an entity that is despawned or never lives, and removes `weak`
- * references to one, transitively, before rules close the plan. A holder acts only if its value once the plan applies
+ * references to one, transitively, before derivations close the plan. A holder acts only if its value once the plan applies
  * names the target, so a reference pointed elsewhere in the same sync point is left alone.
  */
 export const cascadeReferences = (state: State, queued: readonly Queued[], written: Written, entryOf: EntryOf): void => {

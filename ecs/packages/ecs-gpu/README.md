@@ -96,7 +96,10 @@ target holds and limits the pass to the view's rectangle.
 - **`Frame.update`:** brings targets, surfaces and views up to date with their entities and the world's device, then
   clears each target that declares a clear color.
 - **`Frame.present`:** presents every surface.
-- **`Frame.systems`:** both, in order.
+- **`Frame.releases`:** releases what `Frame.update` made for a target, surface or view once its entity stops being
+  one, and for every one when the world is disposed: removed systems, which run while added.
+- **`Frame.systems`:** all three, `Frame.update` and `Frame.present` in order, which a world adds. A world that runs
+  its frames instead adds `Frame.releases`, and runs `Frame.update` and `Frame.present` with its draws.
 
 Render systems drawing into targets go after `Frame.update` and before `Frame.present`.
 

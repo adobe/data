@@ -29,9 +29,9 @@ type Structs = { readonly [K in Component.Key | Resource.Key as K]: IsString<Val
 export interface Traits<N extends Component.Key | Resource.Key> {
     /** The value type: declared as a TypeScript type, registered as a schema for it when it's data. */
     readonly type: unknown;
-    /** Present only while a rule deriving it matches, so commands never add or remove it. Not on a shared component. */
+    /** Present only while a derivation deriving it matches, so commands never add or remove it. Not on a shared component. */
     readonly derived: N extends Component.Key ? Components[N] extends { readonly shared: true } ? never : true : never;
-    /** Exists only while its host component does, and is removed with it. Not on a derived component, which its rule covers. */
+    /** Exists only while its host component does, and is removed with it. Not on a derived component, which its derivation covers. */
     readonly within: N extends Component.Key
         ? Components[N] extends { readonly derived: true } | { readonly within: N } ? never : Component.Key
         : never;

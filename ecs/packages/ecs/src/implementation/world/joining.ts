@@ -69,7 +69,7 @@ export type ToWorld = { readonly protocol: typeof protocolName } & (
      */
     | {
         readonly kind: "join"; readonly threads: readonly string[]; readonly waits: boolean; readonly lock: string | null;
-        /** With claims: the ids of the systems and finalizers this thread imported, so the world checks those it places here. */
+        /** With claims: the ids of the systems and sync systems this thread imported, so the world checks those it places here. */
         readonly imported: readonly string[];
     }
     /** The id of a key or system it numbers `number`, posted before the first use of that number. */
@@ -101,8 +101,8 @@ export type ToWorld = { readonly protocol: typeof protocolName } & (
         readonly stamps?: readonly number[];
         readonly values?: readonly (readonly [number, unknown])[];
     }
-    /** What its finalizers threw, by their index on this thread, which the world reports out of band. */
-    | { readonly kind: "finalized"; readonly errors: readonly (readonly [number, WorkerError])[] }
+    /** What its sync systems threw, by their index on this thread, which the world reports out of band. */
+    | { readonly kind: "removed failed"; readonly errors: readonly (readonly [number, WorkerError])[] }
     /** It dropped what it held for the systems unplaced at these indexes, which the world may place again. */
     | { readonly kind: "unplaced"; readonly indexes: readonly number[] }
     /**
@@ -150,8 +150,13 @@ export type ToJoined = { readonly protocol: typeof protocolName } & (
     | { readonly kind: "observer"; readonly systems: readonly ObserverSetup[] }
     /** Observer systems the world removed, by their indexes there, whose removed words are set: the thread drops them and says so. */
     | { readonly kind: "unplace observers"; readonly indexes: readonly number[] }
-    /** Finalizers the world places on the thread, as systems are: each one's index there, its id, and the world's numbers for its keys. */
-    | { readonly kind: "finalizers"; readonly finalizers: readonly { readonly index: number; readonly id: string; readonly keys: readonly (readonly [number, string])[] }[] }
+    /** Sync systems the world places on the thread, as systems are: each one's index there, its id, and the world's numbers for its keys. */
+    | { readonly kind: "sync systems"; readonly syncSystems: readonly { readonly index: number; readonly id: string; readonly keys: readonly (readonly [number, string])[] }[] }
+    /**
+     * A sync system the world removed, by its index there: once the thread replayed every sync published before, it runs
+     * for every row it matches, then is dropped.
+     */
+    | { readonly kind: "release sync system"; readonly index: number }
     /**
      * The input of task `sequence`, which its payload says comes by message; or, with `held`, the input of run
      * `held[1]` of joined thread `held[0]`, which moved here when it was run.

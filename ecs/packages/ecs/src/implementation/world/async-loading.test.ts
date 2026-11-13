@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { expect, it } from "vitest";
-import { Entity, Finalizer, Rule, type Schema, System, World } from "../../index.js";
+import { Component, Entity, type Schema, System, World } from "../../index.js";
 import { Observe } from "../../observe/index.js";
 import { createWorld } from "../index.js";
 
@@ -37,8 +37,8 @@ const load = async (path: string): Promise<number> => {
     return nextHandle++;
 };
 
-// 1. A rule derives a slot for every visible entity with a mesh source.
-Rule.create({ components: { with: [meshSource], not: [hidden] }, derive: [meshSlot] });
+// 1. A derivation derives a slot for every visible entity with a mesh source.
+Component.derive(meshSlot, { from: [meshSource], not: [hidden] });
 
 // 2. Each new slot gets a fresh token, and its load is requested; the application starts requested loads.
 const request = System.create({
@@ -58,8 +58,8 @@ const apply = System.create({
     else loaded.delete(input.handle);
 });
 
-// 4. When the slot goes, its mesh goes with it, and the finalizer releases what was loaded.
-Finalizer.create({ components: { with: [meshReady] } }, row => { loaded.delete(row[meshReady]); });
+// 4. When the slot goes, its mesh goes with it, and a removed system releases what was loaded.
+const release = System.removed({ components: { with: [meshReady] } }, row => { loaded.delete(row[meshReady]); });
 
 const spawn = System.create({}, ({ commands }) => {
     commands.spawn([meshSource])({ [meshSource]: "ship.glb" });
@@ -71,6 +71,7 @@ const hide = System.create({}, ({ commands }, input: { readonly entity: Entity }
 
 it("loads resources asynchronously for derived slots, and releases them when the slot goes", async () => {
     await using world = createWorld();
+    world.add(release);
     await world.run(spawn);
     await world.run(request);
     const [ship, rock] = await Observe.toPromise(Observe.resource(world, requests));

@@ -1,8 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
+import { Component } from "../../interface/component/component.js";
 import { describe, expect, it } from "vitest";
 import type { Essential } from "../../interface/component/value.js";
 import { Entity } from "../../interface/entity/entity.js";
-import { Rule } from "../../interface/rule/rule.js";
 import type { Schema } from "../../interface/schema/schema.js";
 import type { Commands } from "../../interface/system/commands.js";
 import { System } from "../../interface/system/system.js";
@@ -50,7 +50,7 @@ declare module "@adobe/ecs" {
         [level]: { type: number };
     }
 }
-Rule.create({ components: { with: [other, score] }, derive: [slot] });
+Component.derive(slot, { from: [other, score] });
 
 const unit = [position, score, tag] as const;
 const made = [score, tag] as const;
@@ -221,7 +221,7 @@ describe("spawn", () => {
         const { world, run } = withCommands();
         const tried = (list: readonly unknown[]) => run(commands => { Reflect.apply(commands.spawn, commands, [list]); });
         await expect(tried([score, unregistered])).rejects.toThrow(`"commandsTest/unregistered" has no registered schema`);
-        await expect(tried([score, slot])).rejects.toThrow("is derived, so only rules add and remove it");
+        await expect(tried([score, slot])).rejects.toThrow("is derived, so only its derivations add and remove it");
         await expect(tried([level])).rejects.toThrow(`"commandsTest/level" is a resource, not a component`);
         await expect(tried([score, score])).rejects.toThrow(`lists "commandsTest/score" twice`);
         await expect(tried(["commandsTest/score"])).rejects.toThrow("a component's key is a symbol");

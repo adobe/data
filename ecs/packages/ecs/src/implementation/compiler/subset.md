@@ -21,6 +21,7 @@ expression  = literal | identifier | tuple | struct | unary | binary | logical |
 literal     = number | boolean | "null" | "undefined" | "NaN" | "Infinity"
 tuple       = "[" expression { "," expression } "]"
 struct      = "{" name ":" expression { "," name ":" expression } "}"
+            | "{" "[" component "]" ":" expression { "," "[" component "]" ":" expression } "}"   // a command's values
 unary       = ("-" | "+" | "!" | "~") expression
 binary      = expression ("+" | "-" | "*" | "/" | "%" | "**" | "<" | ">" | "<=" | ">=" | "==" | "!=" | "===" | "!=="
               | "&" | "|" | "^" | "<<" | ">>" | ">>>") expression
@@ -56,17 +57,20 @@ call        = Math-function | helper | lookup | command | reducer
   asin acos atan atan2 sinh cosh tanh asinh acosh atanh fround imul clz32`, and its constants.
 - **Helpers:** functions and constants of any module the build resolves to a file, the kernel's own included, the
   package's math types among them. Each call is inlined in its own module's scope. A helper's body is in the same
-  subset; it may `return` early inside `if`, and must end with `return <value>`. No recursion, no closures, no default
-  or rest parameters, no spread.
+  subset; it may `return` early inside `if`, and returns its value at its end, or nothing (`undefined`) where it only
+  issues commands. No recursion, no closures, no default or rest parameters, no spread.
 - **Lookups:** `context.lookup.name(entity)` returns the other entity's values in that lookup's `read`, or `null`.
 - **Reductions:** `context.reduce[resource](value)` contributes a value to a resource in `reduce`; see `design.md`.
 - **Commands:** `context.commands.spawn(components)({ [component]: value, ... })`, `despawn(entity)`,
   `add(entity, component, value)` or `add(entity, components, { ... })`, and `remove(entity, component)` or
   `remove(entity, components)`, with component keys bound at module scope. A list of components is an array literal of
-  them, or a constant holding one (`as const`), in the kernel's module or imported, also through
-  re-exports and namespaces, its keys read in the scope of the module that declares it; a component it lists that a
-  command gives no value starts at its start. A list the build can't read, such as one computed when its module runs,
-  fails the build at the command. `add` and `remove` take a name as one key when its definition is `Symbol(...)`, as a
+  them, or a constant holding one (`as const`), in the module of the code issuing the command, the kernel's or a
+  helper's, or imported, also through re-exports and namespaces, its keys read in the scope of the module that
+  declares it; a component it lists that a command gives no value starts at its start. A list's values are a struct
+  keyed by its components, `{ [component]: value }`, written in the command or held by a local or returned by a helper,
+  each value evaluated where the struct is written; such a struct is only a command's value. A key the kernel's module
+  doesn't import is imported by its compiled module from the module defining it, which must export it. A list the
+  build can't read, such as one computed when its module runs, fails the build at the command. `add` and `remove` take a name as one key when its definition is `Symbol(...)`, as a
   list when it's a list, and otherwise fail the build with the reason; a name from a package external to the build,
   which the build can't read, is one key, and registration rejects a list there. The spawner is called where it's made.
 

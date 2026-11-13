@@ -7,7 +7,7 @@ const draw = System.render({ shader: { accessors: {} }, after: [Frame.update], b
     for (const view of resources[View.states]?.values() ?? []) View.begin(encoder, view).end();
 });
 
-const frame = System.create({ systems: [Frame.systems, draw] });
+const frame = System.create({ systems: [Frame.update, draw, Frame.present] });
 
 const spawnView = System.create({ components: { with: [Target.size] } }, (row, { commands }) => {
     commands.spawn([View.target, View.viewport, View.projection])({ [View.target]: row.entity, [View.viewport]: [0, 0, 1, 1], [View.projection]: Mat4x4.identity });
@@ -19,6 +19,7 @@ export const main = async (): Promise<void> => {
     // Null where there's no WebGPU, as in node: the world then draws nothing, and runs the same systems.
     const device = await Device.request();
     const world = World.create({ [gpuDevice]: device });
+    world.add(Frame.releases);
     // The guide's Output tab has an element #output; elsewhere, as in node, there's none.
     const output = globalThis.document?.querySelector<HTMLElement>("#output") ?? null;
     const canvas = output?.appendChild(document.createElement("canvas")) ?? null;

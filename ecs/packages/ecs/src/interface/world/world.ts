@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Input } from '../system/input.js';
 import type { System } from '../system/system.js';
-import type { ChangeSet } from '../finalizer/body.js';
+import type { ChangeSet } from '../system/sync-system-body.js';
 import type { Essential } from '../component/value.js';
 import type { Resource } from '../resource/resource.js';
 
@@ -17,23 +17,24 @@ export type World = {
      * `undefined` when its body was skipped, and any other system or composite to nothing. So a one-off read is a run
      * of a readonly system returning what it read; one that runs on a joined thread, as it reads objects there, runs
      * there before the run resolves, to its value as structured clone. A run of readonly systems alone runs them once
-     * after an empty sync point, and doesn't wake the loop.
+     * after an empty sync point, and doesn't wake the loop. It never takes a changes or removed system, nor a composite
+     * holding one, in types and, rejecting, at runtime: those run while added.
      *
-     * When a system or finalizer of the run fails, later tiers are skipped, the sync point still applies what was done,
-     * and once its readonly systems ran the run rejects with an `Error` naming each failure, its system's label and id,
-     * message and cause. It rejects too when the run can't happen or finish: registration fails, the world is disposed,
+     * When a system of the run, a changes or removed system included, fails, later tiers are skipped, the sync point
+     * still applies what was done, and once its readonly systems ran the run rejects with an `Error` naming each
+     * failure, its system's label and id, message and cause. It rejects too when the run can't happen or finish: registration fails, the world is disposed,
      * its GPU device is lost, or its sync point can't apply a command's value. What fails after it, a readonly system
      * added or GPU work, is reported out of band, as ticks' failures are (see `add`).
      */
     run<I, R>(system: System<I, R>, ...input: Input<NoInfer<I>>): Promise<R>;
     /**
-     * Runs as `run` does, and resolves to this run's own changes, in the shape `Finalizer.changes` gives, rather than its
-     * value: the structural changes its commands made, rules and cascades included, to every component that isn't
+     * Runs as `run` does, and resolves to this run's own changes, in the shape `System.changes` gives, rather than its
+     * value: the structural changes its commands made, derivations and cascades included, to every component that isn't
      * derived or an object a joined thread fills, the values its adds gave components entities had before and after, and
-     * each resource its systems write or reduce into whose value changed, compared as `Finalizer.changes` compares them;
-     * `previous` and `next` give values before and after the run. Commands the finalizers of an earlier sync point
-     * queued apply first, at a sync point of their own. Values written to rows aren't structural changes, so they're in
-     * none. The run pays for this only when asked. Only on the world's thread: a joined thread's rejects.
+     * each resource its systems write or reduce into whose value changed, compared as `System.changes` compares them;
+     * `previous` and `next` give values before and after the run. Commands the changes and removed systems of an earlier
+     * sync point queued apply first, at a sync point of their own. Values written to rows aren't structural changes, so they're in
+     * none, and its `written` is empty: a run's own changes don't follow rows written. The run pays for this only when asked. Only on the world's thread: a joined thread's rejects.
      */
     run<I, R>(system: System<I, R>, ...input: [...Input<NoInfer<I>>, options: { readonly changes: true }]): Promise<ChangeSet<Essential, Resource.Key>>;
     /**
@@ -49,6 +50,11 @@ export type World = {
      * naming what failed with what it threw as its cause: through `reportError` where the platform has it, as browsers
      * and their workers do, and otherwise thrown from a task of its own, an uncaught exception, as in node. A system is
      * reported once while it keeps failing, and again once it has run without failing since.
+     *
+     * A changes or removed system, alone or within a composite, runs at every sync point while it's added, from the next
+     * one on, in runs and ticks alike, and doesn't count as an added system for ticking. Those added run in the order
+     * added, but for `before` and `after`; `add` throws, adding nothing, for two that cycle, are on different threads and
+     * ordered, or conflict over a resource with no ordering path between them.
      */
     add(system: System<void>): void;
     /**
@@ -56,7 +62,9 @@ export type World = {
      * released. A system added both alone and within an added composite stays until both are removed; constraints
      * naming a removed system are ignored. Removing a value that isn't added does nothing. Throws, removing nothing,
      * when the systems left would conflict with no ordering path between them, as `add` does. On a joined thread it
-     * takes only readonly systems.
+     * takes only readonly systems. A removed system, alone or within a composite, once no value holding it is added,
+     * runs between runs for every entity it still matches, on its joined thread for one running there; its commands apply
+     * at the next sync point.
      */
     remove(system: System<void>): void;
     /**

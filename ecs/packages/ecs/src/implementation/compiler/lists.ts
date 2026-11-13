@@ -7,22 +7,37 @@ import type { Module, ModuleBinding } from './module-scope.js';
 /** The keys a list names, each as an expression of the kernel's module; or why the node isn't a list the compiler can read. */
 export type ListNames = readonly string[] | { readonly error: string };
 
-/** How a kernel's module reads its lists of keys, wherever they are declared. */
+/**
+ * A key the kernel's module doesn't bind, which its compiled module imports as `local`: the export `imported` of the
+ * module at `file`, which defines it.
+ */
+export type KeyImport = { readonly local: string; readonly file: string; readonly imported: string };
+
+/**
+ * How a kernel reads its lists of keys, wherever they are declared, in the scope of the module naming them: the
+ * kernel's, or a helper's it inlines. Keys are named by expressions of the kernel's module.
+ */
 export type Lists = {
     /**
-     * The keys a list names: an array literal of the kernel's module-scope identifiers, or a constant, of the kernel's
-     * module or imported through any re-exports and namespaces, holding an array literal.
-     * A key of another module's list is named by the kernel's binding of the same definition, or else by the list
-     * itself, as `List[k]`.
+     * The keys a list names: an array literal of `module`'s module-scope identifiers, or a constant, of `module` or
+     * imported through any re-exports and namespaces, holding an array literal.
+     * A key `module` doesn't define in the kernel's module, or that another module's list names, is named by the
+     * kernel's binding of the same definition, else by the kernel's list itself, as `List[k]`, else by an import of its
+     * definition (`imports`).
      */
-    readonly names: (node: Node) => ListNames;
+    readonly names: (node: Node, module?: Module) => ListNames;
     /**
-     * What a command's component argument names: a list, or one key by the expression the kernel's module names it with.
-     * A name is one key when its definition is a call of the global `Symbol`, identified or not, or a literal, which
-     * registration rejects for not being a symbol. A name defined in a module the build can't read, such as a package
-     * external to it, is taken as a key, and registration rejects a list there. Anything else fails with the reason.
+     * What a command's component argument names in `module`: a list, or one key by the expression the kernel's module
+     * names it with. A name is one key when its definition is a call of the global `Symbol`, identified or not, or a
+     * literal, which registration rejects for not being a symbol. A name defined in a module the build can't read, such
+     * as a package external to it, is taken as a key, and registration rejects a list there. Anything else fails with
+     * the reason.
      */
-    readonly component: (node: Node) => Named;
+    readonly component: (node: Node, module?: Module) => Named;
+    /** The expression the kernel's module names the key `module` binds as `name` with, or why it can't name it. */
+    readonly key: (name: string, module: Module) => string | { readonly error: string };
+    /** The keys the kernel names that its module doesn't bind, which its compiled module imports. */
+    readonly imports: () => readonly KeyImport[];
     /** Whether the component the kernel's module names `name` is declared `shared`, read through the build from the module declaring it. */
     readonly shared: (name: string) => boolean;
     /**
@@ -112,20 +127,20 @@ const chain = (node: Node): readonly string[] | null => {
     return object === null ? null : [...object, node.property.name];
 };
 
-/** What a node names: an array literal, or the definition an identifier or a namespace member chain names. */
-const find = (node: Node, kernel: Module, link: Link | null, wanted: Wanted): Followed => {
-    if (node.type === "ArrayExpression") return { literal: node, module: kernel, reference: "" };
+/** What a node of `scope` names: an array literal, or the definition an identifier or a namespace member chain names. */
+const find = (node: Node, scope: Module, kernel: Module, link: Link | null, wanted: Wanted): Followed => {
+    if (node.type === "ArrayExpression") return { literal: node, module: scope, reference: "" };
     const names = chain(node);
     if (names === null) return { error: "commands and kernel declarations name a list as an array literal, or a constant holding one" };
     const [first, ...members] = names;
     const reference = names.join(".");
-    const binding = kernel.bindings.get(first);
+    const binding = scope.bindings.get(first);
     if (binding === undefined) return { error: `${first} isn't bound at module scope` };
-    if (members.length === 0) return follow(first, binding, kernel, kernel, link, reference, wanted, new Set());
+    if (members.length === 0) return follow(first, binding, scope, kernel, link, reference, wanted, new Set());
     const what = wanted === "list" ? "a list" : "a key or a list";
     if (binding.kind !== "importNamespace") return { error: `${first} isn't a module namespace, so ${reference} isn't ${what} the compiler can read` };
     if (link === null) return wanted === "list" ? { error: `${reference} is imported, and this build doesn't link imports` } : { key: null };
-    let resolved = resolveBinding(link, kernel, first, binding);
+    let resolved = resolveBinding(link, scope, first, binding);
     for (const member of members) {
         if (resolved.kind === "error") return followResolved(resolved, kernel, link, reference, wanted, new Set());
         if (resolved.kind !== "namespace") return { error: `${reference} isn't ${what} the compiler can read` };
@@ -142,6 +157,13 @@ const definition = (module: Module, name: string, binding: ModuleBinding, link: 
     return resolved.kind === "binding" ? `${resolved.module.file}\0${resolved.name}` : null;
 };
 
+/** A short, stable hash of a definition's identity, so each key a module imports has one local name across its kernels. */
+const hashOf = (text: string): string => {
+    let hash = 0x811c9dc5;
+    for (let index = 0; index < text.length; index++) hash = Math.imul(hash ^ text.charCodeAt(index), 0x01000193);
+    return (hash >>> 0).toString(36);
+};
+
 /**
  * Lists as `kernel` reads them. `nodes` are the kernel's declaration and body: the kernel's names for keys of other
  * modules' lists are found among the module-scope identifiers they use, so only those are followed.
@@ -149,7 +171,11 @@ const definition = (module: Module, name: string, binding: ModuleBinding, link: 
 export const createLists = (kernel: Module, link: Link | null, nodes: readonly Node[]): Lists => {
     /** Each key definition's name in the kernel's module, filled from the kernel's identifiers when a list of another module is first read. */
     let named: Map<string, string> | null = null;
-    const nameOf = (identity: string, fallback: string): string => {
+    /** The keys the kernel's module imports, by the local name it gives each. */
+    const imported = new Map<string, KeyImport>();
+    /** The definition of each name the kernel gives a key, where the kernel's module doesn't bind the name. */
+    const unbound = new Map<string, string>();
+    const kernelNames = (): Map<string, string> => {
         if (named === null) {
             const found = new Map<string, string>();
             const followed = new Set<string>();
@@ -165,13 +191,39 @@ export const createLists = (kernel: Module, link: Link | null, nodes: readonly N
             for (const node of nodes) visit(node);
             named = found;
         }
-        const name = named.get(identity);
-        if (name !== undefined) return name;
-        named.set(identity, fallback);
-        return fallback;
+        return named;
     };
-    const names = (node: Node): ListNames => {
-        const found = find(node, kernel, link, "list");
+    /** The kernel's binding of a definition, else `fallback`, an expression of the kernel's module naming it, else an import of it. */
+    const nameOf = (identity: string, fallback: string | null): string | { readonly error: string } => {
+        const known = kernelNames();
+        const name = known.get(identity);
+        if (name !== undefined) return name;
+        const made = fallback ?? importOf(identity);
+        if (typeof made === "string") {
+            known.set(identity, made);
+            unbound.set(made, identity);
+        }
+        return made;
+    };
+    /** A local name for the kernel's module to import a definition by, from its module's exports. */
+    const importOf = (identity: string): string | { readonly error: string } => {
+        const [file = "", name = ""] = identity.split("\0");
+        const module = link === null ? null : link.module(file);
+        if (module === null || "error" in module) return { error: `${name} can't be read from ${file}` };
+        const exported = [...module.exports].find(([, entry]) => entry.kind === "local" && entry.local === name)?.[0];
+        if (exported === undefined) return { error: `${name} isn't exported from ${file}, so the kernel's module can't name it; export it, or import it into the kernel's module` };
+        const local = `${/^[A-Za-z_$][\w$]*$/.test(exported) ? exported : "key"}$k${hashOf(identity)}`;
+        imported.set(local, { local, file, imported: exported });
+        return local;
+    };
+    const key = (name: string, module: Module): string | { readonly error: string } => {
+        if (module === kernel) return name;
+        const binding = module.bindings.get(name);
+        const identity = binding === undefined ? null : definition(module, name, binding, link);
+        return identity === null ? { error: `${name} isn't a key the build can follow from ${module.file}` } : nameOf(identity, null);
+    };
+    const names = (node: Node, scope: Module = kernel): ListNames => {
+        const found = find(node, scope, kernel, link, "list");
         if ("key" in found) {
             const reference = chain(node)?.join(".") ?? "";
             return { error: `${reference} is a key, not a list of components; list it as [${reference}]` };
@@ -181,50 +233,62 @@ export const createLists = (kernel: Module, link: Link | null, nodes: readonly N
         const result: string[] = [];
         for (let k = 0; k < literal.elements.length; k++) {
             const element = literal.elements[k];
-            // The kernel's own list may spread another it can read: `with: [...Unit, tagged]`.
-            if (element?.type === "SpreadElement" && module === kernel) {
-                const spread = names(element.argument);
+            // A list written where it's used may spread another it can read: `with: [...Unit, tagged]`.
+            if (element?.type === "SpreadElement" && module === scope) {
+                const spread = names(element.argument, scope);
                 if ("error" in spread) return spread;
                 result.push(...spread);
                 continue;
             }
             const binding = element?.type === "Identifier" ? module.bindings.get(element.name) : undefined;
             if (element?.type !== "Identifier" || binding === undefined) {
-                return { error: module === kernel ? "lists name keys by identifiers bound at module scope" : `${reference} names a key by something other than an identifier bound at the scope of ${module.file}` };
+                return { error: module === scope ? "lists name keys by identifiers bound at module scope" : `${reference} names a key by something other than an identifier bound at the scope of ${module.file}` };
             }
             if (module === kernel) {
                 result.push(element.name);
                 continue;
             }
-            const fallback = `${reference}[${k}]`;
+            // A list reached from the kernel's module can name its own keys; one reached from a helper's can't.
+            const fallback = scope === kernel ? `${reference}[${k}]` : null;
             const identity = definition(module, element.name, binding, link);
-            result.push(identity === null ? fallback : nameOf(identity, fallback));
+            const name = identity === null ? fallback ?? { error: `${element.name} isn't a key the build can follow from ${module.file}` } : nameOf(identity, fallback);
+            if (typeof name !== "string") return name;
+            result.push(name);
         }
         return result;
     };
-    const component = (node: Node): Named => {
-        const found = find(node, kernel, link, "either");
+    const component = (node: Node, scope: Module = kernel): Named => {
+        const found = find(node, scope, kernel, link, "either");
         if ("literal" in found) return { kind: "list" };
         if ("error" in found) return { kind: "error", error: found.error };
         const reference = chain(node)?.join(".") ?? "";
-        // A key named by an identifier is that identifier; one named through a namespace is the kernel's own binding of
-        // its definition where it has one.
-        return { kind: "key", name: node.type === "Identifier" || found.key === null ? reference : nameOf(found.key, reference) };
+        // A key named by an identifier is that identifier, or in a helper's module the kernel's name for its definition;
+        // one named through a namespace is the kernel's own binding of its definition where it has one.
+        if (scope !== kernel) {
+            const name = found.key === null ? { error: `${reference} isn't a key the build can follow from ${scope.file}` } : nameOf(found.key, null);
+            return typeof name === "string" ? { kind: "key", name } : { kind: "error", error: name.error };
+        }
+        if (node.type === "Identifier" || found.key === null) return { kind: "key", name: reference };
+        const name = nameOf(found.key, reference);
+        return { kind: "key", name: typeof name === "string" ? name : reference };
+    };
+    /** The definition the kernel names `name`: its binding's, or an import's. */
+    const identityOf = (name: string): string | null => {
+        const binding = kernel.bindings.get(name);
+        return binding === undefined ? unbound.get(name) ?? null : definition(kernel, name, binding, link);
     };
     const reduction = (name: string): { readonly operator: string | undefined; readonly file: string } | null => {
-        const binding = kernel.bindings.get(name);
-        const identity = binding === undefined ? null : definition(kernel, name, binding, link);
+        const identity = identityOf(name);
         if (identity === null) return null;
         const [file = "", defined = ""] = identity.split("\0");
         return { operator: link?.reductionOf?.(file, defined), file };
     };
     /** Whether a key the kernel names is a shared component, as its declaration's module says. */
     const shared = (name: string): boolean => {
-        const binding = kernel.bindings.get(name);
-        const identity = binding === undefined ? null : definition(kernel, name, binding, link);
+        const identity = identityOf(name);
         if (identity === null) return false;
         const [file = "", defined = ""] = identity.split("\0");
         return link?.sharedOf?.(file, defined) === true;
     };
-    return { names, component, reduction, shared };
+    return { names, component, key, imports: () => [...imported.values()], reduction, shared };
 };

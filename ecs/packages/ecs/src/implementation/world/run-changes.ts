@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Entity } from '../../interface/entity/entity.js';
 import type { Essential, ReadonlyType } from '../../interface/component/value.js';
-import type { ChangeSet } from '../../interface/finalizer/body.js';
+import type { ChangeSet } from '../../interface/system/sync-system-body.js';
 import type { Resource } from '../../interface/resource/resource.js';
 import { isLeaf, newestKeyOf, scheduleOf, type Definition, type Leaf } from '../../interface/registry/index.js';
 import type { Archetype } from './archetype.js';
@@ -23,10 +23,11 @@ export type Recording = {
     readonly resources: ReadonlyMap<Key, unknown>;
 };
 
-/** Every component but derived ones and the objects a joined thread fills, as a changes finalizer watches by default. */
+/** Every component but derived ones and the objects a joined thread fills, as a changes system watches by default. */
 const watched = (state: State, id: number): boolean => !state.derived[id] && !state.resources.has(id) && state.remote[id] === undefined;
 
 const noValues: ReadonlyMap<number, unknown> = new Map();
+const noWritten: readonly never[] = [];
 
 /** The values of components `ids` of an archetype's row. */
 const valuesAt = (archetype: Archetype, ids: readonly number[], row: number): ReadonlyMap<number, unknown> => {
@@ -138,6 +139,8 @@ export const changesOf = (state: State, recording: Recording): ChangeSet<Essenti
     };
     return {
         groups: [...groups.values()],
+        // Values written to rows aren't followed for a run's own changes.
+        written: noWritten,
         // Values read from storage match each key's registered schema, so they have its type.
         resources: resources as ChangeSet<Essential, Resource.Key>["resources"],
         previous: <K extends Essential>(entity: Entity, key: K) => valueOf(recording.before.get(entity)?.values, key) as ReadonlyType<K> | null,

@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-/** A trait of the document's: what changes finalizers watching it see. */
+/** A trait of the document's: what changes systems watching it see. */
 export const inDocument = Symbol("watchTraits/inDocument");
 
 declare module "@adobe/ecs" {

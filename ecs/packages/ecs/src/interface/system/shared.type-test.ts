@@ -64,7 +64,7 @@ check<Equal<Traits<typeof owner>["shared"], never>>();
 // A shared value lives in shared memory, so it has no thread.
 check<Equal<Traits<typeof team>["thread"], never>>();
 check<Equal<Traits<typeof tags>["thread"], never>>();
-// Rules derive only what has no value of its own to choose an archetype by.
+// Derivations derive only what has no value of its own to choose an archetype by.
 check<Equal<Traits<typeof team>["derived"], never>>();
 check<Equal<Traits<typeof camera>["shared"], never>>();
 // Every declaration above holds.

@@ -1,12 +1,11 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
-import { Finalizer } from "../finalizer/finalizer.js";
-import { Rule } from "../rule/rule.js";
 import { System } from "../system/system.js";
+import { Component } from "../component/component.js";
 import { registerComponent, registerResource } from "./declarations.js";
 import { addTrait } from "./traits.js";
 import { giveAccess, identify } from "./ids.test-helper.js";
-import { declarationOf, kindOf, labelOf, programFinalizers, programRules, requireDefinition, sameItem, scheduleOf } from "./index.js";
+import { declarationOf, kindOf, labelOf, syncSystemOf, programDerivations, requireDefinition, sameItem, scheduleOf } from "./index.js";
 
 // Each pair is one module's key and the key that module makes when evaluated again: one id, two symbols.
 const score = Symbol("score");
@@ -49,8 +48,8 @@ addTrait(tagged);
 /** Calls a constructor as an untyped caller would, naming keys no declaration types. */
 const untyped = <F extends (...parameters: never[]) => unknown>(create: F) => (...parameters: unknown[]): ReturnType<F> => Reflect.apply(create, undefined, parameters);
 const system = untyped(System.create);
-const rule = untyped(Rule.create);
-const finalizer = untyped(Finalizer.create);
+const derive = untyped(Component.derive);
+const syncSystem = untyped(System.removed);
 type Row = { [key: symbol]: number };
 
 describe("keys with ids", () => {
@@ -90,18 +89,18 @@ describe("declarations evaluated again", () => {
         expect(again).not.toBe(first);
         expect(sameItem(again, first)).toBe(true);
     });
-    it("accept a rule whose keys match by id, which is already recorded", () => {
-        const created = rule(identify({ components: { with: [score] }, derive: [shown] }, "idsTest/systems.ts#rule"));
-        const rules = programRules().length;
-        expect(rule(identify({ components: { with: [scoreAgain] }, derive: [shownAgain] }, "idsTest/systems.ts#rule"))).toBe(created);
-        expect(programRules()).toHaveLength(rules);
+    it("accept a derivation whose keys match by id, which is already recorded", () => {
+        derive(shown, identify({ from: [score] }, "idsTest/keys.ts#derive(shown)"));
+        const derivations = programDerivations().length;
+        derive(shownAgain, identify({ from: [scoreAgain] }, "idsTest/keys.ts#derive(shown)"));
+        expect(programDerivations()).toHaveLength(derivations);
     });
-    it("accept a finalizer whose keys match by id, keeping its place with the new body", () => {
-        const first = finalizer(giveAccess(identify({ components: { with: [score] } }, "idsTest/systems.ts#finalizer")), () => {});
+    it("accept a removed system whose keys match by id, which keeps the new body", () => {
+        const first = syncSystem(giveAccess(identify({ components: { with: [score] } }, "idsTest/systems.ts#sync system")), () => {});
         const body = (): void => {};
-        expect(finalizer(giveAccess(identify({ components: { with: [scoreAgain] } }, "idsTest/systems.ts#finalizer")), body)).toBe(first);
-        const found = programFinalizers().find(finalizer => finalizer.name === "finalizer");
-        expect(found?.kind === "finalizer" ? found.body : null).toBe(body);
+        expect(syncSystem(giveAccess(identify({ components: { with: [scoreAgain] } }, "idsTest/systems.ts#sync system")), body)).toBe(first);
+        const found = syncSystemOf(first);
+        expect(found?.kind === "removed" ? found.body : null).toBe(body);
     });
     it("schedule symbols of one id as one key", () => {
         const write = system(giveAccess({ components: { with: [score] } }, { write: [score] }), (row: Row) => { row[score] = 1; });

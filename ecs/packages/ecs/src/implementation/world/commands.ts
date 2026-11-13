@@ -88,6 +88,8 @@ const empty = {};
 
 const noKeys: readonly unknown[] = [];
 
+const noSymbols: readonly symbol[] = [];
+
 /**
  * Queues a `despawnWhere`, its ids resolved and its `where` checked first, so a key that isn't a component, or a match
  * a component's values can't make, queues nothing.
@@ -100,7 +102,7 @@ const pushDespawnWhere = (state: State, buffer: CommandBuffer, query: Parameters
     for (let k = 0; k < including.length; k++) queryIdOf(state, including[k]);
     for (let k = 0; k < excluding.length; k++) queryIdOf(state, excluding[k]);
     let match: DespawnMatch | null = null;
-    const keys = where === undefined ? [] : Object.getOwnPropertySymbols(where);
+    const keys = where === undefined ? noSymbols : Object.getOwnPropertySymbols(where);
     if (keys.length > 0) {
         const matched = new Map<number, unknown>();
         const shared = new Set<number>();

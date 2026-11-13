@@ -4,13 +4,14 @@ import { describe, expect, it } from "vitest";
 import * as Device from "../device/public.js";
 import * as Frame from "../frame/public.js";
 import { bytesIn, destroyed, firstPixel, gpu, testDevice } from "../gpu.test-helper.js";
-import { despawn, setClear, spawnTarget, targetStates } from "../test-systems.test-helper.js";
+import { despawn, frame, setClear, spawnTarget, targetStates } from "../test-systems.test-helper.js";
 import * as Target from "./public.js";
 
 describe("render targets", () => {
     it.runIf(gpu)("get textures of their size and options on the world's device", async () => {
         const device = await testDevice();
         await using world = World.create({ [workers]: 0, [gpuDevice]: device });
+        world.add(Frame.releases);
         const target = await world.run(spawnTarget, { width: 8, height: 4, sampleCount: 4 });
         await world.run(Frame.update);
         const state = (await world.run(targetStates))?.get(target);
@@ -22,16 +23,17 @@ describe("render targets", () => {
     it.runIf(gpu)("are cleared each frame to their color, multisampled ones resolving into their color", async () => {
         const device = await testDevice();
         await using world = World.create({ [workers]: 0, [gpuDevice]: device });
+        world.add(Frame.releases);
         const single = await world.run(spawnTarget, { width: 2, height: 2, clear: [1, 0, 0, 1] });
         const multisampled = await world.run(spawnTarget, { width: 2, height: 2, clear: [0, 1, 0, 1], sampleCount: 4 });
-        await world.run(Frame.systems);
+        await world.run(frame);
         const states = await world.run(targetStates);
         const [singleState, multisampledState] = [states?.get(single), states?.get(multisampled)];
         if (singleState === undefined || multisampledState === undefined) throw new Error("The targets have no state.");
         expect(await firstPixel(device, singleState.color)).toEqual(bytesIn(singleState.format, [255, 0, 0, 255]));
         expect(await firstPixel(device, multisampledState.color)).toEqual(bytesIn(multisampledState.format, [0, 255, 0, 255]));
         await world.run(setClear, { target: single, clear: [0, 0, 1, 1] });
-        await world.run(Frame.systems);
+        await world.run(frame);
         const recleared = (await world.run(targetStates))?.get(single);
         if (recleared === undefined) throw new Error("The target has no state.");
         expect(await firstPixel(device, recleared.color)).toEqual(bytesIn(recleared.format, [0, 0, 255, 255]));
@@ -40,6 +42,7 @@ describe("render targets", () => {
     it.runIf(gpu)("get new textures when resized, destroying those they replace", async () => {
         const device = await testDevice();
         await using world = World.create({ [workers]: 0, [gpuDevice]: device });
+        world.add(Frame.releases);
         const target = await world.run(spawnTarget, { width: 8, height: 4 });
         await world.run(Frame.update);
         const before = (await world.run(targetStates))?.get(target);
@@ -56,6 +59,7 @@ describe("render targets", () => {
         const first = await testDevice();
         const second = await testDevice();
         await using world = World.create({ [workers]: 0, [gpuDevice]: first });
+        world.add(Frame.releases);
         const target = await world.run(spawnTarget, { width: 4, height: 4 });
         await world.run(Frame.update);
         const onFirst = (await world.run(targetStates))?.get(target);
@@ -74,18 +78,20 @@ describe("render targets", () => {
     it.runIf(gpu)("have no textures once their device is lost", async () => {
         const device = await testDevice();
         await using world = World.create({ [workers]: 0, [gpuDevice]: device });
+        world.add(Frame.releases);
         await world.run(spawnTarget, { width: 4, height: 4 });
-        await world.run(Frame.systems);
+        await world.run(frame);
         device.destroy();
         await device.lost;
-        await world.run(Frame.systems);
-        await world.run(Frame.systems);
+        await world.run(frame);
+        await world.run(frame);
         expect((await world.run(targetStates))?.size).toBe(0);
     });
 
     it.runIf(gpu)("release their textures when despawned, and when the world is disposed", async () => {
         const device = await testDevice();
         const world = World.create({ [workers]: 0, [gpuDevice]: device });
+        world.add(Frame.releases);
         const gone = await world.run(spawnTarget, { width: 4, height: 4 });
         const kept = await world.run(spawnTarget, { width: 4, height: 4 });
         await world.run(Frame.update);

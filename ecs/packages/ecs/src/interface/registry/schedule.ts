@@ -3,9 +3,9 @@ import type { Schema } from '../schema/schema.js';
 import type { Definition } from '../system/definition.js';
 import type { Leaf } from '../system/leaf.js';
 import { firstItemOf } from './items.js';
-import { requireDefinition } from './program.js';
+import { membersOf } from './program.js';
 import { declarationOf, firstKeyOf, labelOf, sameDeclaration } from './names.js';
-import { indexDefinitionOf, lookupKeysOf, orderKeysOf } from './indexes.js';
+import { indexDefinitionOf, indexOfLookup, lookupKeysOf, orderKeysOf } from './indexes.js';
 
 type Key = symbol;
 
@@ -73,7 +73,8 @@ const graphOf = (root: Definition): Graph => {
         if (known !== undefined) return known;
         const unit = units.push(system) - 1;
         indexOf.set(first, unit);
-        members[unit] = isLeaf(system) ? [] : system.declaration.systems.map(member => visit(requireDefinition(member)));
+        // Changes and removed systems run in sync points, not in tiers.
+        members[unit] = membersOf(system).map(visit);
         return unit;
     };
     visit(root);
@@ -174,36 +175,59 @@ export const accessOf = (leaf: Leaf): Access => {
 
 const names = (list: readonly Key[] | undefined, key: Key): boolean => list !== undefined && list.some(item => firstKeyOf(item) === key);
 
-/** Whether a leaf reaches a key only through its rows: neither looked up, read through `up`, indexed nor ordered by. */
-const onlyThroughRows = (leaf: Leaf, key: Key): boolean => {
+/** The entities a list of rows holds: those with every `required` component and none of `not`. */
+type Filter = { readonly required: readonly Key[]; readonly not: readonly Key[] };
+
+/**
+ * Where a leaf reaches a key: its rows, and each index it looks up through by that key or reads it through, each held to
+ * the entities its rows or the index hold; null where it also reaches the key otherwise, by a lookup by entity, through
+ * `up` or by its `order`, which may reach any entity.
+ */
+const sitesOf = (leaf: Leaf, key: Key): readonly Filter[] | null => {
     const { components, lookup, up } = leaf.declaration;
-    if (!names(components?.read, key) && !names(components?.write, key) && !names(components?.added, key) && !names(components?.changed, key)) return false;
-    for (const name in lookup) if (names(lookup[name].read, key) || names(lookupKeysOf(lookup[name]), key)) return false;
-    if (names(orderKeysOf(leaf.declaration), key)) return false;
-    return up === undefined || (firstKeyOf(up.through) !== key && !names(up.read, key));
+    const sites: Filter[] = [];
+    if (components !== undefined && [components.read, components.write, components.added, components.changed].some(list => names(list, key))) {
+        const required = [components.read, components.write, components.has, components.added, components.changed]
+            .flatMap(list => list ?? []).filter(item => !names(components.optional, firstKeyOf(item)));
+        sites.push({ required, not: components.not ?? [] });
+    }
+    for (const name in lookup) {
+        const used = lookup[name];
+        if (!names(used.read, key) && !names(lookupKeysOf(used), key)) continue;
+        // An index lookup finds only entities the index holds: those with its key parts and has, and none of its not.
+        const index = indexOfLookup(used)?.declaration;
+        if (index === undefined) return null;
+        sites.push({ required: [...index.key, ...index.components?.has ?? []], not: index.components?.not ?? [] });
+    }
+    if (names(orderKeysOf(leaf.declaration), key)) return null;
+    if (up !== undefined && (firstKeyOf(up.through) === key || names(up.read, key))) return null;
+    return sites;
 };
 
-/** Whether no entity can match both leaves' rows: one requires a component the other's `not` lists. */
-const exclusive = (a: Leaf, b: Leaf): boolean => {
-    const requiresExcluded = (one: Leaf, other: Leaf): boolean => {
-        const { components } = one.declaration;
-        const not = other.declaration.components?.not;
-        if (components === undefined || not === undefined || not.length === 0) return false;
-        for (const list of [components.read, components.write, components.has, components.added, components.changed]) {
-            for (const key of list ?? []) if (!names(components.optional, firstKeyOf(key)) && names(not, firstKeyOf(key))) return true;
-        }
-        return false;
-    };
+/** Whether a leaf reaches a key somewhere, and only through rows or index lookups. */
+const held = (sites: readonly Filter[] | null): sites is readonly Filter[] => sites !== null && sites.length > 0;
+
+/** Whether no entity can be in both: one requires a component the other's `not` lists. */
+const exclusive = (a: Filter, b: Filter): boolean => {
+    const requiresExcluded = (one: Filter, other: Filter): boolean => one.required.some(key => names(other.not, firstKeyOf(key)));
     return requiresExcluded(a, b) || requiresExcluded(b, a);
 };
 
-/** Whether a conflict on `key` is waived: both reach it only through rows that never match one entity. */
-const waived = (a: Access, b: Access, key: Key): boolean => onlyThroughRows(a.leaf, key) && onlyThroughRows(b.leaf, key) && exclusive(a.leaf, b.leaf);
+/** Whether two leaves reach a key only where they never reach one entity, so neither sees what the other writes. */
+const disjointOn = (a: Leaf, b: Leaf, key: Key): boolean => {
+    const sitesA = sitesOf(a, key);
+    const sitesB = sitesOf(b, key);
+    if (!held(sitesA) || !held(sitesB)) return false;
+    return sitesA.every(one => sitesB.every(other => exclusive(one, other)));
+};
+
+/** Whether a conflict on `key` is waived: the two reach it only where they never reach one entity. */
+const waived = (a: Access, b: Access, key: Key): boolean => disjointOn(a.leaf, b.leaf, key);
 
 /**
  * The first key two accesses conflict on, one writing it, or undefined. Contributors to one resource don't conflict
- * with each other: their fold doesn't depend on which runs first. Nor do two whose rows never match one entity on a key
- * both reach only through their rows.
+ * with each other: their fold doesn't depend on which runs first. Nor do two on a key they reach only through their
+ * rows and index lookups, where neither's can hold an entity the other's do.
  */
 const conflictOf = (a: Access, b: Access): Key | undefined => {
     for (const key of a.writes) if ((b.writes.has(key) || b.reads.has(key) || b.reduces.has(key)) && !waived(a, b, key)) return key;
@@ -343,7 +367,7 @@ const createSchedule = (system: Definition): Schedule => {
             if (key !== undefined && !ordered(reach, leaves[a].unit, leaves[b].unit)) {
                 const whole = [leaves[a].leaf, leaves[b].leaf].filter(leaf => leaf.declaration.components?.whole === true)
                     .map(leaf => ` "${leaf.name}" takes its row whole (components.whole), so it writes every member.`).join("");
-                const rows = onlyThroughRows(leaves[a].leaf, key) && onlyThroughRows(leaves[b].leaf, key) ? ", or, if they never match one entity, add a component of one to the other's not" : "";
+                const rows = held(sitesOf(leaves[a].leaf, key)) && held(sitesOf(leaves[b].leaf, key)) ? ", or, if they never match one entity, add a component of one to the other's not" : "";
                 throw new Error(`Systems "${leaves[a].leaf.name}" and "${leaves[b].leaf.name}" both access "${labelOf(key)}" and one writes it; order them with before or after${rows}.${whole}`);
             }
         }
@@ -389,7 +413,7 @@ const structuralOf = (leaf: Leaf): ReadonlySet<Key> | "any" | null => {
 
 /**
  * The components a leaf's rows, lookups, indexes and order name, which commands could change its view of; `any` when
- * one of them matches every entity, `cascaded` when it names a component a rule derives or `within` removes.
+ * one of them matches every entity, `cascaded` when it names a component a derivation derives or `within` removes.
  */
 const touchesOf = (leaf: Leaf): { readonly keys: ReadonlySet<Key>; readonly any: boolean; readonly cascaded: boolean } => {
     const { components, lookup, up, order } = leaf.declaration;

@@ -4,6 +4,7 @@ import type { Recording } from './run-changes.js';
 import { createHolds, type Holds } from './stop-lists.js';
 import type { Entity } from '../../interface/entity/entity.js';
 import type { Leaf } from '../../interface/system/leaf.js';
+import type { SyncSystem } from '../../interface/system/sync-system.js';
 import { declarationOf, firstKeyOf, kindOf, labelOf, whyUnregistered } from '../../interface/registry/index.js';
 import type { Arrivals } from './arrivals.js';
 import { createArchetype, noShared, startTicks, type Archetype, type Storage } from './archetype.js';
@@ -17,7 +18,7 @@ import type { GpuEngine } from './gpu.js';
 import type { Queued } from './synchronize.js';
 import type { IndexChanges } from './cascade.js';
 import { createEntities, type Entities, type Reserved } from './entities.js';
-import type { FinalizerRunner, Thrown } from './finalizers.js';
+import type { SyncSystemRunner, Thrown } from './sync-systems.js';
 import { createPlan, type Plan } from './plan.js';
 import { createStructure, owner, restratify, weak, type Structure } from './structure.js';
 import { layoutOf, objectLayout, type Layout } from '../../interface/registry/layout.js';
@@ -125,8 +126,10 @@ export type State = {
     arrivalRing: Arrivals | null;
     /** By component set, archetypes of shared values reclaimed, waiting to be reused for others (`reclaim.ts`). */
     readonly pools: Map<string, Archetype[]>;
-    /** Archetypes of shared values found empty, which may be reclaimed. */
+    /** Archetypes of shared values found empty, which may be reclaimed, and those the resource entity left, to release. */
     readonly emptied: Archetype[];
+    /** The archetype holding the resource entity as of the last sync point, -1 before it's spawned. */
+    resourceArchetype: number;
     /**
      * Archetypes reclaimed or reused, in order, which systems' match lists follow from their own position: the log
      * holds those from `base` on, trimmed as it grows.
@@ -137,15 +140,29 @@ export type State = {
     /** Sync points applied, which reclaiming counts. */
     syncs: number;
     /**
-     * By id, each resource a changes finalizer watches: its value and change tick when its finalizers last ran, which a
+     * By id, each resource a changes system watches: its value and change tick when its sync systems last ran, which a
      * later write's report gives as its previous value. Empty while none watches one.
      */
     readonly resourcesSeen: Map<number, { value: unknown; tick: number }>;
+    /**
+     * Rows written for changes systems (`rows-written.ts`): by component id, true for each an active changes system
+     * watches, whose ticks and kernels' stamps are kept; those ids, empty while none watches one; and the tick of the
+     * last sync point changes systems ran at, writes after which they're told of.
+     */
+    readonly rowsFollowed: boolean[];
+    readonly rowsWatched: number[];
+    rowsSeen: number;
+    /** By component id: the tick its ticks started at for changes systems, whose stamps are then no writes. */
+    readonly rowsStarted: number[];
+    /** Components changes systems follow the rows written of since the last run, whose ticks start before the next. */
+    readonly rowsPending: number[];
+    /** How many component ids changes systems' watches were tested against. */
+    rowsTested: number;
     /** What the run in progress records of its changes, when it was asked for them; null otherwise. */
     recording: Recording | null;
     /** The records strings' columns name, in shared memory; null without it, where strings are held as objects. */
     readonly strings: StringStore | null;
-    /** Whether each component is derived, so only rules add and remove it. */
+    /** Whether each component is derived, so only its derivations add and remove it. */
     readonly derived: boolean[];
     /** Whether each component is declared `transfer`, so a value whose command drops is released; and whether any is. */
     readonly transfers: boolean[];
@@ -157,15 +174,19 @@ export type State = {
     readonly referencesWritten: number[];
     /** The entities sync points spawned, despawned, moved or wrote references of, for `up` systems and indexes. */
     readonly journal: Journal;
-    /** Command buffers for the next sync point, in merge order. */
-    readonly queued: Queued[];
+    /**
+     * Command buffers for the next sync point, in merge order. A sync point takes the list, leaving `spareQueued`, empty,
+     * in its place, and its own list is the spare, emptied once it's done, so no sync point allocates one.
+     */
+    queued: Queued[];
+    spareQueued: Queued[];
     /** Buffers that workers' command ring segments drain into, the first `drained` in use until the sync point's end. */
     readonly drains: CommandBuffer[];
     drained: number;
     resourceEntity: number;
     /**
-     * Components some registered system filters on with `changed`, or a finalizer's index follows; only their kernel
-     * stamps are kept. By component id, how many do: each system while registered, each finalizer index's watch for the
+     * Components some registered system filters on with `changed`, or a sync system's index follows; only their kernel
+     * stamps are kept. By component id, how many do: each system while registered, each sync system index's watch for the
      * world's life (`observe`).
      */
     readonly observed: Set<number>;
@@ -173,7 +194,7 @@ export type State = {
     /** Workers' kernel indexes, by kernel module url, so they're bounded by code. */
     readonly kernelIndexes: Map<string, number>;
     /**
-     * Components some registered system filters on with `added` or `changed`, a finalizer's index follows, or a GPU
+     * Components some registered system filters on with `added` or `changed`, a sync system's index follows, or a GPU
      * system holds copies of; only they keep ticks.
      */
     readonly ticked: Set<number>;
@@ -238,7 +259,7 @@ export type State = {
         /** By batch target archetype id, the first row its batches added. */
         readonly born: Map<number, number>;
         readonly index: IndexChanges | null;
-        /** Whether rules or `within` declarations can change archetypes. */
+        /** Whether derivations or `within` declarations can change archetypes. */
         readonly deriving: boolean;
         /** Applies only its queued buffers, for registration's own changes. */
         readonly isolated: boolean;
@@ -247,16 +268,25 @@ export type State = {
     } | null;
     /** Reservation positions blocks left unused since the last sync point, as start and end pairs. */
     readonly unused: number[];
-    /** Reservations made during the last sync point's finalizers, which the next one accounts for. */
+    /** Reservations made during the last sync point's sync systems, which the next one accounts for. */
     carried: Reserved | null;
-    /** While finalizers run: by batch target archetype id, the first row its batches added this sync point, which lookups don't see. */
+    /** While sync systems run: by batch target archetype id, the first row its batches added this sync point, which lookups don't see. */
     born: Map<number, number> | null;
     readonly structure: Structure;
-    /** The program's finalizers this world has activated, in their order. */
-    readonly finalizers: FinalizerRunner[];
-    /** The program's rules and finalizers active here, which apply from the first sync point after the world meets their components. */
+    /** The sync systems this world has activated, in their order. */
+    readonly syncSystems: SyncSystemRunner[];
+    /**
+     * The changes and removed systems added to the world, sync systems internally, in run order, and how many times that
+     * list changed.
+     */
+    added: readonly SyncSystem[];
+    addedVersion: number;
+    /**
+     * The program's derivations and the added sync systems active here, which apply from the first sync point after the world
+     * meets their components.
+     */
     readonly activated: Set<object>;
-    /** The program's version when the world last activated, and whether it has met a component since. */
+    /** The program's version when the world last activated, and whether it has met a component, or had a sync system added, since. */
     activation: { version: number; met: boolean };
     /** Resource values given at creation, in place of their defaults. */
     readonly initial: Map<Key, unknown>;
@@ -272,8 +302,8 @@ export type State = {
     claimed: boolean;
     /** The system without components whose body's value the run in progress resolves to; null for none, as in a tick. */
     wanted: Leaf | null;
-    /** While a finalizer's failure is reported out of band, the finalizers each sync point ran, which then recover. */
-    finalized: Set<object> | null;
+    /** While a sync system's failure is reported out of band, the sync systems each sync point ran, which then recover. */
+    syncSystemsRan: Set<object> | null;
     /** What the run in progress ran: systems, whether any ran on `main`, GPU work, joined threads' logs. */
     readonly ran: Ran;
     /** Whether a joined thread reads the layout directory's counts: one holds claims, or has observer systems placed. */
@@ -290,19 +320,19 @@ export type State = {
     /** Moves on whenever a registered system's runner is replaced, so runs read runners again only then. */
     runnersVersion: number;
     /**
-     * Failures of finalizers the next sync point gives its run: those on claimed threads that can't run there, which don't
-     * activate, with every one found; and stops a thread that's gone never finalized.
+     * Failures of sync systems the next sync point gives its run: those on claimed threads that can't run there, which don't
+     * activate, with every one found; and stops a thread that's gone never ran.
      */
     readonly unplaced: Thrown[];
     readonly unplacedSeen: Set<object>;
     /**
-     * Indexes of entities despawned with stops of joined threads' finalizers, held apart from `released` until those
+     * Indexes of entities despawned with stops of joined threads' removed systems, held apart from `released` until those
      * threads acknowledge them.
      */
     readonly holds: Holds;
     /** Tails posted whose reads a later writer must still copy, or wait for (`tails.ts`). */
     readonly tails: Tail[];
-    /** The indexes some registered system or finalizer uses, by declaration (`indexes.ts`). */
+    /** The indexes some registered system or sync system uses, by declaration (`indexes.ts`). */
     readonly indexes: Map<IndexDefinition, WorldIndex>;
     /** By component id: the tick of the last system run that wrote it, which indexes read to skip ticks no write moved. */
     readonly written: number[];
@@ -313,7 +343,7 @@ export type State = {
     /** Indexes built in phases so far, and of them across the pool, for tests of how builds run. */
     phasedBuilds: number;
     pooledBuilds: number;
-    /** Components finalizers' indexes follow since the last run, whose ticks and kernels' stamps start before the next. */
+    /** Components sync systems' indexes follow since the last run, whose ticks and kernels' stamps start before the next. */
     readonly watchesPending: number[];
 };
 
@@ -337,10 +367,17 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
         arrivalRing: null,
         pools: new Map(),
         emptied: [],
+        resourceArchetype: -1,
         membership: { log: [], base: 0 },
         reshapes: 0,
         syncs: 0,
         resourcesSeen: new Map(),
+        rowsFollowed: [],
+        rowsWatched: [],
+        rowsSeen: 0,
+        rowsStarted: [],
+        rowsPending: [],
+        rowsTested: 0,
         recording: null,
         strings: memory.shared ? createStrings(memory) : null,
         derived: [],
@@ -349,6 +386,7 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
         resources: new Set(),
         tick: 0,
         queued: [],
+        spareQueued: [],
         drains: [],
         drained: 0,
         resourceEntity: -1,
@@ -383,7 +421,9 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
         carried: null,
         born: null,
         structure: createStructure(),
-        finalizers: [],
+        syncSystems: [],
+        added: [],
+        addedVersion: 0,
         activated: new Set(),
         activation: { version: -1, met: true },
         initial,
@@ -394,7 +434,7 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
         logs: [],
         claimed: false,
         wanted: null,
-        finalized: null,
+        syncSystemsRan: null,
         ran: { systems: 0, main: false, gpu: false, joined: new Set() },
         counting: false,
         observer: createObserverState(),
@@ -468,7 +508,7 @@ export const idOf = (state: State, key: Key): number => {
     if (host >= 0) {
         const hosts = [...structure.hosts];
         hosts[id] = host;
-        restratify(structure, structure.rules, hosts, other => labelOf(other === id ? key : state.keys[other]));
+        restratify(structure, structure.derivations, hosts, other => labelOf(other === id ? key : state.keys[other]));
     }
     state.ids.set(key, id);
     state.keys.push(key);
@@ -523,7 +563,7 @@ export const defaultOf = (key: Key): unknown => {
 
 /**
  * The id of a component a command names. Throws for a key that isn't a symbol, isn't registered, or is a resource,
- * for a derived component, which only rules add and remove, and for one only the world writes.
+ * for a derived component, which only its derivations add and remove, and for one only the world writes.
  */
 export const commandIdOf = (state: State, key: unknown): number => {
     const known = typeof key === "symbol" ? state.ids.get(key) : undefined;
@@ -532,7 +572,7 @@ export const commandIdOf = (state: State, key: unknown): number => {
     if (typeof key !== "symbol") throw new Error(`"${labelOf(key)}" isn't a component: a component's key is a symbol.`);
     if (kindOf(key) === "resource") throw new Error(`"${labelOf(key)}" is a resource, not a component.`);
     const id = idOf(state, key);
-    if (state.derived[id]) throw new Error(`"${labelOf(key)}" is derived, so only rules add and remove it.`);
+    if (state.derived[id]) throw new Error(`"${labelOf(key)}" is derived, so only its derivations add and remove it.`);
     state.commandable[id] = true;
     return id;
 };
@@ -634,14 +674,14 @@ export const sharedNumberOf = (state: State, id: number, value: unknown): number
  */
 export const withShared = (state: State, archetype: Archetype, id: number, number: number): Archetype => {
     if (archetype.shared[id] === number) return archetype;
-    const edges = archetype.sharing[id] ??= [];
-    let next = edges[number];
+    const edges = archetype.sharing[id] ??= new Map();
+    let next = edges.get(number);
     if (next === undefined) {
         const values = [...archetype.shared];
         values[id] = number;
         const components = archetype.storageById[id] === undefined ? [...archetype.components, id].sort((a, b) => a - b) : archetype.components;
         next = archetypeOf(state, components, values);
-        edges[number] = next;
+        edges.set(number, next);
         noteEdge(edges, number, undefined, archetype, next);
     }
     return next;
@@ -685,6 +725,62 @@ export const withComponent = (state: State, archetype: Archetype, id: number): A
     return next;
 };
 
+/**
+ * The archetype with every component `ids` names from `start` to `end` added, but shared ones, which `withShared` adds:
+ * through cached edges while there are any, then in one step, so no archetype is made between them. Allocates only
+ * where it makes or first finds one, so only at sync points.
+ */
+export const withComponents = (state: State, archetype: Archetype, ids: ArrayLike<number>, start: number, end: number): Archetype => {
+    let to = archetype;
+    let k = start;
+    for (; k < end; k++) {
+        const id = ids[k];
+        if (to.storageById[id] !== undefined || state.shared[id] !== undefined) continue;
+        const next = to.adding[id];
+        if (next === undefined) break;
+        to = next;
+    }
+    return k === end ? to : jump(state, to, ids, k, end);
+};
+
+/** Whether `ids` from `start` to `at` names `id`. */
+const names = (ids: ArrayLike<number>, start: number, at: number, id: number): boolean => {
+    for (let k = start; k < at; k++) if (ids[k] === id) return true;
+    return false;
+};
+
+/**
+ * `withComponents` from where the cached edges end, `ids[start]` the first component without one: one more is a cached
+ * edge as `withComponent`'s; several are found among the targets `archetype.jumps` caches, or made and cached there.
+ */
+const jump = (state: State, archetype: Archetype, ids: ArrayLike<number>, start: number, end: number): Archetype => {
+    let missing = 0;
+    for (let k = start; k < end; k++) {
+        const id = ids[k];
+        if (archetype.storageById[id] === undefined && state.shared[id] === undefined && !names(ids, start, k, id)) missing++;
+    }
+    if (missing === 1) return withComponent(state, archetype, ids[start]);
+    // A target made from this archetype holds its components; one of as many more, holding every one named, is this one.
+    const size = archetype.components.length + missing;
+    const { jumps } = archetype;
+    for (let j = 0; j < jumps.length; j++) {
+        const target = jumps[j];
+        if (target === undefined || target.components.length !== size) continue;
+        let holds = true;
+        for (let k = start; k < end && holds; k++) holds = target.storageById[ids[k]] !== undefined || state.shared[ids[k]] !== undefined;
+        if (holds) return target;
+    }
+    const components = [...archetype.components];
+    for (let k = start; k < end; k++) {
+        const id = ids[k];
+        if (archetype.storageById[id] === undefined && state.shared[id] === undefined && !names(ids, start, k, id)) components.push(id);
+    }
+    const target = archetypeOf(state, components.sort((a, b) => a - b), archetype.shared);
+    noteEdge(jumps, jumps.length, undefined, archetype, target);
+    jumps.push(target);
+    return target;
+};
+
 export const withoutComponent = (state: State, archetype: Archetype, id: number): Archetype => {
     if (archetype.storageById[id] === undefined) return archetype;
     let next = archetype.removing[id];
@@ -698,13 +794,14 @@ export const withoutComponent = (state: State, archetype: Archetype, id: number)
 
 /** The storages two archetypes share, as source and target pairs, cached per pair. */
 export const movesOf = (from: Archetype, to: Archetype): readonly Storage[] => {
-    let moves = from.moves[to.id];
+    const cached = from.moves ??= new Map();
+    let moves = cached.get(to.id);
     if (moves === undefined) {
         moves = to.storages.flatMap(storage => {
             const source = from.storageById[storage.component];
             return source === undefined ? [] : [source, storage];
         });
-        from.moves[to.id] = moves;
+        cached.set(to.id, moves);
     }
     return moves;
 };

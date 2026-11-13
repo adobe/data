@@ -27,7 +27,7 @@ const namedIn = <K extends symbol>(declarations: ReadonlyMap<K, Component.Declar
         if (name === undefined) continue;
         if (typeof name !== "string") return `A ${kind}'s value of the trait isn't a name: ${String(name)}.`;
         if (declaration.type === undefined) return `The ${kind} the trait names "${name}" isn't data: it has no schema.`;
-        if (declaration.derived === true) return `The ${kind} the trait names "${name}" is derived, which its rule derives again once its entity is loaded.`;
+        if (declaration.derived === true) return `The ${kind} the trait names "${name}" is derived, which its derivation derives again once its entity is loaded.`;
         if (named.has(name)) return `The trait names two ${kind}s "${name}".`;
         named.set(name, { name, key, schema: declaration.type });
     }

@@ -10,7 +10,7 @@ import { checkComposite, checkLeaf, inputSchemaOf } from './check.js';
 import type { Composite } from './composite.js';
 import type { CompositeDeclaration } from './composite-declaration.js';
 import type { Declaration, Resolved } from './declaration.js';
-import type { CheckMembers, CompositeInputOf, InputOf, ResultOf, ReturnsNoPromise } from './input.js';
+import type { CheckMembers, CompositeInputOf, HoldsSyncSystem, InputOf, ResultOf, ReturnsNoPromise } from './input.js';
 import type { Leaf } from './leaf.js';
 import type { Listed, Property } from './property.js';
 import type { System } from './system.js';
@@ -108,6 +108,7 @@ type Validate<D extends Declaration> =
         : {})
     & (D extends { readonly target: string } ? Targeted : {})
     & (D extends { readonly target: string } ? Property<D, "components"> extends undefined ? { readonly target?: { readonly "error: a system on one entity runs on its row, so it needs components": true } } : {} : {})
+    & (D extends { readonly before: object } | { readonly after: object } | { readonly during: object } ? Ordered<D> : {})
     // A body's input is the type of its parameter after its context, not part of its declaration.
     & { readonly shader?: never; readonly input?: never };
 
@@ -132,6 +133,13 @@ type Checks<D, I> = [I] extends [never] ? unknown :
 /** The body of a system that declares nothing, which runs once per run with its resources and commands. */
 type Alone = (context: Context<{}>) => void;
 
+/** Constraints naming a changes or removed system, which run in sync points and are ordered only with each other, are errors. */
+type Ordered<D> = {
+    readonly [K in "before" | "after" | "during"]?: D extends { readonly [P in K]: readonly (infer S)[] }
+        ? [Extract<S, System<never>>] extends [never] ? unknown : { readonly "error: changes and removed systems are ordered only with each other": true }
+        : unknown
+};
+
 /** A composite: its list of members, or its declaration. */
 type Composition = readonly System<unknown>[] | CompositeDeclaration;
 
@@ -139,7 +147,10 @@ type Composition = readonly System<unknown>[] | CompositeDeclaration;
 type MembersOf<C> = C extends CompositeDeclaration ? C["systems"] : C;
 
 /** A member whose input has a field of a different type than another member's becomes the error saying so. */
-type Checked<C> = C extends Alone ? ReturnsNoPromise<C> : C extends CompositeDeclaration ? { readonly systems: CheckMembers<C["systems"]> } : CheckMembers<C>;
+type Checked<C> = C extends Alone ? ReturnsNoPromise<C> : C extends CompositeDeclaration ? { readonly systems: CheckMembers<C["systems"]> } & Ordered<C> : CheckMembers<C>;
+
+/** A composite's system: one `run` doesn't take once it holds a changes or removed system. */
+type CompositeOf<C> = HoldsSyncSystem<MembersOf<C>> extends true ? System<never> : System<CompositeInputOf<MembersOf<C>>>;
 
 /**
  * Declares a system and returns it; nothing runs. The arguments tell the forms apart:
@@ -147,6 +158,9 @@ type Checked<C> = C extends Alone ? ReturnsNoPromise<C> : C extends CompositeDec
  * - `create(declaration, body)`: a system.
  * - `create([move, collide])`: a composite of the systems listed, which may live on different threads.
  * - `create({ systems: [move, collide], after: [input] })`: a composite with constraints.
+ *
+ * A composite may hold changes and removed systems, as `[createBuffers, releaseBuffers]` pairs a resource's release
+ * with what creates it: adding it adds them, and `run` doesn't take it. Its constraints don't apply to them.
  *
  * What a body reads, writes and reduces into the build infers from it. Each run passes a composite's members one
  * input, with every field of theirs. Throws if a system names a key that isn't registered as its kind, its body writes
@@ -166,7 +180,7 @@ type Checked<C> = C extends Alone ? ReturnsNoPromise<C> : C extends CompositeDec
  * overload matching.
  */
 export function create<const D extends Declaration, B extends Body<D, never>>(declaration: D & Validate<D> & Placed<D>, body: B & Checks<D, InputOf<D, B>> & ReturnsNoPromise<B>): System<InputOf<D, B>, ResultOf<D, B>>;
-export function create<const C extends Alone | Composition>(only: C & Checked<C>): C extends (context: Context<{}>) => infer R ? System<undefined, R> : System<CompositeInputOf<MembersOf<C>>>;
+export function create<const C extends Alone | Composition>(only: C & Checked<C>): C extends (context: Context<{}>) => infer R ? System<undefined, R> : CompositeOf<C>;
 // The plugin passes the schema of the body's input as a third argument.
 export function create(first: Declaration | Leaf["body"] | readonly System<unknown>[] | CompositeDeclaration, second?: Leaf["body"], input?: unknown): System<unknown> {
     // The plugin gives its id to the call's first argument: the declaration, the members, or the body made into a

@@ -3,7 +3,7 @@
 export type Benchmark = {
     /** Stable across runs: results are tracked by it. */
     readonly name: string;
-    /** What it measures, and what systems or rules cause it in an app. */
+    /** What it measures, and what systems or derivations cause it in an app. */
     readonly operation: string;
     /** What its time is divided by, such as "matched rows" or "spawns". */
     readonly per: string;

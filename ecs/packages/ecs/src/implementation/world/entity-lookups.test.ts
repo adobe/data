@@ -4,17 +4,16 @@ import { Observe } from "../../observe/index.js";
 import { always } from "../../interface/resources/always.js";
 import { clock } from "../../interface/resources/clock.js";
 import { workers } from "../../interface/resources/workers.js";
-import { Finalizer } from "../../interface/finalizer/finalizer.js";
 import { System } from "../../interface/system/system.js";
 import { backToBack } from "./loop.js";
 import { createWorld, join, type CreatedWorld } from "./create.js";
 import { bumpKernel, edit, expected, lateProbe, probe, scenario, scene, target, threadProbe, value } from "./entity-lookups.test-helper.js";
 import { runReported } from "./outcomes.test-helper.js";
 
-/** What a finalizer's lookup gave as probes were despawned. */
-const finalized: (boolean | null)[] = [];
-Finalizer.create({ components: { with: [target] }, lookup: { found: { with: [value], changed: [value] } } }, (row, { lookup }) => {
-    finalized.push(lookup.found(row[target])?.changed ?? null);
+/** What a removed system's lookup gave as probes were despawned. */
+const looked: (boolean | null)[] = [];
+const lookUp = System.removed({ components: { with: [target] }, lookup: { found: { with: [value], changed: [value] } } }, (row, { lookup }) => {
+    looked.push(lookup.found(row[target])?.changed ?? null);
 });
 const despawnProbes = System.create({ components: { with: [target] } }, (row, { commands }) => {
     commands.despawn(row.entity);
@@ -54,12 +53,13 @@ describe("lookups by entity with changed", () => {
         await remote.dispose();
         await world.dispose();
     });
-    it("count every row as changed in finalizers", async () => {
+    it("count every row as changed in removed systems", async () => {
         const world = createWorld({ [workers]: 0 });
+        world.add(lookUp);
         await world.run(edit, { action: "spawn" });
-        finalized.length = 0;
+        looked.length = 0;
         await world.run(despawnProbes);
-        expect(finalized).toEqual([true]);
+        expect(looked).toEqual([true]);
         await world.dispose();
     });
     for (const wasm of [false, true]) {

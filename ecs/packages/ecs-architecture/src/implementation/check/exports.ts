@@ -38,7 +38,7 @@ export const checkExports = ({ graph, violate }: Context, { uses }: Imports): vo
         for (const { name, file } of declared) {
             if (name === 'systems' || usedOutside(component, name) || graph.textOf(file).includes(keepUnused)) continue;
             violate(file, 'unused-export', `\`${name}\` is exported by \`${component}\` but nothing outside the component imports it.`,
-                `Move its declaration into a private folder of the component, a folder without an index.ts such as ${component}/shared/, and drop it from index.ts. If it must stay public (a finalizer registered by being imported, a type for outside implementers), write "// ${keepUnused} <reason>" in its file.`);
+                `Move its declaration into a private folder of the component, a folder without an index.ts such as ${component}/shared/, and drop it from index.ts. If it must stay public (a type for outside implementers), write "// ${keepUnused} <reason>" in its file.`);
         }
     }
 };

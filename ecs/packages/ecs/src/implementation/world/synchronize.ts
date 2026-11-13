@@ -10,20 +10,21 @@ import { commitBatches, commitStaged } from './batches.js';
 import { applyIndexChanges, cascadeReferences, indexChangesOf, linkBorn, type IndexChanges, type Written } from './cascade.js';
 import { refreshDirectories } from './directories.js';
 import { createArrivals, logArrival } from './arrivals.js';
-import { noteEdge, noteEmptied, reclaimEmptied } from './reclaim.js';
+import { noteEdge, noteEmptied, noteResourceLeft, reclaimEmptied } from './reclaim.js';
 import { beginStructure, countChanged, endStructure, flushDirectory } from './layout-directory.js';
 import { beginLog, logAppend, logMove, logSet, logSwap, publishLog, startTag, tagOf } from './move-log.js';
 import { record } from './journal.js';
 import { indexOf, kill, locate, materialize, recycle, release, reserved, unreserve, type Reserved } from './entities.js';
 import { activate } from './activate.js';
-import { refreshFinalizerIndexes, runFinalizers, type Thrown } from './finalizers.js';
+import { refreshSyncSystemIndexes, runSyncSystems, type Thrown } from './sync-systems.js';
 import { settleStops } from './stop-lists.js';
 import { closureOf, derives, gainsOf } from './structure.js';
 import type { Plan } from './plan.js';
 import type { MoveLog } from './move-log.js';
-import { archetypeOf, movesOf, sharedNumberOf, withComponent, withoutComponent, withShared, type State } from './state.js';
+import { archetypeOf, movesOf, sharedNumberOf, withComponents, withoutComponent, withShared, type State } from './state.js';
 import { releaseValue } from './transfers.js';
 import { resourcesWritten } from './resource-changes.js';
+import { rowsWritten } from './rows-written.js';
 import { recordPlan } from './run-changes.js';
 
 /** Buffers queued for the next sync point, in merge order. Commands in guarded buffers can't touch the resource entity. */
@@ -194,7 +195,7 @@ const plannedMatches = (state: State, queued: readonly Queued[], entry: number, 
  * despawn, its entity or its row, is kept, so releasing each entity and emptying the archetype says all there is.
  */
 const clearsWhole = (state: State): boolean =>
-    state.finalizers.length === 0 && state.recording === null && state.structure.referenceIds.length === 0 && state.journal.readers === 0
+    state.syncSystems.length === 0 && state.recording === null && state.structure.referenceIds.length === 0 && state.journal.readers === 0
     && !state.claimed && !state.arrivals && state.touched === null && !state.counting && !state.transferring && state.holds.size === 0 && state.logs.length === 0;
 
 /** Whether an archetype can be emptied whole: none of its rows planned or spawned here, and nothing per row to let go. */
@@ -442,8 +443,8 @@ const planCommand = (state: State, queued: readonly Queued[], b: number, command
         plan.spawned++;
         const start = starts[command];
         const end = endOf(buffer, command);
-        let to = archetypes[empty];
-        for (let k = start; k < end; k++) to = state.shared[ids[k]] === undefined ? withComponent(state, to, ids[k]) : withShared(state, to, ids[k], sharedNumberOf(state, ids[k], buffer.values[k]));
+        let to = withComponents(state, archetypes[empty], ids, start, end);
+        for (let k = start; k < end; k++) if (state.shared[ids[k]] !== undefined) to = withShared(state, to, ids[k], sharedNumberOf(state, ids[k], buffer.values[k]));
         plan.to[entry] = to.id;
         if (end > start) addRange(state, entry, b, start, end);
         if (references) for (let k = start; k < end; k++) if (structure.references[ids[k]] !== 0) written.push(entity, ids[k], referenceAt(buffer, k));
@@ -500,21 +501,25 @@ const planCommand = (state: State, queued: readonly Queued[], b: number, command
     const keeps = shape !== null && shape.shared.length === 0;
     const known = keeps ? shape.adding[to.id] : undefined;
     const source = to.id;
+    const planned = to;
     for (let k = start; k < end; k++) {
         const id = ids[k];
         // Removed earlier in this sync point and added again: a new start, so a new `added` tick.
-        if (from !== null && from !== to && to.storageById[id] === undefined && from.storageById[id] !== undefined) {
+        if (from !== null && from !== planned && planned.storageById[id] === undefined && from.storageById[id] !== undefined) {
             let fresh = plan.fresh.get(entry);
             if (fresh === undefined) plan.fresh.set(entry, fresh = []);
-            fresh.push(id);
+            if (!fresh.includes(id)) fresh.push(id);
         }
-        if (known === undefined) to = state.shared[id] === undefined ? withComponent(state, to, id) : withShared(state, to, id, sharedNumberOf(state, id, buffer.values[k]));
         if (references && structure.references[id] !== 0) written.push(entity, id, referenceAt(buffer, k));
     }
     if (known !== undefined) to = archetypes[known];
-    else if (keeps) {
-        shape.adding[source] = to.id;
-        noteEdge(shape.adding, source, undefined, archetypes[source], to);
+    else {
+        to = withComponents(state, to, ids, start, end);
+        for (let k = start; k < end; k++) if (state.shared[ids[k]] !== undefined) to = withShared(state, to, ids[k], sharedNumberOf(state, ids[k], buffer.values[k]));
+        if (keeps) {
+            shape.adding[source] = to.id;
+            noteEdge(shape.adding, source, undefined, archetypes[source], to);
+        }
     }
     plan.to[entry] = to.id;
     if (end > start) addRange(state, entry, b, start, end);
@@ -574,7 +579,8 @@ const blockAt = (state: State, queued: readonly Queued[], b: number, command: nu
     let to = -1;
     if (kind !== despawnCommand) {
         let target = from;
-        for (let k = first; k < first + width; k++) target = kind === removeCommand ? withoutComponent(state, target, ids[k]) : withComponent(state, target, ids[k]);
+        if (kind === addCommand) target = withComponents(state, from, ids, first, first + width);
+        else for (let k = first; k < first + width; k++) target = withoutComponent(state, target, ids[k]);
         // Commands that leave the archetype as it is only replace values: entries write them in place.
         if (target === from) return 0;
         to = target.id;
@@ -795,7 +801,7 @@ const sort = (state: State, queued: readonly Queued[], tick: number): void => {
     let lastJoined = -2;
     let ranges = true;
     let leaving = 0;
-    /** Indexes a joined thread's finalizers hold, which a despawn kills without releasing; null for none. */
+    /** Indexes a joined thread's sync systems hold, which a despawn kills without releasing; null for none. */
     const holds = state.holds.size > 0 ? state.holds.counts : null;
     for (let entry = 0; entry < plan.count; entry++) {
         const index = indexOf(plan.entity[entry]);
@@ -808,7 +814,7 @@ const sort = (state: State, queued: readonly Queued[], tick: number): void => {
             if (fromRow >= 0) leaving++;
             if (fromId >= 0) state.touched?.add(archetypes[fromId]);
             if (fromId >= 0 && state.counting) countChanged(state.counted, archetypes[fromId]);
-            // Held while a joined thread's finalizers haven't acknowledged its stop.
+            // Held while a joined thread's sync systems haven't acknowledged its stop.
             if (holds !== null && index < holds.length && holds[index] > 0) kill(entities, index);
             else release(entities, index);
             continue;
@@ -828,12 +834,12 @@ const sort = (state: State, queued: readonly Queued[], tick: number): void => {
         // Entries of one pair usually come together, as a system's commands over one archetype do.
         let pair = key === lastKey ? lastPair : pairs.byKey.get(key);
         if (pair === undefined) {
-            pair = pairs.from.length;
+            pair = pairs.length++;
             pairs.byKey.set(key, pair);
-            pairs.from.push(fromId);
-            pairs.to.push(toId);
-            pairs.count.push(0);
-            pairs.start.push(entry);
+            pairs.from[pair] = fromId;
+            pairs.to[pair] = toId;
+            pairs.count[pair] = 0;
+            pairs.start[pair] = entry;
         }
         else if (pair !== lastPair || entry !== lastJoined + 1) ranges = false;
         lastKey = key;
@@ -844,11 +850,15 @@ const sort = (state: State, queued: readonly Queued[], tick: number): void => {
     }
     pairs.leaving = leaving;
     // Each archetype grows once to fit the entities moving or spawning into it, from its pairs' counts.
-    const incoming = new Map<number, number>();
-    for (let pair = 0; pair < pairs.to.length; pair++) incoming.set(pairs.to[pair], (incoming.get(pairs.to[pair]) ?? 0) + pairs.count[pair]);
-    for (const [id, count] of incoming) {
+    if (plan.incoming.length < archetypes.length) plan.incoming = new Int32Array(Math.max(archetypes.length, plan.incoming.length * 2));
+    const { incoming } = plan;
+    for (let pair = 0; pair < pairs.length; pair++) incoming[pairs.to[pair]] += pairs.count[pair];
+    for (let pair = 0; pair < pairs.length; pair++) {
+        const id = pairs.to[pair];
+        if (incoming[id] === 0) continue;
         const archetype = archetypes[id];
-        ensureCapacity(state.memory, archetype, archetype.count + count);
+        ensureCapacity(state.memory, archetype, archetype.count + incoming[id]);
+        incoming[id] = 0;
     }
     if (pairs.order.length < plan.count) pairs.order = new Int32Array(Math.max(plan.count, pairs.order.length * 2));
     const { order } = pairs;
@@ -858,7 +868,7 @@ const sort = (state: State, queued: readonly Queued[], tick: number): void => {
         return;
     }
     let start = 0;
-    for (let pair = 0; pair < pairs.count.length; pair++) {
+    for (let pair = 0; pair < pairs.length; pair++) {
         pairs.start[pair] = start;
         start += pairs.count[pair];
         pairs.count[pair] = 0;
@@ -941,7 +951,7 @@ const arrive = (state: State, queued: readonly Queued[], tick: number, deriving:
     const { entities, archetypes, plan } = state;
     const { pairs } = plan;
     const { order } = pairs;
-    for (let pair = 0; pair < pairs.from.length; pair++) {
+    for (let pair = 0; pair < pairs.length; pair++) {
         const from = pairs.from[pair] < 0 ? null : archetypes[pairs.from[pair]];
         const to = archetypes[pairs.to[pair]];
         const first = pairs.start[pair];
@@ -1030,7 +1040,7 @@ const merged = (carried: Reserved | null, reservations: Reserved): Reserved => {
     return { reused, firstNew: Math.min(carried.firstNew, reservations.firstNew) };
 };
 
-/** Every live entity whose archetype's closure differs gets an entry, after rules were registered. */
+/** Every live entity whose archetype's closure differs gets an entry, after derivations were registered. */
 const rederive = (state: State): void => {
     const { structure, archetypes } = state;
     structure.rederive = false;
@@ -1045,6 +1055,14 @@ const rederive = (state: State): void => {
     }
 };
 
+/** The queued buffers, leaving the spare list, empty, to queue the next sync point's; they're the spare from now on. */
+const takeQueued = (state: State): Queued[] => {
+    const queued = state.queued;
+    state.queued = state.spareQueued;
+    state.spareQueued = queued;
+    return queued;
+};
+
 /** Undoes a planned sync point's shared state, after it applied or failed. */
 const cleanUp = (state: State, queued: readonly Queued[]): void => {
     const { plan } = state;
@@ -1053,8 +1071,10 @@ const cleanUp = (state: State, queued: readonly Queued[]): void => {
     plan.count = 0;
     plan.spawned = 0;
     plan.dropped = 0;
-    plan.more.clear();
-    plan.fresh.clear();
+    // A map's `clear` allocates its table again, so only one holding something is cleared.
+    if (plan.more.size > 0) plan.more.clear();
+    if (plan.fresh.size > 0) plan.fresh.clear();
+    if (plan.born.size > 0) plan.born.clear();
     for (const id of plan.cleared) plan.clearing[id] = 0;
     plan.cleared.length = 0;
     for (const block of plan.blocks) {
@@ -1064,17 +1084,19 @@ const cleanUp = (state: State, queued: readonly Queued[]): void => {
     }
     plan.blocks.length = 0;
     const { pairs } = plan;
-    pairs.byKey.clear();
-    pairs.from.length = pairs.to.length = pairs.count.length = pairs.start.length = 0;
+    if (pairs.byKey.size > 0) pairs.byKey.clear();
+    // Their arrays keep their elements: emptying one lets its storage go, which the next sync point's pairs allocate again.
+    pairs.length = 0;
     // Systems reuse their buffers next run.
     for (const { buffer } of queued) clearBuffer(buffer);
+    if (queued === state.spareQueued) state.spareQueued.length = 0;
     refreshDirectories(state);
     flushDirectory(state.directory, state.bumped, state.archetypes, state.entities, state.resourceEntity, state.counted);
     // Published once the records name what its entries do, and before the epoch turns even.
     for (let k = 0; k < state.logs.length; k++) publishLog(state.logs[k]);
     endStructure(state.directory);
     state.syncing = null;
-    // Threads whose finalizers have new stops run them now, whether or not a task or observer post would replay them,
+    // Threads whose sync systems have new stops run them now, whether or not a task or observer post would replay them,
     // as do threads with staged values to release.
     for (let k = 0; k < state.channels.length; k++) {
         const channel = state.channels[k];
@@ -1091,29 +1113,71 @@ const anyCommands = (queued: readonly Queued[]): boolean => {
     return false;
 };
 
+/** Whether some archetype with rows, other than the resource entity's, has what `despawnWhere` command `command` selects. */
+const selectsAny = (state: State, buffer: CommandBuffer, command: number): boolean => {
+    const { ids, values } = buffer;
+    const start = buffer.starts[command];
+    const middle = start + buffer.entities[command];
+    const last = endOf(buffer, command);
+    const given = ids[last - 1] === despawnWhereHolds ? values[last - 1] : null;
+    const match = isDespawnMatch(given) ? given : null;
+    const end = match === null ? last : last - 1;
+    const { archetypes } = state;
+    for (let id = 0; id < archetypes.length; id++) {
+        const archetype = archetypes[id];
+        if (!archetype.resource && archetype.count !== 0 && matches(archetype, ids, start, middle, end, match)) return true;
+    }
+    return false;
+};
+
+/**
+ * Drops the queued commands when they're all `despawnWhere`s that select nothing, so the sync point taking them can be
+ * idle. Sound only for the whole queue at once: with no other command queued, nothing moves an entity into what one
+ * selects before it applies, and what the sync point spawns, it never selects. Returns whether the queue is empty.
+ */
+export const dropUnselecting = (state: State): boolean => {
+    const { queued } = state;
+    for (let k = 0; k < queued.length; k++) {
+        const { buffer } = queued[k];
+        if (buffer.stagedCount !== 0) return false;
+        for (let command = 0; command < buffer.count; command++) {
+            if (buffer.kinds[command] !== despawnWhereCommand || selectsAny(state, buffer, command)) return false;
+        }
+    }
+    for (let k = 0; k < queued.length; k++) clearBuffer(queued[k].buffer);
+    queued.length = 0;
+    return true;
+};
+
 /** The queue a sync point takes while nothing is queued, shared, since none is written to. */
 const noneQueued: readonly Queued[] = [];
 
-/** Whether a sync point would apply anything: commands queued, entities reserved or carried, rules to derive again, or failures to give. */
+/** Whether a sync point would apply anything: commands queued, entities reserved or carried, derivations to derive again, or failures to give. */
 export const syncPending = (state: State, queued: readonly Queued[] = state.queued): boolean =>
     anyCommands(queued) || reserved(state.entities) || state.carried !== null || state.structure.rederive
-    // Failures for its run, as a gone thread's stops it never finalized are.
+    // Failures for its run, as a gone thread's stops it never ran are.
     || state.unplaced.length > 0
-    // A watched resource written, which its changes finalizers see at a sync point.
-    || (state.resourcesSeen.size > 0 && resourcesWritten(state));
+    // A watched resource written, which its changes systems see at a sync point.
+    || (state.resourcesSeen.size > 0 && resourcesWritten(state))
+    // A watched component written through a row.
+    || (state.rowsWatched.length > 0 && rowsWritten(state));
 
 /**
  * The first half of a sync point: commits batch spawns, plans every command, cascades references and closes the plan
- * under rules. Nothing that exists moves yet, so the GPU can read back what the plan disturbs before `applySync`.
+ * under derivations. Nothing that exists moves yet, so the GPU can read back what the plan disturbs before `applySync`.
  * Returns false when there's nothing to apply. An `isolated` one applies only the queued buffers, without batches,
- * re-deriving or finalizers, for registration's own changes between runs.
+ * re-deriving or sync systems, for registration's own changes between runs.
  */
 export const prepareSync = (state: State, isolated = false): boolean => {
     if (!isolated) activate(state);
+    if (state.queued.length !== 0) dropUnselecting(state);
     // Taken first, so a sync point that throws can't replay its commands into the next one.
-    const queued = state.queued.length === 0 ? noneQueued : state.queued.splice(0);
-    // Finalizers' spawns are reserved during the last sync point, so their batches are pending without a reservation.
-    if (!syncPending(state, queued)) return false;
+    const queued = state.queued.length === 0 ? noneQueued : takeQueued(state);
+    // Sync systems' spawns are reserved during the last sync point, so their batches are pending without a reservation.
+    if (!syncPending(state, queued)) {
+        if (queued === state.spareQueued) state.spareQueued.length = 0;
+        return false;
+    }
     preparePending(state, queued, isolated);
     return true;
 };
@@ -1124,15 +1188,15 @@ export const prepareSync = (state: State, isolated = false): boolean => {
  */
 const preparePending = (state: State, queued: readonly Queued[], isolated: boolean): void => {
     const { structure, plan } = state;
-    // Finalizers see indexes as of before the sync point applies, with nothing it spawns or moves.
-    if (!isolated) refreshFinalizerIndexes(state);
+    // Sync systems see indexes as of before the sync point applies, with nothing it spawns or moves.
+    if (!isolated) refreshSyncSystemIndexes(state);
     plan.count = 0;
     plan.spawned = 0;
     plan.dropped = 0;
     let reservations: Reserved | null = null;
     beginStructure(state.directory);
     try {
-        // Indexes joined threads finalized are released, reusable after this sync point.
+        // Indexes whose stops joined threads ran are released, reusable after this sync point.
         if (state.claimed) for (let k = 0; k < state.channels.length; k++) settleStops(state.channels[k].stops, state.holds, state.entities.released);
         const made = materialize(state.memory, state.entities);
         // Positions blocks left unused name reservations of this sync point's own.
@@ -1146,7 +1210,7 @@ const preparePending = (state: State, queued: readonly Queued[], isolated: boole
         for (let k = 0; k < state.logs.length; k++) beginLog(state.logs[k], tick);
         const deriving = derives(structure);
         const close = (archetype: Archetype): Archetype => closureOf(structure, state.derived, archetype, (components, shared) => archetypeOf(state, components, shared), state.archetypes);
-        const born = new Map<number, number>();
+        const { born } = plan;
         // Before the plan, so commands against staged entities find them, and before any growth, which copies `count`
         // rows.
         if (!isolated) plan.spawned += commitBatches(state, tick, born, deriving ? close : null);
@@ -1193,11 +1257,11 @@ const stampMovedArrays = (state: State, tick: number): void => {
     for (const storage of state.archetypes[plan.to[entry]].storages) if (storage.layout.kind === "linear" && storage.layout.array !== undefined) stampChanged(storage, row, tick);
 };
 
-/** What a sync point whose finalizers threw nothing returns: read-only, so one is shared. */
+/** What a sync point whose sync systems threw nothing returns: read-only, so one is shared. */
 const nothingThrown: readonly Thrown[] = [];
 
 /**
- * The second half: runs finalizers against the plan, then applies it. A finalizer that throws doesn't stop the sync
+ * The second half: runs sync systems against the plan, then applies it. A sync system that throws doesn't stop the sync
  * point; what each threw is returned once it has applied.
  */
 export const applySync = (state: State): readonly Thrown[] => {
@@ -1210,10 +1274,10 @@ export const applySync = (state: State): readonly Thrown[] => {
     try {
         if (state.unplaced.length > 0 && !isolated) errors = state.unplaced.splice(0);
         if (state.recording !== null && !isolated) recordPlan(state, state.recording, queued, born);
-        if (state.finalizers.length > 0 && !isolated) {
-            const thrown = runFinalizers(state, queued, born, tick);
+        if (state.syncSystems.length > 0 && !isolated) {
+            const thrown = runSyncSystems(state, queued, born, tick);
             errors = errors.length === 0 ? thrown : [...errors, ...thrown];
-            // Finalizers reserve entities for their spawns; the next sync point accounts for them.
+            // Sync systems reserve entities for their spawns; the next sync point accounts for them.
             if (reserved(state.entities)) state.carried = materialize(state.memory, state.entities);
         }
         sort(state, queued, tick);
@@ -1226,21 +1290,22 @@ export const applySync = (state: State): readonly Thrown[] => {
         if (index !== null) applyIndexChanges(state, index);
         // A reservation whose spawn never arrived, from a chunk that failed after reserving, would otherwise leak its
         // index. Every spawn consumes one reservation and the rest were unreserved, so only a shortfall needs the scan,
-        // which skips what's released already. Finalizers' reservations came after, so they're left for the next sync
+        // which skips what's released already. Sync systems' reservations came after, so they're left for the next sync
         // point.
         if (plan.spawned + unreserved < reservations.reused.length + tableLength - reservations.firstNew) {
-            const released = new Set(state.entities.released);
+            const { list, count } = state.entities.released;
+            const released = new Set(list.slice(0, count));
             const leaked = (index: number): boolean => (index >= plan.slots.length || plan.slots[index] < 0) && state.entities.archetype[index] < 0 && !released.has(index);
             for (const index of reservations.reused) if (leaked(index)) release(state.entities, index);
             for (let index = reservations.firstNew; index < tableLength; index++) if (leaked(index)) release(state.entities, index);
         }
         recycle(state.memory, state.entities);
         state.syncs++;
-        // Archetypes of shared values left empty are reclaimed once they stayed so (`reclaim.ts`).
-        if (state.sharing) {
-            noteEmptied(state);
-            reclaimEmptied(state);
-        }
+        // Archetypes of shared values left empty are reclaimed once they stayed so, and those the resource entity left
+        // released (`reclaim.ts`).
+        if (state.resourceEntity >= 0) noteResourceLeft(state);
+        if (state.sharing) noteEmptied(state);
+        if (state.sharing || state.emptied.length > 0) reclaimEmptied(state);
     }
     finally {
         cleanUp(state, queued);
@@ -1257,7 +1322,7 @@ export const synchronize = (state: State): void => {
 
 /**
  * Applies `buffer` alone as a sync point, leaving what's pending for the next run's: registration's changes between
- * runs, which no finalizer sees.
+ * runs, which no sync system sees.
  */
 export const synchronizeAlone = (state: State, buffer: CommandBuffer): void => {
     const pending = state.queued.splice(0);
@@ -1269,7 +1334,7 @@ export const synchronizeAlone = (state: State, buffer: CommandBuffer): void => {
     }
     finally {
         state.queued.push(...pending);
-        // An isolated sync point runs no finalizers, so it reserves nothing for the next one.
+        // An isolated sync point runs no sync systems, so it reserves nothing for the next one.
         state.carried = carried;
     }
 };

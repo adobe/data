@@ -29,7 +29,7 @@ const install = (): void => {
 };
 
 const consumer = `
-import { Index, Plugin, Rule, System, World, gpuDevice, workers } from "@adobe/ecs";
+import { Component, Index, Plugin, System, World, gpuDevice, workers } from "@adobe/ecs";
 export const position = Symbol("exportsTest/position");
 export const element = Symbol("exportsTest/element");
 export const shown = Symbol("exportsTest/shown");
@@ -37,7 +37,9 @@ declare module "@adobe/ecs" {
     interface Components { [position]: { type: number }; [element]: { type: HTMLElement; thread: "main" }; [shown]: { type: true; derived: true } }
 }
 export const Placed = [position, element] as const;
-export const showing = Rule.create({ components: { with: [element] }, derive: [shown] });
+Component.derive(shown, { from: [element] });
+export const hide = System.removed({ components: { with: [element] } }, row => { row[element].remove(); });
+export const paired = System.create([System.create({}, () => {}), hide]);
 export const move = System.create({ components: { with: [position] } }, row => { row[position] += 1; });
 export const all = System.create({ systems: [move] });
 export const draw = System.render({ shader: { accessors: {} } }, () => {});
@@ -53,7 +55,7 @@ export const joined: Promise<World> = World.join(port, { threads: ["main"] });
 export const read = System.create({ readonly: true, components: { with: [position] }, lookup: { at: { with: [position] } } }, () => {});
 export const added = world.add(read);
 declare module "@adobe/ecs" { interface PluginConfig { canvas: HTMLCanvasElement } }
-export const canvasPlugin: Plugin<"canvas"> = { systems: [move], connect: (_, { canvas }) => () => canvas.remove() };
+export const canvasPlugin: Plugin<"canvas"> = { systems: [move, hide, paired], connect: (_, { canvas }) => () => canvas.remove() };
 declare const canvas: HTMLCanvasElement;
 export const started: Disposable = Plugin.start(world, [canvasPlugin], { canvas });
 `;

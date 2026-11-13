@@ -384,7 +384,7 @@ const writeSnapshot = (state: State, tail: Copied, from: number): void => {
 
 /**
  * The objects a tail writes in rows it reads from the snapshot, from position `claimed` on, become its own value in
- * their tags, which the thread holds, so the sync point moves and finalizes them as such.
+ * their tags, which the thread holds, so the sync point moves them and runs their stops as such.
  */
 const markOwn = (state: State, tail: Copied, claimed: number): void => {
     if (tail.writes.length > 0) for (let r = 0; r < runs.length; r += 4) {

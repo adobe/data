@@ -7,7 +7,7 @@ import type { Elements } from "./elements/define.js";
 export type Resources = Exclude<Parameters<typeof World.create>[0], undefined>;
 
 /**
- * What the app needs of a feature to compose it with the others. Its components, resources, indexes and finalizers
+ * What the app needs of a feature to compose it with the others. Its components, resources, indexes and derivations
  * register as its modules load, so they aren't listed.
  */
 export type Feature = {

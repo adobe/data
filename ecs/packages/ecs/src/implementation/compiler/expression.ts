@@ -1,9 +1,9 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import type { ConditionalExpression, Identifier, LogicalExpression, Node } from 'estree';
+import type { ConditionalExpression, Identifier, LogicalExpression, Node, ObjectExpression } from 'estree';
 import { access } from './access.js';
 import { observe, set } from './booleans.js';
 import { mergeBranches } from './branches.js';
-import { call } from './calls.js';
+import { call, commandName, commandValue } from './calls.js';
 import { dataValue, leavesOf, mapLeaves, sameShape, toData, type Data } from './data.js';
 import { fail } from './failure.js';
 import { isBinary, isUnary, local, not, number, type Expression } from './ir.js';
@@ -81,6 +81,22 @@ const presenceTest = (operator: string, value: Value, other: Value, scope: Scope
     return operator === "!==" || operator === "!=" ? present : not(present);
 };
 
+/**
+ * A struct keyed by components, `{ [position]: value }`, for a command to take: every key a component's identifier
+ * bound at module scope, each value evaluated here, in source order.
+ */
+const keyed = (node: ObjectExpression, scope: Scope, out: Out): Value => {
+    const fields: (readonly [string, Expression])[] = [];
+    for (const property of node.properties) {
+        if (property.type === "SpreadElement") return fail(property, "spread is not in the kernel subset");
+        if (property.kind !== "init" || property.method || !property.computed) return fail(property, "a struct keyed by components keys every field by a component, like [position]");
+        const name = commandName(property.key, scope);
+        if (fields.some(([field]) => field === name)) return fail(property.key, `${name} is keyed twice`);
+        fields.push([name, commandValue(name, property.value, scope, out)]);
+    }
+    return { kind: "keyed", fields };
+};
+
 /** Compiles an expression to a value, emitting any statements it needs into `out`. */
 export const expression = (node: Node, scope: Scope, out: Out): Value => {
     switch (node.type) {
@@ -95,10 +111,11 @@ export const expression = (node: Node, scope: Scope, out: Out): Value => {
                     : expression(element, scope, out)),
             };
         case "ObjectExpression":
+            if (node.properties.some(property => property.type === "Property" && property.computed)) return keyed(node, scope, out);
             return {
                 kind: "struct", fields: node.properties.map(property => {
                     if (property.type === "SpreadElement") return fail(property, "spread is not in the kernel subset");
-                    if (property.kind !== "init" || property.method || property.computed) return fail(property, "struct literals use plain field names");
+                    if (property.kind !== "init" || property.method) return fail(property, "struct literals use plain field names");
                     const name = property.key.type === "Identifier" ? property.key.name
                         : property.key.type === "Literal" && typeof property.key.value === "string" ? property.key.value
                         : fail(property.key, "struct literals use plain field names");

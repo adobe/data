@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Component, Finalizer, Resource, Rule, System, gpuDevice, workers, type Gpu } from "@adobe/ecs";
+import { Component, Resource, System, gpuDevice, workers, type Gpu } from "@adobe/ecs";
 import type * as Ecs from "@adobe/ecs";
 import type { Create } from "./world/create.js";
 
@@ -22,8 +22,8 @@ export const move = System.create({ components: { with: [position] } }, (row, { 
 export const show = System.create({ components: { with: [position, element] } }, row => { row[element].textContent = String(row[position]); });
 export const all = System.create({ systems: [move, show] });
 export const draw = System.render({ shader: { accessors: { place: position } } }, () => {});
-export const release = Finalizer.create({ components: { with: [element] } }, row => { row[element].remove(); });
-Rule.create({ components: { with: [position] }, derive: [slot] });
+export const release = System.removed({ components: { with: [element] } }, row => { row[element].remove(); });
+Component.derive(slot, { from: [position] });
 declare const create: Create;
 declare const wgsl: typeof Gpu.wgsl;
 export const world = create({ [workers]: 4, [gpuDevice]: null });
@@ -32,14 +32,17 @@ export const readOne = System.create({ readonly: true, lookup: { at: { with: [po
 export const report = world.run(all);
 export const shader = wgsl(draw);
 export const added = world.add(read);
+export const releasing = world.add(release);
 
 // Only types a consumer declares with are named; the rest are inferred where wanted.
 // @ts-expect-error a thread's name is keyof Threads
 export type NoThread = Ecs.Thread;
 // @ts-expect-error the cadence's value is Resource<typeof cadence>
 export type NoCadence = Ecs.Cadence;
-// @ts-expect-error a rule is the value Rule.create returns: ReturnType<typeof Rule.create>
-export const noRule: Rule = Rule.create({ components: { with: [position] }, derive: [slot] });
+// @ts-expect-error changes and removed systems are systems: no Finalizer
+export type NoFinalizer = Ecs.Finalizer;
+// @ts-expect-error derived components are derived by Component.derive: no Rule
+export type NoRule = Ecs.Rule;
 // @ts-expect-error an archetype is a list of components declared as const
 export const noArchetype: Ecs.Archetype = [position];
 // @ts-expect-error a trait's key is keyof Traits<never, never>

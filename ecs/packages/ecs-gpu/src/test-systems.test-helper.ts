@@ -1,5 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { type Entity, gpuDevice, System, type Vec4 } from "@adobe/ecs";
+import * as Frame from "./frame/public.js";
 import * as Surface from "./surface/public.js";
 import * as Target from "./target/public.js";
 import * as View from "./view/public.js";
@@ -30,3 +31,6 @@ export const sizeOf = System.create({ lookup: { targets: { with: [Target.size] }
 
 /** Whether a surface's canvas is configured for the world's device. */
 export const configured = System.create({}, ({ resources }, input: { readonly surface: Entity }) => resources[Surface.states]?.has(input.surface) ?? false);
+
+/** A frame, run rather than added: its releases are added to the world (`Frame.releases`). */
+export const frame = System.create([Frame.update, Frame.present]);

@@ -1,6 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { expect, it } from "vitest";
-import { Finalizer } from "../../interface/finalizer/finalizer.js";
 import { System } from "../../interface/system/system.js";
 import { createWorld } from "../index.js";
 import { readResource } from "./reads.test-helper.js";
@@ -32,10 +31,10 @@ const linesOf = (changes: { readonly groups: readonly { readonly added: readonly
     ...changes.resources.map(change => `${change.key.description} ${String(change.previous)} → ${String(change.next)}`),
 ];
 
-Finalizer.changes({ watch: [inDocument] }, (changes, { resources }) => {
+const save = System.changes({ watch: [inDocument] }, (changes, { resources }) => {
     resources[saved] = [...resources[saved], ...linesOf(changes)];
 });
-Finalizer.changes({ watch: { components: true, resources: [theme] } }, (changes, { resources }) => {
+const record = System.changes({ watch: { components: true, resources: [theme] } }, (changes, { resources }) => {
     resources[recorded] = [...resources[recorded], ...linesOf(changes)];
 });
 
@@ -47,6 +46,7 @@ const edit = System.create(({ resources }) => {
 
 it("watches each component and resource declaring a trait, and every component with the resources chosen", async () => {
     await using world = createWorld();
+    world.add(System.create([save, record]));
     await world.run(spawn);
     await world.run(edit);
     expect(await readResource(world, saved)).toEqual(["+watchTraits/title", "watchTraits/zoom 1 → 2"]);
@@ -55,6 +55,7 @@ it("watches each component and resource declaring a trait, and every component w
 
 it("watches a resource declaring a trait it watches that registers after the world started", async () => {
     await using world = createWorld();
+    world.add(System.create([save, record]));
     await world.run(spawn);
     const { widen } = await import("./watch-traits-late.test-helper.js");
     await world.run(widen);

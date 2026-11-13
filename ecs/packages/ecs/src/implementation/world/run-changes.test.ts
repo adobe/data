@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { expect, it } from "vitest";
-import { Entity, Finalizer, System } from "../../index.js";
+import { Entity, System } from "../../index.js";
 import { createWorld } from "../index.js";
 import type { Tables } from "../../interface/system/tables.js";
 import type { Table } from "../../interface/world/table/table.js";
@@ -23,8 +23,8 @@ declare module "@adobe/ecs" {
     }
 }
 
-// An entity spent leaves an echo, which its finalizer spawns at the next sync point.
-Finalizer.create({ components: { with: [name, spent] } }, (row, { commands }) => { commands.spawn([echo])({ [echo]: row[name] }); });
+// An entity spent leaves an echo, which its sync system spawns at the next sync point.
+System.removed({ components: { with: [name, spent] } }, (row, { commands }) => { commands.spawn([echo])({ [echo]: row[name] }); });
 
 const spawn = System.create({}, ({ commands }, input: { readonly who: string }) => { commands.spawn([name])({ [name]: input.who }); });
 const score10 = System.create({ components: { with: [name], not: [score] }, after: [spawn] }, (row, { commands }) => { commands.add(row.entity, score, 10); });
@@ -56,10 +56,10 @@ it("resolves to the run's own changes, merged across its sync points, with value
     expect(describe(await run(world))).toEqual([{ from: ["runChanges/name", "runChanges/score"], to: ["runChanges/name", "runChanges/score"], replaced: ["runChanges/score"], values: [[10, 11, "ada"]] }]);
 });
 
-it("leaves out what finalizers of an earlier sync point queued, and gives what its systems wrote of resources", async () => {
+it("leaves out what sync systems of an earlier sync point queued, and gives what its systems wrote of resources", async () => {
     await using world = createWorld();
     await world.run(enter, { who: "bo" });
-    // Its finalizer queues an echo for the next sync point, which applies before the next run's own changes.
+    // Its sync system queues an echo for the next sync point, which applies before the next run's own changes.
     const spent = await world.run(spend, { changes: true });
     expect(describe(spent)).toEqual([{ from: ["runChanges/name", "runChanges/score"], to: null, replaced: [], values: [[10, null, "bo"]] }]);
     expect(spent.resources).toEqual([{ key: budget, previous: 10, next: 9 }]);

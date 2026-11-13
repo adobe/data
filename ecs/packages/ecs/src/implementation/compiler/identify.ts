@@ -66,17 +66,16 @@ const declaresInModule = (program: Program, name: string): boolean => {
 const isSymbolCall = (node: Expression | null | undefined): node is Expression =>
     node?.type === "CallExpression" && node.callee.type === "Identifier" && node.callee.name === "Symbol";
 
-/** The package's namespaces whose constructors declare systems, rules, finalizers and indexes. */
-export type Namespace = "System" | "Rule" | "Finalizer" | "Index";
+/** The package's namespaces whose constructors declare systems, derived components and indexes. */
+export type Namespace = "System" | "Component" | "Index";
 
 const constructors: { readonly [N in Namespace]: ReadonlySet<string> } = {
-    System: new Set(["create", "render"]),
-    Rule: new Set(["create"]),
-    Finalizer: new Set(["create", "changes"]),
+    System: new Set(["create", "render", "changes", "removed"]),
+    Component: new Set(["derive"]),
     Index: new Set(["create"]),
 };
 
-const isNamespace = (name: string): name is Namespace => name === "System" || name === "Rule" || name === "Finalizer" || name === "Index";
+const isNamespace = (name: string): name is Namespace => name === "System" || name === "Component" || name === "Index";
 
 /** Whether an import specifier, resolved from the module being transformed, is a module of the package exporting `namespace`. */
 export type ResolveNamespace = (source: string, namespace: Namespace) => Promise<boolean>;
@@ -111,8 +110,20 @@ const declarationOf = (node: Node | null | undefined, namespaces: ReadonlyMap<st
     if (callee.type !== "MemberExpression" || callee.computed || callee.object.type !== "Identifier" || callee.property.type !== "Identifier") return undefined;
     const namespace = namespaces.get(callee.object.name);
     if (namespace === undefined || !constructors[namespace].has(callee.property.name)) return undefined;
-    const [declaration] = node.arguments;
+    // `Component.derive` takes the component it derives first.
+    const declaration = node.arguments[namespace === "Component" ? 1 : 0];
     return declaration === undefined || declaration.type === "SpreadElement" ? undefined : declaration;
+};
+
+/** The binding a top-level `Component.derive(key, ...)` statement's id names: `derive(key)`, numbered after the first of a key. */
+const deriveBindingOf = (node: Node, namespaces: ReadonlyMap<string, Namespace>, seen: Map<string, number>): string | null => {
+    if (node.type !== "CallExpression" || node.callee.type !== "MemberExpression" || node.callee.object.type !== "Identifier") return null;
+    if (namespaces.get(node.callee.object.name) !== "Component") return null;
+    const [derived] = node.arguments;
+    if (derived?.type !== "Identifier") return null;
+    const count = (seen.get(derived.name) ?? 0) + 1;
+    seen.set(derived.name, count);
+    return count === 1 ? `derive(${derived.name})` : `derive(${derived.name})${count}`;
 };
 
 const uniqueName = (code: string, base: string): string => {
@@ -122,7 +133,7 @@ const uniqueName = (code: string, base: string): string => {
 };
 
 /** Whether code may hold a constructor call worth resolving its imports for. */
-const mayDeclare = /\.(create|render|changes)\(/;
+const mayDeclare = /\.(create|render|changes|removed|derive)\(/;
 
 /**
  * Gives each top-level `Symbol(...)` declaration an id, its module's id and its binding (`src/keys.ts#position`, or
@@ -132,9 +143,10 @@ const mayDeclare = /\.(create|render|changes)\(/;
  * TypeScript namespaces, class fields or CommonJS exports, have no id, nor does any symbol where `Symbol` or
  * `globalThis` isn't the global.
  *
- * The same bindings initialized by a constructor call of the package's `System`, `Rule`, `Finalizer` or `Index`, imported under
+ * The same bindings initialized by a constructor call of the package's `System`, `Component` or `Index`, imported under
  * any local name, give the call's declaration their id, which the constructor takes from the map: a kernel's call as
- * the kernel transform wrapped it too. Returns null when nothing is identified, and a failure when something is but the
+ * the kernel transform wrapped it too. A top-level `Component.derive(key, declaration)` statement gives its declaration
+ * the id of binding `derive(key)`, numbered from the second deriving one key. Returns null when nothing is identified, and a failure when something is but the
  * module has no id (`moduleIdOf`). `packages` tells the kernel transform's hook from other imports.
  */
 export const identify = async (code: string, id: string | null, parse: Parse, resolve: ResolveNamespace, packages: PackageCopies): Promise<Identified | { readonly failure: string } | null> => {
@@ -151,9 +163,14 @@ export const identify = async (code: string, id: string | null, parse: Parse, re
             if (declaration !== undefined) found.push({ value: declaration, binding });
         }
     };
+    const derived = new Map<string, number>();
     for (const statement of program.body) {
         const declaration = statement.type === "ExportNamedDeclaration" ? statement.declaration : statement;
-        if (declaration?.type === "VariableDeclaration") {
+        if (statement.type === "ExpressionStatement" && namespaces.size > 0) {
+            const binding = deriveBindingOf(statement.expression, namespaces, derived);
+            if (binding !== null) consider(statement.expression, binding);
+        }
+        else if (declaration?.type === "VariableDeclaration") {
             for (const declarator of declaration.declarations) if (declarator.id.type === "Identifier") consider(declarator.init, declarator.id.name);
         } else if (statement.type === "ExportDefaultDeclaration" && statement.declaration.type === "CallExpression") {
             consider(statement.declaration, "default");

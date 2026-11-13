@@ -4,7 +4,7 @@ import { indexOf } from './entities.js';
 import type { Storage } from './archetype.js';
 import type { State } from './state.js';
 
-/** A watched resource written to a value that isn't equal to the one its finalizers last saw. */
+/** A watched resource written to a value that isn't equal to the one its sync systems last saw. */
 export type ResourceChange = { readonly id: number; readonly previous: unknown; readonly next: unknown };
 
 const noChanges: readonly ResourceChange[] = [];
@@ -17,14 +17,14 @@ const cellOf = (state: State, id: number): { readonly storage: Storage; readonly
     return storage === undefined ? null : { storage, row: state.entities.row[index] };
 };
 
-/** Starts following resource `id` for a changes finalizer watching it, from its value now. */
+/** Starts following resource `id` for a changes system watching it, from its value now. */
 export const watchResource = (state: State, id: number): void => {
     if (state.resourcesSeen.has(id)) return;
     const cell = cellOf(state, id);
     state.resourcesSeen.set(id, cell === null ? { value: state.starts[id], tick: 0 } : { value: readCell(cell.storage, cell.row), tick: cell.storage.changed[cell.row] });
 };
 
-/** Whether a watched resource was written since its finalizers last ran, so a sync point is due for them to see it. */
+/** Whether a watched resource was written since its sync systems last ran, so a sync point is due for them to see it. */
 export const resourcesWritten = (state: State): boolean => {
     for (const [id, seen] of state.resourcesSeen) {
         const cell = cellOf(state, id);
@@ -34,7 +34,7 @@ export const resourcesWritten = (state: State): boolean => {
 };
 
 /**
- * Each watched resource written since its finalizers last ran, to a value that isn't equal to the one they saw then,
+ * Each watched resource written since its sync systems last ran, to a value that isn't equal to the one they saw then,
  * with that value and its value now, which they see from now on.
  */
 export const takeResourceChanges = (state: State): readonly ResourceChange[] => {

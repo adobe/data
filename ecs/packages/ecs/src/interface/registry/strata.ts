@@ -1,27 +1,27 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 /**
- * Structural derivation: which components an archetype's entities have once rules and `within` are applied.
- * Datalog with stratified negation over the components each entity has. A rule adds the components it derives where
+ * Structural derivation: which components an archetype's entities have once derivations and `within` are applied.
+ * Datalog with stratified negation over the components each entity has. A derivation adds the components it derives where
  * its query matches; a component declared within a host stays only while the host is present. Each stratum is a least
  * fixed point, evaluated after every stratum it depends on, so the result is a pure function of the archetype.
  */
 
-/** A rule as component ids. */
-export type RuleFacts = { readonly has: readonly number[]; readonly not: readonly number[]; readonly derives: readonly number[] };
+/** A derivation as component ids. */
+export type DerivationFacts = { readonly has: readonly number[]; readonly not: readonly number[]; readonly derives: readonly number[] };
 
-/** Strata in evaluation order: the rules deriving into each, with only that stratum's components, and its `within` dependents. */
+/** Strata in evaluation order: the derivations deriving into each, with only that stratum's components, and its `within` dependents. */
 export type Strata = readonly {
-    readonly rules: readonly { readonly has: readonly number[]; readonly not: readonly number[]; readonly derives: readonly number[] }[];
+    readonly derivations: readonly { readonly has: readonly number[]; readonly not: readonly number[]; readonly derives: readonly number[] }[];
     readonly within: readonly { readonly dependent: number; readonly host: number }[];
 }[];
 
 type Edge = { readonly to: number; readonly negative: boolean; readonly within: boolean };
 
 /**
- * Orders rules and `within` declarations into strata. Throws for a cycle through a negation, which could oscillate,
+ * Orders derivations and `within` declarations into strata. Throws for a cycle through a negation, which could oscillate,
  * and for a cycle through `within`. `hosts[id]` is the host of a component declared within one, or -1.
  */
-export const strataOf = (rules: readonly RuleFacts[], hosts: readonly number[], nameOf: (id: number) => string): Strata => {
+export const strataOf = (derivations: readonly DerivationFacts[], hosts: readonly number[], nameOf: (id: number) => string): Strata => {
     const edges = new Map<number, Edge[]>();
     const nodes = new Set<number>();
     const edge = (from: number, to: number, negative: boolean, within: boolean): void => {
@@ -31,10 +31,10 @@ export const strataOf = (rules: readonly RuleFacts[], hosts: readonly number[], 
         if (list === undefined) edges.set(from, list = []);
         list.push({ to, negative, within });
     };
-    for (const rule of rules) {
-        for (const derived of rule.derives) {
-            for (const id of rule.has) edge(id, derived, false, false);
-            for (const id of rule.not) edge(id, derived, true, false);
+    for (const derivation of derivations) {
+        for (const derived of derivation.derives) {
+            for (const id of derivation.has) edge(id, derived, false, false);
+            for (const id of derivation.not) edge(id, derived, true, false);
             nodes.add(derived);
         }
     }
@@ -78,14 +78,14 @@ export const strataOf = (rules: readonly RuleFacts[], hosts: readonly number[], 
             for (const { to, negative, within } of edges.get(member) ?? []) {
                 if (!inside.has(to)) continue;
                 const cycle = members.map(nameOf).sort().join(", ");
-                if (negative) throw new Error(`Rules derive in a cycle through a negation, which could oscillate: ${cycle}.`);
+                if (negative) throw new Error(`Derivations derive in a cycle through a negation, which could oscillate: ${cycle}.`);
                 if (within) throw new Error(`Components are within each other in a cycle: ${cycle}.`);
             }
         }
         return {
-            rules: rules.flatMap(rule => {
-                const derives = rule.derives.filter(id => inside.has(id));
-                return derives.length === 0 ? [] : [{ has: rule.has, not: rule.not, derives }];
+            derivations: derivations.flatMap(derivation => {
+                const derives = derivation.derives.filter(id => inside.has(id));
+                return derives.length === 0 ? [] : [{ has: derivation.has, not: derivation.not, derives }];
             }),
             within: members.flatMap(dependent => (hosts[dependent] ?? -1) >= 0 ? [{ dependent, host: hosts[dependent] ?? -1 }] : []),
         };

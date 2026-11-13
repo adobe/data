@@ -249,8 +249,8 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         const columns = sources.map(source => {
             if (source.kind === "entity") return archetype.entities;
             // An optional component's presence: any column that has rows where the archetype has it, empty where it doesn't.
-            if (source.kind === "present") return archetype.storageOf.has(source.id) ? archetype.entities : emptyViews.f64;
-            const storage = archetype.storageOf.get(source.id);
+            if (source.kind === "present") return archetype.storageById[source.id] !== undefined ? archetype.entities : emptyViews.f64;
+            const storage = archetype.storageById[source.id];
             // An optional component's columns are empty where the archetype lacks it: reads give undefined.
             if (storage === undefined && optional.has(source.id)) return absentColumn(state.layouts[source.id], source);
             if (storage === undefined) return fail(`column of "${labelOf(state.keys[source.id])}" isn't in its components.`);
@@ -324,9 +324,11 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
     /**
      * Changed, chunk and block columns of components no registered system filters on are muted: nothing reads those
      * ticks, so the WASM drops their stamps and the JS kernel stamps one dummy element. Chunk columns of components
-     * held on the GPU stay, since uploads read them; block columns, which only filters read, go with the row ticks.
+     * held on the GPU stay, since uploads read them, as do those of components changes systems follow the rows written
+     * of (`rows-written.ts`); block columns, which only filters read, go with the row ticks.
      */
-    const stamped = (source: Extract<Source, { readonly id: number }>): boolean => state.observed.has(source.id) || (source.kind === "chunks" && state.resident.has(source.id));
+    const stamped = (source: Extract<Source, { readonly id: number }>): boolean => state.observed.has(source.id)
+        || (source.kind === "chunks" && (state.resident.has(source.id) || state.rowsFollowed[source.id] === true));
     const mutedNow = (): boolean[] => sources.map(source => (source.kind === "changed" || source.kind === "chunks" || source.kind === "blocks") && !stamped(source));
     const upWasmColumns: WasmColumn[] = upSources.map(source => {
         const layout = state.layouts[source.id];
@@ -361,7 +363,7 @@ export const bindKernel = (state: State, leaf: Leaf, description: KernelDescript
         upColumnsOf,
         wasm: generate(muted),
         allPresent: archetype => {
-            for (const id of setup.optional) if (!archetype.storageOf.has(id)) return false;
+            for (const id of setup.optional) if (archetype.storageById[id] === undefined) return false;
             return true;
         },
         compiled: () => compiled,

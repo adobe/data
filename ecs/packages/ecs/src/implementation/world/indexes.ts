@@ -24,14 +24,14 @@ import {
 import { compareObjects, keptSorted } from './index-keys.js';
 
 /**
- * What a world keeps of an index while some registered system or finalizer of it uses one: its structure, which
+ * What a world keeps of an index while some registered system or sync system of it uses one: its structure, which
  * archetypes it holds the entities of, how far it read the journal and the ticks of its key, and, by component its
  * lookups watch, how far it read that component's ticks.
  */
 export type WorldIndex = {
     readonly definition: IndexDefinition;
     readonly label: string;
-    /** Runners and finalizers using it: it's released when the last one is. */
+    /** Runners and sync systems using it: it's released when the last one is. */
     users: number;
     readonly keys: readonly number[];
     readonly has: readonly number[];
@@ -365,7 +365,7 @@ const changedRows = (archetype: Archetype, storage: Storage, since: number, each
 /** Whether a component may have been written since `since`: by a system, or by a command's value at a sync point. */
 const writtenSince = (state: State, component: number, since: number): boolean => state.written[component] > since || state.valuesWritten > since;
 
-/** Refreshes the indexes of a tier, or of the finalizers, before they run, their conflicts failing the run. */
+/** Refreshes the indexes of a tier, or of the sync systems, before they run, their conflicts failing the run. */
 export const refreshUses = (state: State, uses: readonly IndexUse[], pool: Pool | null = null): Promise<void> | null => {
     for (let k = 0; k < uses.length; k++) {
         const pending = refreshIndex(state, uses[k].index, uses[k].watching, state.indexFailures, pool);
@@ -398,7 +398,7 @@ export const mergeUses = (runners: readonly { readonly indexes: readonly IndexUs
 };
 
 /**
- * Brings an index up to date before a tier of systems that use it, or the finalize phase: rebuilt the first time, and
+ * Brings an index up to date before a tier of systems that use it, or the sync systems' phase: rebuilt the first time, and
  * when the journal dropped entries it hadn't read or more than an eighth of it would change; else patched for the
  * entities the journal lists and the rows whose key parts changed since its last refresh. Each component in `watching`,
  * which a lookup of the tier watches, stamps the buckets of its rows that changed. Conflicts of a unique index go in
@@ -1150,12 +1150,18 @@ export const acquireLookups = (state: State, lookup: { readonly [name: string]: 
 };
 
 /**
- * Before a run: starts ticks and kernels' stamps for what finalizers' indexes follow since the last one. Returns
+ * Before a run: starts ticks and kernels' stamps for what sync systems' indexes follow since the last one, and for
+ * what changes systems follow of rows written, whose kernels stamp only chunks (`rows-written.ts`). Returns
  * whether it did, so kernels that dropped those stamps load again.
  */
 export const startWatches = (state: State): boolean => {
     const pending = state.watchesPending;
-    if (pending.length === 0) return false;
+    const rows = state.rowsPending;
+    if (pending.length === 0 && rows.length === 0) return false;
+    // Changes systems are told of writes after the ticks they follow start, not of the start.
+    for (const id of rows) if (!state.ticked.has(id)) state.rowsStarted[id] = state.tick;
+    startTicking(state, rows);
+    rows.length = 0;
     startTicking(state, pending);
     for (const id of pending) observe(state, id);
     pending.length = 0;

@@ -1,16 +1,17 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import type { Finalizer } from '../../interface/finalizer/created.js';
+import type { SyncSystem } from '../../interface/system/sync-system.js';
 import { viewsOf, type Layout } from '../../interface/registry/layout.js';
+import { pushReleased, type Released } from './entities.js';
 import type { Memory } from './memory.js';
 import type { StringStore } from './strings.js';
-import { logFinalizedWord, logStopsWord, type MoveLog } from './move-log.js';
+import { logRanThroughWord, logStopsWord, type MoveLog } from './move-log.js';
 
-// Stop lists (threads.md, "Finalizers on other threads"): what a joined thread's finalizers need of the entities a sync
+// Stop lists (threads.md, "Removed systems on other threads"): what a joined thread's removed systems need of the entities a sync
 // point stops, written by the world's thread before it applies, one block per sync point with stops, which the thread
-// reads as it replays that sync and acknowledges by the sync it finalized through.
+// reads as it replays that sync and acknowledges by the sync it ran its stops through.
 //
 // A block's words: its sync, modulo 2^32; the next block's offset, stored once it's written, 0 until then; its groups;
-// its bytes. Then a group per finalizer with stops, in the world's finalizer order: its index on the thread, its stops,
+// its bytes. Then a group per removed system with stops, in the world's removed system order: its index on the thread, its stops,
 // its bytes; then as columns, each on 8 bytes, every stop's entity (f64), its archetype and row before apply (u32), the
 // tag of each object it reads (u32), and the value of each linear struct it reads in that component's layout, or for a
 // string, the handle of a copy of its record; then its resources as they were before apply: the handle of a copy of
@@ -56,7 +57,7 @@ export const resourceOffsetsOf = (strings: number, strides: readonly number[]): 
 };
 
 /**
- * Bytes of a group of `count` stops of a finalizer reading `objects` objects, linear values of `strides` bytes and
+ * Bytes of a group of `count` stops of a removed system reading `objects` objects, linear values of `strides` bytes and
  * `resources` bytes of resources.
  */
 const groupBytes = (count: number, objects: number, strides: readonly number[], resources: number): number => {
@@ -65,9 +66,9 @@ const groupBytes = (count: number, objects: number, strides: readonly number[], 
     return bytes + resources;
 };
 
-/** One of a joined thread's finalizers, as the world writes its stops. */
+/** One of a joined thread's removed systems, as the world writes its stops. */
 export type StopsOf = {
-    readonly finalizer: Finalizer;
+    readonly syncSystem: SyncSystem;
     /** Its index on the thread. */
     readonly index: number;
     /** The components of its object reads, then of its linear reads with their strides, in its `read` order. */
@@ -99,8 +100,8 @@ type Written = {
     readonly sync: number;
     /** Indexes of despawned entities, held until the thread acknowledges. */
     readonly held: number[];
-    /** Its finalizers and their stops, reported if the thread is gone before it acknowledges. */
-    readonly stopped: readonly (readonly [Finalizer, number])[];
+    /** Its removed systems and their stops, reported if the thread is gone before it acknowledges. */
+    readonly stopped: readonly (readonly [SyncSystem, number])[];
     /** The copies of strings' records its stops hold, let go once the thread acknowledges. */
     readonly strings: number[];
     acknowledged: boolean;
@@ -112,7 +113,7 @@ export type StopWriter = {
     readonly log: MoveLog;
     /** The world's records of strings, which stops copy. */
     readonly strings: StringStore | null;
-    /** Finalizers with stops this sync point, in order, whose block is written once every finalizer ran. */
+    /** Removed systems with stops this sync point, in order, whose block is written once every removed system ran. */
     readonly staged: StopsOf[];
     readonly written: Written[];
     /** Whether a block was written since the thread was last woken. */
@@ -122,7 +123,7 @@ export type StopWriter = {
 export const createStopWriter = (memory: Memory, log: MoveLog, strings: StringStore | null): StopWriter => ({ memory, log, strings, staged: [], written: [], unwoken: false });
 
 /**
- * Indexes of entities despawned with stops of joined threads' finalizers: by index, how many threads haven't
+ * Indexes of entities despawned with stops of joined threads' removed systems: by index, how many threads haven't
  * acknowledged the stop, so the sync point kills them without releasing them; and how many are held.
  */
 export type Holds = { counts: Int32Array; size: number };
@@ -192,7 +193,7 @@ export const writeStops = (writer: StopWriter, sync: number, source: StopSource)
     const u32 = new Uint32Array(buffer);
     const f64 = new Float64Array(buffer);
     const held: number[] = [];
-    const stopped: (readonly [Finalizer, number])[] = [];
+    const stopped: (readonly [SyncSystem, number])[] = [];
     const copied: number[] = [];
     u32[(offset >> 2) + blockSyncWord] = sync >>> 0;
     u32[(offset >> 2) + blockNextWord] = 0;
@@ -274,7 +275,7 @@ export const writeStops = (writer: StopWriter, sync: number, source: StopSource)
             const storageById = source.resourceArchetype < 0 ? undefined : archetypes[source.resourceArchetype].storageById;
             for (let k = 0; k < stringResources.length; k++) {
                 const handles = storageById?.[stringResources[k]]?.views.u32;
-                // Without the resource, unreachable while a finalizer activates only once its resources exist: its start.
+                // Without the resource, unreachable while a removed system activates only once its resources exist: its start.
                 const start = stops.stringStarts[k];
                 const copy = strings === null ? 0 : handles !== undefined ? strings.copy(handles[resourceRow]) : typeof start === "string" ? strings.write(start) : 0;
                 if (copy !== 0) copied.push(copy);
@@ -285,7 +286,7 @@ export const writeStops = (writer: StopWriter, sync: number, source: StopSource)
                 const stride = resourceStrides[k];
                 const target = column + resourceOffsets[k];
                 if (values === undefined) {
-                    // Unreachable while a finalizer activates only once its resources exist: its start.
+                    // Unreachable while a removed system activates only once its resources exist: its start.
                     const layout = stops.resourceLayouts[k];
                     if (layout.kind === "linear") layout.write(viewsOf(buffer, target, stride), 0, stops.linearStarts[k]);
                     continue;
@@ -297,7 +298,7 @@ export const writeStops = (writer: StopWriter, sync: number, source: StopSource)
                 else for (let b = 0; b < stride; b++) u8[target + b] = values.u8[resourceRow * stride + b];
             }
         }
-        stopped.push([stops.finalizer, count]);
+        stopped.push([stops.syncSystem, count]);
         group += size;
         entries.length = 0;
     }
@@ -317,28 +318,28 @@ const letGo = (writer: StopWriter, block: Written): void => {
     block.strings.length = 0;
 };
 
-/** Returns a held index once no thread finalizes it any more: it's reusable after the sync point. */
-const unhold = (holds: Holds, released: number[], held: readonly number[]): void => {
+/** Returns a held index once no thread will run its stop any more: it's reusable after the sync point. */
+const unhold = (holds: Holds, released: Released, held: readonly number[]): void => {
     const { counts } = holds;
     for (const index of held) {
         if (--counts[index] !== 0) continue;
         holds.size--;
-        released.push(index);
+        pushReleased(released, index);
     }
 };
 
 /**
- * Takes up what the thread acknowledged: blocks through the sync it finalized through return their held indexes, and
+ * Takes up what the thread acknowledged: blocks through the sync it ran its stops through return their held indexes, and
  * all but the newest of them are freed, since the thread reads the next block's offset from that one.
  */
-export const settleStops = (writer: StopWriter, holds: Holds, released: number[]): void => {
+export const settleStops = (writer: StopWriter, holds: Holds, released: Released): void => {
     const { written, memory } = writer;
     if (written.length === 0) return;
-    const finalized = Atomics.load(writer.log.header, logFinalizedWord) >>> 0;
+    const ranThrough = Atomics.load(writer.log.header, logRanThroughWord) >>> 0;
     let newest = -1;
     for (let k = 0; k < written.length; k++) {
         const block = written[k];
-        if (((finalized - block.sync) | 0) < 0) break;
+        if (((ranThrough - block.sync) | 0) < 0) break;
         if (!block.acknowledged) {
             block.acknowledged = true;
             unhold(holds, released, block.held);
@@ -351,22 +352,22 @@ export const settleStops = (writer: StopWriter, holds: Holds, released: number[]
 };
 
 /**
- * Once the thread is gone: every held index returns, and each finalizer with stops it never acknowledged is a `"thread"`
+ * Once the thread is gone: every held index returns, and each removed system with stops it never acknowledged is a `"thread"`
  * failure of the next sync point's run.
  */
-export const endStops = (writer: StopWriter, holds: Holds, released: number[], label: string): { readonly finalizer: Finalizer; readonly error: Error; readonly kind: "thread" }[] => {
+export const endStops = (writer: StopWriter, holds: Holds, released: Released, label: string): { readonly syncSystem: SyncSystem; readonly error: Error; readonly kind: "thread" }[] => {
     settleStops(writer, holds, released);
-    const missed = new Map<Finalizer, number>();
+    const missed = new Map<SyncSystem, number>();
     for (const block of writer.written) {
         if (block.acknowledged) continue;
         block.acknowledged = true;
         unhold(holds, released, block.held);
         letGo(writer, block);
-        for (const [finalizer, count] of block.stopped) missed.set(finalizer, (missed.get(finalizer) ?? 0) + count);
+        for (const [syncSystem, count] of block.stopped) missed.set(syncSystem, (missed.get(syncSystem) ?? 0) + count);
     }
-    return [...missed].map(([finalizer, count]) => ({
-        finalizer, kind: "thread",
-        error: new Error(`Thread "${label}" is gone, so ${count === 1 ? "a stop" : `${count} stops`} of finalizer "${finalizer.name}" didn't run there.`),
+    return [...missed].map(([syncSystem, count]) => ({
+        syncSystem, kind: "thread",
+        error: new Error(`Thread "${label}" is gone, so ${count === 1 ? "a stop" : `${count} stops`} of removed system "${syncSystem.name}" didn't run there.`),
     }));
 };
 

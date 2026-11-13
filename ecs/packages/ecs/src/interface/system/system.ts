@@ -4,8 +4,9 @@ declare const result: unique symbol;
 
 /**
  * A system, the value a System constructor returned: identified by that value and labeled by `name`, the binding it's
- * declared at. `run` takes it with a value of type `I`, or with nothing when `I` is `undefined`, and resolves to `R`.
+ * declared at. `run` takes it with a value of type `I`, or with nothing when `I` is `undefined`, and resolves to `R`;
+ * with `I` `never`, as `System.changes` and `System.removed` type theirs, `run` doesn't take it.
  */
-export type System<I = undefined, R = void> = { readonly name: string; readonly [input]?: I; readonly [result]?: () => R };
+export type System<I = undefined, R = void> = { readonly name: string; readonly [input]?: readonly [I]; readonly [result]?: () => R };
 
 export * as System from './index.js';

@@ -35,7 +35,7 @@ it in `NN-name.type-test.ts`, under a `// @ts-expect-error` that the package's b
   worlds before it resolves. Never top-level await.
 - Comments are reading aids, short, for what the code doesn't say; the prose carries the explanation.
 - What it prints shows the effect of each point it teaches, so leaving one out changes the output: enough entities
-  that a filter or a target matters, the values a system wrote read back, what a finalizer did. Add each to
+  that a filter or a target matters, the values a system wrote read back, what a removed system did. Add each to
   `mutations`.
 - An example that draws finds the element to draw in as `#output`, which the interactive guide's Output tab gives, and
   holds what it draws with in a resource; where there's no page, as in node, a small stand-in takes its place and

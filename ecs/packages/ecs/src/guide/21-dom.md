@@ -18,5 +18,6 @@ Each tick runs one composite:
 3. [`draw`](21-dom.ts#L52-L60), a readonly system, sets each moved dot's `style.translate`, a transform, which the page
    doesn't lay out again. `changed: [position]` skips the dots that didn't move.
 
-[A finalizer](21-dom.ts#L61-L63) removes a particle's element when the particle goes, and every element when the
-world is disposed, so one fewer dot is left once the traced particle is despawned.
+[`remove`](21-dom.ts#L61-L63), a removed system, removes a particle's element when the particle goes, and every
+element when the world is disposed, so one fewer dot is left once the traced particle is despawned. It's added in one
+composite with `create`, which makes the elements it removes.

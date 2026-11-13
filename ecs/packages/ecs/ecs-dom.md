@@ -34,8 +34,8 @@ hasn't settled is under Open.
   - **Bound** by a readonly system with the element and what it shows in `changed`.
   - **Placed** by a readonly system that runs rows whose element or order changed, in list order through a sorted
     index, putting each after the one before it; `moveBefore` keeps focus where the browser has it.
-  - **Removed** by a finalizer on the element component, which runs whatever ends the entity, `dispose` included, so no
-    node leaks.
+  - **Removed** by a removed system on the element component, listed beside the system creating it, which runs whatever
+    ends the entity, `dispose` included, so no node leaks.
 - **Fixed elements are resources:** each feature finds its own within the page's root as the app starts, and every
   system that uses one declares it in `resources.is`, so it's skipped in a world without it.
 - **Counts and summaries** are bound by readonly systems that run only when an index's entries changed (`changed: true`

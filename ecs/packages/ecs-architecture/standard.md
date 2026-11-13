@@ -11,7 +11,7 @@ src/
   <app>/            an app, sample or benchmark (app/, apps/, samples/, perftest/): puts features together
   <feature>/        a vertical slice, holding only layer folders; a group of features holds only features
     elements/       custom elements that know nothing of the ECS: the DOM only
-    model/          data, rules and systems that make sense headless: what's persisted and inspected
+    model/          data, derivations and systems that make sense headless: what's persisted and inspected
     ports/          glue to outside sources independent of this feature's markup: device input, network, storage, timers
     view/           systems that render the model, binding the DOM or drawing on the GPU, and connect this feature's widgets
 ```
@@ -41,7 +41,7 @@ or keys, is a port's.
 
 - **Public declarations live at a component's root, one per file, named `<kind>.<name>.ts`**, `<name>` kebab-case and
   the file named for its export: `component.todo-title.ts` exports `todoTitle`. Kinds: `type`, `constant`, `component`,
-  `resource`, `archetype`, `index`, `function`, `system`, `rule`, `finalizer`, `element`. (check)
+  `resource`, `archetype`, `index`, `function`, `system`, `element`. (check)
 - **A root file's export is its first declaration and its only export.** After the imports come its doc comment and the
   one `export`, typed as its interface (`export const clearCompleted: System = System.create(...)`); what it needs comes
   beneath it. Only what the export's statement needs as the module loads, such as an `Index` its declaration names, may
@@ -87,9 +87,13 @@ or keys, is a port's.
 - **Keys are top-level `Symbol()` constants** declared, by `declare module "@adobe/ecs"`, in the file that defines
   them. Archetypes are PascalCase `as const` arrays. An entity reference is a component of its own (`type: Entity`),
   never a field of a struct.
+- **A derived component is derived in the file that declares it:** `Component.derive(key, { from, not })` beneath its
+  key and `declare module` entry, so whoever imports the key gets its derivations. (check)
+- **A release is listed beside what creates it:** a removed system (`System.removed`) runs only while added, so it goes
+  in the same `systems` list or composite as the system making what it releases.
 - **Persist only independent data;** derived data is derived again on load.
 - **Read with a query,** not an `Index`, unless the system looks up by key or reads a set from inside another system.
-- **Commands,** not row assignment, for anything a changes finalizer must see.
+- **Commands,** not row assignment, for anything a changes system must see.
 - **Hot paths allocate nothing per frame,** and have a benchmark.
 
 ## Diagrams

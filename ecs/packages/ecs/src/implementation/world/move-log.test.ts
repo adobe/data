@@ -372,9 +372,9 @@ describe("the move log", () => {
     it("runs a thread's task once its rebuild failed for a sync point applied during it, with no wake after", async () => {
         const { state, mirror, entity, commands, queue, systems, post, done } = lapped();
         // A sync point applies while the thread rebuilds, after it read the structure epoch, and none follows it.
-        const through = mirror.finalize;
+        const through = mirror.runStops;
         let applied = false;
-        mirror.finalize = (sync, old) => {
+        mirror.runStops = (sync, old) => {
             if (!applied) {
                 applied = true;
                 commands.add(entity, amount, 9);
@@ -411,9 +411,9 @@ describe("the move log", () => {
         commands.add(entity, amount, 9);
         queue();
         expect(prepareSync(state)).toBe(true);
-        // Its finalizers replay, and the rebuild finds the sync point applying.
+        // Its sync systems replay, and the rebuild finds the sync point applying.
         mirror.stagedTransfers = 1;
-        systems.finalize();
+        systems.runStops();
         applySync(state);
         // A task whose input is posted after it: nothing runs it until the input arrives.
         post(true);

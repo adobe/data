@@ -54,7 +54,6 @@ correctness, then optimization. Remove an item once it's decided or done.
   chunks; render declarations take no `where` yet.
 - **Shared components as index key parts:** an index could key by an archetype's value per row; filtering by shared
   values is `where`'s for now.
-- **The `Finalizer` namespace** (from earlier open work; to be restated before it's discussed).
 - **A lint for an index its system's own query covers** (adobe/data#235): report an `Index.create({ key: [] })`, not
   unique, that one system alone looks up, whose `with` and `not` that system's `components` already match, and whose
   rows the body only iterates. The repository has no ESLint plugin or configuration yet, so it needs deciding where
@@ -130,7 +129,7 @@ correctness, then optimization. Remove an item once it's decided or done.
     build infers from its declaration written in place, which a snapshot's system, made at runtime from its input,
     doesn't have; a predicate there would read what the build can't follow. Possible: predicates reading no
     resources, or resources the caller names.
-  - **Incremental saves:** changes finalizers watching the trait a snapshot is taken by (`watch` by trait, above)
+  - **Incremental saves:** changes systems watching the trait a snapshot is taken by (`watch` by trait, above)
     would give autosaves and deltas.
   - **Choosing keys by their other traits:** a snapshot could take `with` and `not` over other traits a key's
     declaration carries, as a system's query does over components, to leave out, say, what's derived or transient.
@@ -195,13 +194,13 @@ Once this repository is public as `adobe/ecs`:
   `uncaughtException`, as for any uncaught error. A joined node worker's failures are reported on the world's thread,
   so they don't end the worker. Recommended: accept.
 - **Reported again after recovering:** a system is reported once while it keeps failing, and again once a tick or pass
-  ran its body without its failing, conditions and change filters skipping it changing nothing; a finalizer once a
+  ran its body without its failing, conditions and change filters skipping it changing nothing; a changes or removed system once a
   tick's sync points ran it without its failing; an index once a tick found no conflict in it; GPU work once a run of
   its system gave its scopes no error. Joined threads tell the world only of
-  failures, so their readonly systems are reported once per placement and their finalizers once. Recommended: accept.
+  failures, so their readonly systems are reported once per placement and their removed systems once. Recommended: accept.
 - **What's no failure and isn't public:** commands that did nothing and tiers that waited for a joined thread are
   gathered only for the implementation's tests. Recommended: accept, until instrumentation is designed.
-- **What fails a run and what's out of band:** a run rejects for its systems and finalizers, its tails, its joined
+- **What fails a run and what's out of band:** a run rejects for its systems, changes and removed systems included, its tails, its joined
   threads gone, its unique indexes' conflicts, those its readonly pass found included, and its own readonly systems,
   those on joined threads included; what those added throw, GPU errors, which
   come after the run, and kernels failing to load on the pool after it are out of band. A joined thread's `run` of its

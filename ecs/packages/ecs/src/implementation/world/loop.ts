@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Cadence } from '../../interface/resources/cadence.js';
 import type { Composite, Definition } from '../../interface/registry/index.js';
-import { requireDefinition } from '../../interface/registry/program.js';
+import { membersOf } from '../../interface/registry/program.js';
 import { isLeaf, isObserver, scheduleOf } from '../../interface/registry/schedule.js';
 import type { Leaf } from '../../interface/system/leaf.js';
 
@@ -107,7 +107,7 @@ const checkNoInput = (system: Definition, seen: Set<Definition> = new Set()): vo
         if (system.input !== undefined) throw new Error(`System "${system.name}" takes input, which ticks don't pass; run it instead.`);
         return;
     }
-    for (const member of system.declaration.systems) checkNoInput(requireDefinition(member), seen);
+    for (const member of membersOf(system)) checkNoInput(member, seen);
 };
 
 const noLeaves: readonly Leaf[] = [];

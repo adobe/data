@@ -1,7 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Resource } from '../resource/resource.js';
 import { Component } from '../component/component.js';
-import { Finalizer } from '../finalizer/finalizer.js';
 import { System } from './system.js';
 import type { ThreadedBy } from './threads.js';
 
@@ -60,24 +59,24 @@ const render = System.create({ components: { with: [node] } }, () => {});
 const play = System.create({ components: { with: [audio] } }, () => {});
 export const frame = System.create({ systems: [render, play] });
 
-// Finalizers too run on one thread, which registration finds from what their bodies use. One on another thread than
+// Sync systems too run on one thread, which registration finds from what their bodies use. One on another thread than
 // the world's, which a joined thread may fill, runs there after the sync point: it issues no commands, writes no
 // resources and looks up nothing.
-Finalizer.create({ components: { with: [node] } }, () => {});
-Finalizer.create({ components: { with: [node, label] } }, () => {});
-Finalizer.create({ components: { with: [node, position] } }, (row, context) => {
+System.removed({ components: { with: [node] } }, () => {});
+System.removed({ components: { with: [node, label] } }, () => {});
+System.removed({ components: { with: [node, position] } }, (row, context) => {
     row[node].remove();
     void [row[position], context.resources[document], context.resources[time]];
 });
 // On the world's thread, structs and its objects alike, it does.
-Finalizer.create({ components: { with: [label, position] }, lookup: { labels: { with: [label] } } }, (row, { commands, resources, lookup }) => {
+System.removed({ components: { with: [label, position] }, lookup: { labels: { with: [label] } } }, (row, { commands, resources, lookup }) => {
     resources[time] = lookup.labels(row.entity)?.[label].length ?? 0;
     commands.despawn(row.entity);
 });
-// A changes finalizer runs on the world's thread: watching another thread's objects doesn't compile.
-Finalizer.changes({ watch: [label, position] }, (_, { commands }) => { void commands; });
-// @ts-expect-error a changes finalizer watches no other thread's objects
-Finalizer.changes({ watch: [node] }, () => {});
+// A changes system runs on the world's thread: watching another thread's objects doesn't compile.
+System.changes({ watch: [label, position] }, (_, { commands }) => { void commands; });
+// @ts-expect-error a changes system watches no other thread's objects
+System.changes({ watch: [node] }, () => {});
 
 // The error names each object component and resource with its thread; data places nothing.
 check<Equal<ThreadedBy<{ readonly components: { readonly changed: [typeof audio, typeof position] }; readonly resources: { readonly is: [typeof document, typeof time] } }>, { readonly [audio]: "threadsTypeTest"; readonly [document]: "main" }>>();

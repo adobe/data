@@ -1,7 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { expect, it } from "vitest";
 import { System } from "../../interface/system/system.js";
-import { Finalizer } from "../../interface/finalizer/finalizer.js";
 import { workers } from "../../interface/resources/workers.js";
 import { createWorld, join } from "./create.js";
 import type { WorkerPlatform } from "./worker-platform.js";
@@ -39,8 +38,8 @@ it("follows a change of the workers resource at the next run, though the program
         await world.run(cool);
         await world.run(setWorkers);
         expect(starts).toBe(0);
-        // A finalizer created between runs changes the program, so the next run drains the joined thread first.
-        Finalizer.create({ components: { with: [other] } }, () => {});
+        // A sync system created between runs changes the program, so the next run drains the joined thread first.
+        System.removed({ components: { with: [other] } }, () => {});
         await world.run(cool);
         expect(starts).toBe(1);
     }

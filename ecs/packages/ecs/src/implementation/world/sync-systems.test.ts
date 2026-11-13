@@ -1,0 +1,310 @@
+// © 2026 Adobe. MIT License. See /LICENSE for details.
+import { Component } from "../../interface/component/component.js";
+import { describe, expect, it } from "vitest";
+import { identify } from "../../interface/registry/ids.test-helper.js";
+import { Entity } from "../../interface/entity/entity.js";
+import { System } from "../../interface/system/system.js";
+import { createWorld, recorderOf } from "./create.js";
+import { count, read, readEach, readResource, select } from "./reads.test-helper.js";
+import { workers } from "../../interface/resources/workers.js";
+import { outcomeOf } from "./outcomes.test-helper.js";
+
+const handle = Symbol("syncSystemsTest/handle");
+const hidden = Symbol("syncSystemsTest/hidden");
+const source = Symbol("syncSystemsTest/source");
+const slot = Symbol("syncSystemsTest/slot");
+const parent = Symbol("syncSystemsTest/parent");
+const label = Symbol("syncSystemsTest/label");
+const released = Symbol("syncSystemsTest/released");
+const late = Symbol("syncSystemsTest/late");
+const level = Symbol("syncSystemsTest/level");
+const written = Symbol("syncSystemsTest/written");
+// Each test's changes and removed systems match components of their own.
+const counted = Symbol("syncSystemsTest/counted");
+const pendingHandle = Symbol("syncSystemsTest/pendingHandle");
+const respawned = Symbol("syncSystemsTest/respawned");
+const ordered = Symbol("syncSystemsTest/ordered");
+const writing = Symbol("syncSystemsTest/writing");
+const disposing = Symbol("syncSystemsTest/disposing");
+const reloaded = Symbol("syncSystemsTest/reloaded");
+
+declare module "@adobe/ecs" {
+    export interface Components {
+        [reloaded]: { type: number };
+        [handle]: { type: number };
+        [hidden]: { type: true };
+        [source]: { type: number };
+        [slot]: { type: number; derived: true };
+        [parent]: { type: Entity; reference: "owner" };
+        [label]: { type: string };
+        [late]: { type: number };
+        [counted]: { type: number };
+        [pendingHandle]: { type: number };
+        [respawned]: { type: number };
+        [ordered]: { type: number };
+        [writing]: { type: number };
+        [disposing]: { type: number };
+    }
+    export interface Resources {
+        [released]: { type: number };
+        [level]: { type: number };
+        [written]: { type: number };
+    }
+}
+
+
+Component.derive(slot, { from: [source] });
+
+let steps: ((commands: System.Commands) => void)[] = [];
+const edit = System.create({}, ({ commands }, input: { readonly step: number }) => {
+    steps[input.step]?.(commands);
+});
+const step = (world: ReturnType<typeof createWorld>) => (run: (commands: System.Commands) => void) => {
+    steps = [...steps, run];
+    return world.run(edit, { step: steps.length - 1 });
+};
+
+describe("removed systems", () => {
+    it("run for each entity that stops matching, by any cause, reading its values before the sync point applies", async () => {
+        const seen: [Entity, number][] = [];
+        const release = System.removed({ components: { with: [handle], not: [hidden] } }, row => { seen.push([row.entity, row[handle]]); });
+        const world = createWorld({ [workers]: 0 });
+        world.add(release);
+        const run = step(world);
+        const spawned: Entity[] = [];
+        await run(commands => { for (let i = 0; i < 6; i++) spawned.push(commands.spawn([handle])({ [handle]: i * 10 })); });
+        const [despawned, removed, excluded, replaced, kept, rewritten] = spawned;
+        await run(commands => {
+            commands.despawn(despawned);
+            commands.remove(removed, handle);
+            commands.add(excluded, hidden, true);
+            commands.remove(replaced, handle);
+            commands.add(replaced, handle, 99);
+            commands.add(rewritten, handle, 55);
+            // Spawned and despawned at once: it never matched.
+            commands.despawn(commands.spawn([handle])({ [handle]: 1 }));
+        });
+        expect(seen).toEqual([[despawned, 0], [removed, 10], [excluded, 20], [replaced, 30]]);
+        expect(await read(world, replaced, handle)).toBe(99);
+        expect(await read(world, kept, handle)).toBe(40);
+        await world.dispose();
+    });
+
+    it("run for derivations' and references' removals too, and at disposal for every live match", async () => {
+        const seen: number[] = [];
+        const release = System.removed({ components: { with: [slot, source] } }, row => { seen.push(row[source]); });
+        const world = createWorld({ [workers]: 0 });
+        world.add(release);
+        const run = step(world);
+        let root = Entity.none, child = Entity.none;
+        await run(commands => {
+            root = commands.spawn([source])({ [source]: 1 });
+            child = commands.spawn([source, parent])({ [source]: 2, [parent]: root });
+            commands.spawn([source])({ [source]: 3 });
+        });
+        await run(commands => commands.despawn(root));
+        expect(seen.sort()).toEqual([1, 2]);
+        expect(await read(world, child, source)).toBeNull();
+        await world.dispose();
+        expect(seen.sort()).toEqual([1, 2, 3]);
+    });
+
+    it("write resources at the sync point, queue commands for the next one, and see lookups as they were", async () => {
+        const found: (number | null)[] = [];
+        const release = System.removed({
+            components: { with: [counted] },
+            lookup: { handles: { with: [counted] } },
+        }, (row, { resources, lookup, commands }) => {
+            resources[released] += 1;
+            found.push(lookup.handles(row.entity)?.[counted] ?? null);
+            commands.spawn([label])({ [label]: `after ${row[counted]}` });
+        });
+        const world = createWorld({ [workers]: 0 });
+        world.add(release);
+        const run = step(world);
+        let a = Entity.none;
+        await run(commands => { a = commands.spawn([counted])({ [counted]: 5 }); });
+        await run(commands => commands.despawn(a));
+        expect(found).toEqual([5]);
+        expect(await readResource(world, released)).toBe(1);
+        expect(await count(world, { required: [label] })).toBe(0);
+        await run(() => {});
+        expect(await count(world, { required: [label] })).toBe(1);
+        await world.dispose();
+    });
+
+    it("leave their commands for the next run's sync point, even when that run first adds resources", async () => {
+        let other = Entity.none;
+        const release = System.removed({ components: { with: [pendingHandle] } }, (_, { commands }) => { commands.despawn(other); });
+        const reads = System.create({}, ({ resources }) => { void resources[level]; });
+        // Read after every run, as a read through a run of its own would apply the commands left for it.
+        let seen: string | null = null;
+        const watch = System.create({ readonly: true, lookup: { labels: { with: [label] } } }, ({ lookup }) => {
+            seen = lookup.labels(other)?.[label] ?? null;
+        });
+        const world = createWorld({ [workers]: 0 });
+        world.add(watch);
+        world.add(release);
+        const run = step(world);
+        let a = Entity.none;
+        await run(commands => { a = commands.spawn([pendingHandle])({ [pendingHandle]: 1 }); other = commands.spawn([label])({ [label]: "other" }); });
+        await run(commands => commands.despawn(a));
+        expect(seen).toBe("other");
+        await world.run(reads);
+        expect(seen).toBeNull();
+        await world.dispose();
+    });
+
+    it("keep reservations they make apart from the indexes their sync point frees", async () => {
+        const respawn = System.removed({ components: { with: [respawned] } }, (row, { commands }) => {
+            commands.spawn([respawned])({ [respawned]: row[respawned] + 100 });
+        });
+        const world = createWorld({ [workers]: 0 });
+        world.add(respawn);
+        const run = step(world);
+        const first: Entity[] = [];
+        await run(commands => { for (let i = 0; i < 8; i++) first.push(commands.spawn([respawned])({ [respawned]: i })); });
+        await run(commands => { for (const entity of first) commands.despawn(entity); });
+        await run(commands => { for (let i = 0; i < 8; i++) commands.spawn([respawned])({ [respawned]: 1000 + i }); });
+        const live = await select(world, { required: [respawned] });
+        expect(new Set(live).size).toBe(16);
+        expect((await readEach(world, live, respawned)).sort((x, y) => (x ?? 0) - (y ?? 0)))
+            .toEqual([100, 101, 102, 103, 104, 105, 106, 107, 1000, 1001, 1002, 1003, 1004, 1005, 1006, 1007]);
+        await world.dispose();
+    });
+
+    it("run in their order, and a throw still applies the sync point and is reported", async () => {
+        const order: string[] = [];
+        const second = System.removed({ components: { with: [ordered] } }, () => { order.push("second"); });
+        const first = System.removed({ components: { with: [ordered] }, before: [second] }, () => { order.push("first"); });
+        const throwing = System.removed({ components: { with: [ordered] } }, () => { throw new Error("sync system failed"); });
+        const world = createWorld({ [workers]: 0 });
+        world.add(System.create([second, first, throwing]));
+        recorderOf(world);
+        const run = step(world);
+        let a = Entity.none;
+        await run(commands => { a = commands.spawn([ordered])({ [ordered]: 1 }); });
+        const { outcome, error } = await outcomeOf(world, run(commands => commands.despawn(a)));
+        expect(outcome.failures.map(({ kind, name, message }) => ({ kind, name, message }))).toEqual([{ kind: "sync system", name: "throwing", message: "sync system failed" }]);
+        // The run rejects, naming it, once its sync point applied.
+        expect(error instanceof Error && error.message).toMatch(/^System "throwing" .*failed: sync system failed$/);
+        expect(order).toEqual(["first", "second"]);
+        expect(await read(world, a, handle)).toBeNull();
+        const writer = (name: "writerA" | "writerB") =>
+            System.removed({ components: { with: [writing] } }, (_, { resources }) => { resources[written] = 1; });
+        world.add(writer("writerA"));
+        expect(() => world.add(writer("writerB"))).toThrow("order them with before or after");
+        await world.dispose();
+    });
+});
+
+describe("a removed system declared again the same, as a module evaluated again declares it", () => {
+    it("keeps its place in each world, and runs its new body once", async () => {
+        const seen: string[] = [];
+        const first = System.removed(identify({ components: { with: [reloaded] } }, "syncSystemsTest/sync-systems.ts#reloaded"), () => { seen.push("first"); });
+        const world = createWorld({ [workers]: 0 });
+        world.add(first);
+        let entity = Entity.none;
+        await step(world)(commands => { entity = commands.spawn([reloaded])({ [reloaded]: 1 }); });
+        const again = System.removed(identify({ components: { with: [reloaded] } }, "syncSystemsTest/sync-systems.ts#reloaded"), () => { seen.push("again"); });
+        expect(again).toBe(first);
+        await step(world)(commands => { commands.despawn(entity); });
+        expect(seen).toEqual(["again"]);
+        expect(() => System.removed(identify({ components: { with: [handle] } }, "syncSystemsTest/sync-systems.ts#reloaded"), () => {})).toThrow("reload the page");
+        await world.dispose();
+    });
+});
+
+describe("a removed system added after a world has entities it matches", () => {
+    it("releases them at disposal", async () => {
+        const world = createWorld({ [workers]: 0 });
+        await step(world)(commands => { commands.spawn([disposing])({ [disposing]: 4 }); });
+        const seen: number[] = [];
+        world.add(System.removed({ components: { with: [disposing] } }, row => { seen.push(row[disposing]); }));
+        await world.dispose();
+        expect(seen).toEqual([4]);
+    });
+});
+
+describe("changes systems", () => {
+    it("watch by default every component that isn't derived, including ones first used later, and no resources", async () => {
+        const seen: unknown[] = [];
+        const watch = System.changes({  }, (changes, { resources }) => {
+            void resources[level];
+            for (const group of changes.groups) seen.push(group.to);
+        });
+        const world = createWorld({ [workers]: 0 });
+        world.add(watch);
+        await step(world)(commands => { commands.spawn([late])({ [late]: 1 }); });
+        expect(seen).toEqual([[late]]);
+        await world.dispose();
+    });
+
+    it("see each sync point's structural changes to their components, grouped, with values before and after", async () => {
+        const groups: unknown[] = [];
+        const values: unknown[] = [];
+        const watch = System.changes({ watch: [handle, label] }, ({ groups: seen, previous, next }) => {
+            for (const group of seen) {
+                groups.push({ ...group, entities: group.entities.length });
+                for (const entity of group.entities) values.push([previous(entity, handle), next(entity, handle)]);
+            }
+        });
+        const world = createWorld({ [workers]: 0 });
+        world.add(watch);
+        const run = step(world);
+        let a = Entity.none, b = Entity.none;
+        await run(commands => { a = commands.spawn([handle])({ [handle]: 1 }); b = commands.spawn([handle, label])({ [handle]: 2, [label]: "b" }); commands.spawn([hidden])({ [hidden]: true }); });
+        expect(groups).toEqual([
+            { from: null, to: [handle], added: [handle], removed: [], replaced: [], entities: 1 },
+            { from: null, to: [handle, label], added: [handle, label], removed: [], replaced: [], entities: 1 },
+        ]);
+        expect(values).toEqual([[null, 1], [null, 2]]);
+        groups.length = values.length = 0;
+        await run(commands => { commands.add(a, [label, handle], { [label]: "a", [handle]: 3 }); commands.despawn(b); commands.add(a, hidden, true); });
+        expect(groups).toEqual([
+            { from: [handle], to: [handle, label], added: [label], removed: [], replaced: [handle], entities: 1 },
+            { from: [handle, label], to: null, added: [], removed: [handle, label], replaced: [], entities: 1 },
+        ]);
+        expect(values).toEqual([[1, 3], [2, null]]);
+        await world.dispose();
+    });
+
+    it("see a value an add gives a component the entity keeps as replaced, removed and added again or not", async () => {
+        const groups: unknown[] = [];
+        const values: unknown[] = [];
+        const watch = System.changes({ watch: [handle, label] }, ({ groups: seen, previous, next }) => {
+            for (const group of seen) {
+                groups.push({ ...group, entities: group.entities.length });
+                for (const entity of group.entities) values.push([previous(entity, handle), next(entity, handle)]);
+            }
+        });
+        const world = createWorld({ [workers]: 0 });
+        world.add(watch);
+        const run = step(world);
+        let a = Entity.none, b = Entity.none, c = Entity.none;
+        await run(commands => { a = commands.spawn([handle, label])({ [handle]: 1, [label]: "a" }); b = commands.spawn([handle, label])({ [handle]: 2, [label]: "b" }); c = commands.spawn([handle, label])({ [handle]: 3, [label]: "c" }); });
+        groups.length = values.length = 0;
+        await run(commands => {
+            commands.add(a, handle, 10);
+            commands.add(a, handle, 11);
+            commands.remove(b, handle);
+            commands.add(b, handle, 20);
+            commands.add(c, handle, 30);
+            commands.remove(c, handle);
+        });
+        expect(groups).toEqual([
+            { from: [handle, label], to: [handle, label], added: [], removed: [], replaced: [handle], entities: 2 },
+            { from: [handle, label], to: [label], added: [], removed: [handle], replaced: [], entities: 1 },
+        ]);
+        expect(values).toEqual([[1, 11], [2, 20], [3, null]]);
+        groups.length = values.length = 0;
+        // Consecutive entries between the same archetypes, adding different components, group apart.
+        await run(commands => { commands.add(a, handle, 12); commands.add(b, label, "b2"); commands.add(c, label, "c2"); });
+        expect(groups).toEqual([
+            { from: [handle, label], to: [handle, label], added: [], removed: [], replaced: [handle], entities: 1 },
+            { from: [handle, label], to: [handle, label], added: [], removed: [], replaced: [label], entities: 1 },
+            { from: [label], to: [label], added: [], removed: [], replaced: [label], entities: 1 },
+        ]);
+        await world.dispose();
+    });
+});

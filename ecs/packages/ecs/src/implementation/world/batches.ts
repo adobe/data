@@ -85,7 +85,7 @@ const archetypeOfBatch = (state: State, batch: SpawnBatch): Archetype => {
 };
 
 /**
- * Copies rows `first` to `first + n` of a batch into its archetype, or into its closure under `close` when rules or
+ * Copies rows `first` to `first + n` of a batch into its archetype, or into its closure under `close` when derivations or
  * `within` apply, places their entities, writes the defaults of derived components the target gains, and stamps their
  * ticks with the sync point's tick, as a commanded spawn would be. `born` records the first row each target gains.
  */

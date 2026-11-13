@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { type Entity, Finalizer, System, type Vec2, type Vec4 } from "@adobe/ecs";
+import { type Entity, System, type Vec2, type Vec4 } from "@adobe/ecs";
 
 /**
  * What a render target draws into: its color format, null for the platform's preferred canvas format; its samples per
@@ -117,7 +117,7 @@ export const recordClears = (encoder: GPUCommandEncoder, targets: ReadonlyMap<En
 };
 
 /** Destroys a render target's textures when it stops being one. */
-export const release = Finalizer.create({ components: { with: [options, size] } }, (target, { resources }) => {
+export const release = System.removed({ components: { with: [options, size] } }, (target, { resources }) => {
     const current = resources[states];
     const state = current?.get(target.entity);
     if (current === null || state === undefined) return;

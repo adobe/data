@@ -27,7 +27,7 @@ export const ensureResources = (state: State, keys: Iterable<Key>): void => {
     for (const key of keys) {
         const id = idOf(state, key);
         // A joined thread's object starts there; the world holds none of its values.
-        if (archetype?.storageOf.has(id) !== true) values[key] = state.remote[id] === undefined ? initialOf(state, key) : state.starts[id];
+        if (archetype?.storageById[id] === undefined) values[key] = state.remote[id] === undefined ? initialOf(state, key) : state.starts[id];
     }
     if (Reflect.ownKeys(values).length === 0) return;
     const buffer = createBuffer();
@@ -57,7 +57,7 @@ export const setResource = (state: State, key: Key, value: unknown): void => {
 export const findResource = (state: State, key: Key): ResourceCell | undefined => {
     if (state.resourceEntity < 0) return undefined;
     const index = indexOf(state.resourceEntity);
-    const storage = state.archetypes[state.entities.archetype[index]]?.storageOf.get(idOf(state, key));
+    const storage = state.archetypes[state.entities.archetype[index]]?.storageById[idOf(state, key)];
     return storage === undefined ? undefined : { storage, row: state.entities.row[index] };
 };
 
@@ -68,7 +68,7 @@ export const resourceArchetype = (state: State): Archetype | undefined => state.
 export const resourceCell = (state: State, key: Key): ResourceCell => {
     const index = indexOf(state.resourceEntity);
     const archetype = state.archetypes[state.entities.archetype[index]];
-    const storage = archetype?.storageOf.get(idOf(state, key));
+    const storage = archetype?.storageById[idOf(state, key)];
     if (storage === undefined) throw new Error(`Resource "${labelOf(key)}" isn't in this world.`);
     return { storage, row: state.entities.row[index] };
 };

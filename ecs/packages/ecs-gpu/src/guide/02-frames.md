@@ -4,11 +4,13 @@
 [`gpuDevice`](02-frames.ts#L20-L21). `Device.keep(world)` sets it and asks again each time it's lost.
 
 - **Surfaces:** `Surface.attach` makes a render target presenting to a canvas, an `OffscreenCanvas`, so the world may
-  run on a worker. [Here](02-frames.ts#L26-L27) it takes the page's canvas; `Surface.observe` keeps the target the
+  run on a worker. [Here](02-frames.ts#L27-L28) it takes the page's canvas; `Surface.observe` keeps the target the
   canvas's size on the page, in device pixels.
-- **Frames:** `Frame.systems` brings targets, surfaces and views up to date with the device and clears each target, then
-  presents each surface. A frame runs them with its draws between, which declare
-  [`after: [Frame.update], before: [Frame.present]`](02-frames.ts#L6-L8).
+- **Frames:** `Frame.update` brings targets, surfaces and views up to date with the device and clears each target, and
+  `Frame.present` presents each surface. A frame runs them with its draws between, which declare
+  [`after: [Frame.update], before: [Frame.present]`](02-frames.ts#L6-L8). [`Frame.releases`](02-frames.ts#L22), added
+  to the world, releases what `Frame.update` made for an entity once it stops being a target, surface or view.
+  `Frame.systems` is all three, for a world that ticks its frames.
 - **Passes:** `View.begin(encoder, view)` begins a pass drawing into a view, limited to its rectangle.
 
 Without a device, as in node, the world runs the same systems and draws nothing: a frame still updates

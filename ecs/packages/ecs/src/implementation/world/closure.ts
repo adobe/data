@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 /**
- * Structural derivation: which components an archetype's entities have once rules and `within` are applied.
- * Datalog with stratified negation over the components each entity has. A rule adds the components it derives where
+ * Structural derivation: which components an archetype's entities have once derivations and `within` are applied.
+ * Datalog with stratified negation over the components each entity has. A derivation adds the components it derives where
  * its query matches; a component declared within a host stays only while the host is present. Each stratum is a least
  * fixed point, evaluated after every stratum it depends on, so the result is a pure function of the archetype.
  */
@@ -9,7 +9,7 @@
 import type { Strata } from '../../interface/registry/strata.js';
 
 /**
- * The sorted components an entity with `components` has once derived: derived components only where a rule derives
+ * The sorted components an entity with `components` has once derived: derived components only where a derivation derives
  * them, and components within a host only where the host is.
  */
 export const closedComponents = (components: readonly number[], derived: readonly boolean[], hosts: readonly number[], strata: Strata): number[] => {
@@ -19,12 +19,12 @@ export const closedComponents = (components: readonly number[], derived: readonl
         if ((hosts[id] ?? -1) >= 0) given.add(id);
         else if (derived[id] !== true) present.add(id);
     }
-    for (const { rules, within } of strata) {
+    for (const { derivations, within } of strata) {
         for (let changed = true; changed;) {
             changed = false;
-            for (const rule of rules) {
-                if (!rule.has.every(id => present.has(id)) || rule.not.some(id => present.has(id))) continue;
-                for (const id of rule.derives) {
+            for (const derivation of derivations) {
+                if (!derivation.has.every(id => present.has(id)) || derivation.not.some(id => present.has(id))) continue;
+                for (const id of derivation.derives) {
                     if (present.has(id)) continue;
                     present.add(id);
                     changed = true;

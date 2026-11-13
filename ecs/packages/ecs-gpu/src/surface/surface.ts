@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { type Entity, Finalizer, System, type Vec2, type World } from "@adobe/ecs";
+import { type Entity, System, type Vec2, type World } from "@adobe/ecs";
 import * as Target from "../target/public.js";
 
 /** How a surface presents: how its alpha composites with the page, its color space, and its tone mapping. */
@@ -101,7 +101,7 @@ export const updated = (device: GPUDevice | null, targets: ReadonlyMap<Entity, T
 };
 
 /** Unconfigures a surface's canvas when it stops being one. */
-export const release = Finalizer.create({ components: { with: [canvas] } }, (surface, { resources }) => {
+export const release = System.removed({ components: { with: [canvas] } }, (surface, { resources }) => {
     const current = resources[states];
     const state = current?.get(surface.entity);
     if (current === null || state === undefined) return;

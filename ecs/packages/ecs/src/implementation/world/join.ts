@@ -1,13 +1,13 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { asksForChanges, takesInput } from './run-changes.js';
-import type { ChangeSet } from '../../interface/finalizer/body.js';
+import type { ChangeSet } from '../../interface/system/sync-system-body.js';
 import type { Essential } from '../../interface/component/value.js';
 import type { Resource } from '../../interface/resource/resource.js';
 import type { Thread } from '../../interface/thread/thread.js';
 import type { World } from '../../interface/world/world.js';
 import type { Input } from '../../interface/system/input.js';
 import type { System } from '../../interface/system/system.js';
-import { declarationOf, definitionOf, identifiedItems, idOfItem, idOfKey, indexOfLookup, keyOfId, labelOf, requireDefinition, threadOf, threadOfDeclaration, watchedBy, type Definition } from '../../interface/registry/index.js';
+import { declarationOf, definitionOf, syncSystemsOf, identifiedItems, idOfItem, idOfKey, indexOfLookup, keyOfId, labelOf, requireDefinition, threadOf, threadOfDeclaration, watchedBy, type Definition } from '../../interface/registry/index.js';
 import { unsharedKeyOf } from './index-keys.js';
 import { layoutOf, type Views } from '../../interface/registry/layout.js';
 import {
@@ -223,7 +223,7 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
     /** Observer systems placed on this thread, once it joined. */
     let observer: ReturnType<typeof createThreadObserver> | null = null;
     const setups: SystemSetup[] = [];
-    const finalizerSetups: SystemSetup[] = [];
+    const removedSetups: SystemSetup[] = [];
 
     let memory: WebAssembly.Memory | null = null;
     let control: Int32Array | null = null;
@@ -330,9 +330,9 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
     const process = (): void => {
         if (control === null) return;
         Atomics.store(control, unreadWord, 0);
-        // A task first: the world waits for it. Then finalizers of stops no task replayed.
+        // A task first: the world waits for it. Then sync systems of stops no task replayed.
         tasked = systems?.process() ?? false;
-        systems?.finalize();
+        systems?.runStops();
         if (observer !== null && observer.process() > 0) observerRan = true;
         completed = Atomics.load(control, completedWord);
         settle();
@@ -459,8 +459,8 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
                         post: (sent, transfer) => channel.post(sent, transfer), keyNumber, numbered: () => numbers.size,
                     });
                     systems.setup(setups);
-                    systems.setupFinalizers(finalizerSetups);
-                    setups.length = finalizerSetups.length = 0;
+                    systems.setupRemovedSystems(removedSetups);
+                    setups.length = removedSetups.length = 0;
                 }
                 writeWaiting();
                 void listen();
@@ -479,7 +479,7 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
                 return;
             }
             case "disposed": {
-                // Its finalizers release what this thread holds, as the world's do.
+                // Its sync systems release what this thread holds, as the world's do.
                 systems?.disposed();
                 return fail(new Error("The world is disposed."));
             }
@@ -509,14 +509,22 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
                 for (let k = setups.length - 1; k >= 0; k--) if (message.indexes.includes(setups[k].index)) setups.splice(k, 1);
                 return post({ protocol: protocolName, kind: "unplaced", indexes: message.indexes });
             }
-            case "finalizers": {
-                if (systems === null) finalizerSetups.push(...message.finalizers);
-                else systems.setupFinalizers(message.finalizers);
+            case "sync systems": {
+                if (systems === null) removedSetups.push(...message.syncSystems);
+                else systems.setupRemovedSystems(message.syncSystems);
                 // What waited for them goes on: stops, a task, observer systems.
-                systems?.finalize();
+                systems?.runStops();
                 systems?.process();
                 observer?.process();
                 return;
+            }
+            case "release sync system": {
+                if (systems === null) {
+                    // Never set up here, so it ran for no stop.
+                    for (let k = removedSetups.length - 1; k >= 0; k--) if (removedSetups[k].index === message.index) removedSetups.splice(k, 1);
+                    return;
+                }
+                return systems.releaseRemovedSystem(message.index);
             }
             case "observer": {
                 observer?.setup(message.systems);
@@ -556,7 +564,7 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
     let release: (() => void) | null = null;
     const joinMessage = (lock: string | null): ToWorld => ({
         protocol: protocolName, kind: "join", threads: options.threads ?? [], waits: hasWaitAsync(), lock,
-        imported: claims.size === 0 ? [] : [...identifiedItems("system"), ...identifiedItems("finalizer")],
+        imported: claims.size === 0 ? [] : [...identifiedItems("system"), ...identifiedItems("removed")],
     });
     const sendHeld = (lock: string | null): void => {
         const messages = held ?? [];
@@ -699,6 +707,8 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
         // A run gives what its system's body returned, `R` by the system's type.
         run,
         add: system => {
+            const held = syncSystemsOf(system);
+            if (held.length > 0) throw new Error(`"${held[0].name}" is a changes or removed system, which a joined thread doesn't add: add it on the world's thread, which runs a removed system here by its id when its objects live here.`);
             const definition = requireDefinition(system);
             const leaves = observerLeavesOf(definition);
             if (leaves === null) throw new Error(`System "${definition.name}" isn't readonly, and a joined thread adds only readonly systems: declare it readonly: true to read the world from this thread, or add it on the world's thread.`);
@@ -736,8 +746,8 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
             if (left) return;
             left = true;
             await last;
-            // Stops published so far are finalized here, so the world returns their indexes.
-            if (failure === null) systems?.finalize();
+            // Stops published so far run here, so the world returns their indexes.
+            if (failure === null) systems?.runStops();
             if (failure === null) post({ protocol: protocolName, kind: "leave" });
             fail(new Error("This thread left the world."));
             channel.close();

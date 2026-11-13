@@ -41,7 +41,7 @@ export type Replayed = "current" | "held" | "lapped";
 
 /**
  * Whether rebuilding is done; found a sync point applying before or during it, so it can rebuild once the structure
- * epoch is even; or waits for a component's key to be named or a finalizer to be set up.
+ * epoch is even; or waits for a component's key to be named or a removed system to be set up.
  */
 export type Rebuilt = "rebuilt" | "moved" | "held";
 
@@ -88,12 +88,12 @@ export type Mirror = {
      */
     stagedTransfers: number;
     /**
-     * Runs this thread's finalizers for the stops of every sync through `sync`, before that sync's entries apply, so
+     * Runs this thread's removed systems for the stops of every sync through `sync`, before that sync's entries apply, so
      * they read its objects at the rows the stops name; after the log lapped, with `old`, which gives an entity's
-     * objects as they were before the rebuild. False while a finalizer the stops name isn't set up here yet, so
+     * objects as they were before the rebuild. False while a removed system the stops name isn't set up here yet, so
      * replay holds before that sync.
      */
-    finalize: ((sync: number, old: Previously | null) => boolean) | null;
+    runStops: ((sync: number, old: Previously | null) => boolean) | null;
 };
 
 /** An entity's object before a rebuild, or `start` where it held none there. */
@@ -105,7 +105,7 @@ export const createMirror = (memory: WebAssembly.Memory, block: number, thread: 
         memory, thread, block, buffer: memory.buffer, words: new Uint32Array(0), signed: new Int32Array(0), header: new Int32Array(0),
         ring: new Uint32Array(0), ringEntities: new Float64Array(0), version: -1, mask: 0, position: 0, through: 0, tick: 0,
         keys: new Map(), starts: new Map(), archetypes: [], scratch: new Uint32Array(1024), scratchEntities: new Float64Array(0),
-        staged: [], head: 0, nextSlot: 0, rebuilds: 0, resourceArchetype: -1, stagedTransfers: 0, finalize: null,
+        staged: [], head: 0, nextSlot: 0, rebuilds: 0, resourceArchetype: -1, stagedTransfers: 0, runStops: null,
     };
     refresh(mirror);
     return mirror;
@@ -259,7 +259,7 @@ export const stage = (mirror: Mirror, entity: number, component: number, value: 
 
 /**
  * Applies `count` entries copied into the scratch, in order; returns how many, fewer when a sync's stops can't be
- * finalized yet, so it stops before that sync.
+ * run yet, so it stops before that sync.
  */
 const apply = (mirror: Mirror, count: number): number => {
     const { scratch, scratchEntities, archetypes } = mirror;
@@ -269,8 +269,8 @@ const apply = (mirror: Mirror, count: number): number => {
         const archetype = first >>> archetypeShift;
         switch (first & kindMask) {
             case syncEntry: {
-                // Its stops are finalized against the rows before it applies.
-                if (mirror.finalize !== null && !mirror.finalize(scratch[at + 1], null)) return e;
+                // Its stops run against the rows before it applies.
+                if (mirror.runStops !== null && !mirror.runStops(scratch[at + 1], null)) return e;
                 mirror.tick = scratch[at + 1] + scratch[at + 2] * 0x100000000;
                 break;
             }
@@ -417,7 +417,7 @@ export const replay = (mirror: Mirror): Replayed => {
         }
     }
     // Syncs without entries here may have stops too.
-    if (mirror.finalize !== null && !mirror.finalize(sync, null)) {
+    if (mirror.runStops !== null && !mirror.runStops(sync, null)) {
         if (count > 0) mirror.through = mirror.tick >>> 0;
         settle(mirror);
         return "held";
@@ -487,7 +487,7 @@ const previousValue = (old: readonly (Mirrored | null | undefined)[], entity: nu
  * Rebuilds every column from the layout directory, as of the last published sync, under the structure epoch: rows
  * from each archetype's `entities` and count, values by the tag each row's storage holds, a staged slot's taken, any
  * other the thread's own kept by entity, and ticks from the world's. Short of `"rebuilt"`, its columns are as they
- * were, though the finalizers of stops through the sync it read may have run first.
+ * were, though the removed systems of stops through the sync it read may have run first.
  */
 export const rebuild = (mirror: Mirror): Rebuilt => {
     refresh(mirror);
@@ -501,8 +501,8 @@ export const rebuild = (mirror: Mirror): Rebuilt => {
     const entityLength = new Int32Array(buffer, words[entitiesWord + cursorField], 4)[2];
     /** The old rows, indexed by entity only once a row's value is one this thread gave and kept. */
     let indexed = false;
-    // Stops through the sync it rebuilds to are finalized first, with the objects as they were.
-    if (mirror.finalize !== null && !mirror.finalize(sync, (entity, component, start) => {
+    // Stops through the sync it rebuilds to run first, with the objects as they were.
+    if (mirror.runStops !== null && !mirror.runStops(sync, (entity, component, start) => {
         if (!indexed) {
             indexPrevious(old, entityLength);
             indexed = true;

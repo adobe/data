@@ -26,7 +26,8 @@ filter, and generate 10 or 1,000 todos.
     browser has no `moveBefore`, it gets its focus back.
   - *Filtered* by the filter feature's readonly system, `filterRows`, which sets `hidden` on rows whose visibility
     changes, as their todo or the filter changes, and moves focus off a row it hides to the nearest one shown.
-  - *Removed* by a finalizer on the row, which runs whatever ends the todo, `world.dispose()` included.
+  - *Removed* by a removed system, `removeRows`, which runs whatever ends the todo, `world.dispose()` included, and
+    is one of the plugin's systems beside `createRows`, which makes the rows.
   - Rows out of view skip their rendering (`content-visibility: auto`).
 - **Fixed elements showing counts** are bound by a readonly system that runs only when an index's entries changed:
   `bindCompletion` looks up `completion/byDone` with `changed: true`, so it writes the summary and the toggle-all box
@@ -63,7 +64,7 @@ feature's view exports its `Plugin<"root">`, whose systems are the view's DOM sy
 `connect` defines its elements and listens for their events on the page's root; and a function finding its fixed
 elements within the root, as the resources its systems read them from. The app creates the world with those
 resources and starts the four plugins with `Plugin.start(world, plugins, { root })`. Registration happens as modules
-load, so a feature's components, indexes and finalizers exist wherever one of its modules is imported. Elements are
+load, so a feature's components, derivations and indexes exist wherever one of its modules is imported. Elements are
 defined by the plugins rather than as their modules load: the package's `sideEffects: false` lets a bundle drop a
 module imported only for that.
 

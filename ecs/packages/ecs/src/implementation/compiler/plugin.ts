@@ -131,7 +131,7 @@ const buildHost = (resolver: () => Rollup.PluginContext): LinkHost => ({
  *
  * Also gives each top-level `Symbol(...)` declaration an id, its package's name, its module's path in the package and
  * its binding, by which the registry knows the symbol a module evaluated again makes as the same key, and in the same
- * way the declaration of each top-level binding's system, rule or finalizer, as the same item (`identify.ts`).
+ * way the declaration of each top-level binding's system, derivation or sync system, as the same item (`identify.ts`).
  *
  * Dev dep pre-bundling bypasses plugins and breaks the runtime's worker url, so `@adobe/ecs` is excluded from it.
  * Consumers must also add to `optimizeDeps.exclude` any dependency that defines kernels or keys, imports

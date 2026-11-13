@@ -62,7 +62,7 @@ void ecs.Report;
 // @ts-expect-error no run numbers
 const numbered: Promise<number> = world.run(main);
 
-// Asked for its changes, after its input, a run resolves to them, in the shape changes finalizers take.
+// Asked for its changes, after its input, a run resolves to them, in the shape changes systems take.
 const changes = world.run(move, { distance: 1 }, { changes: true });
 const alone = world.run(main, { changes: true });
 check<Equal<typeof changes, typeof alone>>();

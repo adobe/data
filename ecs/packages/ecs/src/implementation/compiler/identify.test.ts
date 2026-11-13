@@ -82,21 +82,25 @@ describe("identify, for symbols", () => {
 const declared = (code: string | undefined): readonly (readonly [string, string])[] =>
     [...(code ?? "").matchAll(/identify\$\((\{[^}]*\}), "([^"]*)"\)/g)].map(match => [match[1] ?? "", match[2] ?? ""]);
 
-describe("identify, for systems, rules and finalizers", () => {
+describe("identify, for systems, derived components and indexes", () => {
     test("gives the declaration of each top-level binding's constructor call its module's id and binding", async () => {
         const result = await identify([
-            `import { System as S, Rule, Finalizer, Index } from "@adobe/ecs";`,
+            `import { System as S, Index } from "@adobe/ecs";`,
             `const move = S.create({ tag: "move" }, () => {});`,
             `export const grid = Index.create({ tag: "grid" });`,
             `export const draw = S.render({ tag: "draw" }, () => {}), main = S.create({ tag: "main", systems: [move] });`,
             `const all = S.create([move]);`,
-            `let shown = Rule.create({ tag: "shown" });`,
-            `var release = Finalizer.create({ tag: "release" }, () => {});`,
-            `export default Finalizer.changes({ tag: "save" }, () => {});`,
+            `import { Component } from "@adobe/ecs";`,
+            `var release = S.removed({ tag: "release" }, () => {});`,
+            `Component.derive(shown, { tag: "shown" });`,
+            `Component.derive(shown, { tag: "shownAgain" });`,
+            `Component.derive(hidden, { tag: "hidden" });`,
+            `export default S.changes({ tag: "save" }, () => {});`,
         ].join("\n"));
         expect(declared(result?.code)).toEqual([
             [`{ tag: "move" }`, "src/keys.ts#move"], [`{ tag: "grid" }`, "src/keys.ts#grid"], [`{ tag: "draw" }`, "src/keys.ts#draw"], [`{ tag: "main", systems: [move] }`, "src/keys.ts#main"],
-            [`{ tag: "shown" }`, "src/keys.ts#shown"], [`{ tag: "release" }`, "src/keys.ts#release"], [`{ tag: "save" }`, "src/keys.ts#default"],
+            [`{ tag: "release" }`, "src/keys.ts#release"], [`{ tag: "shown" }`, "src/keys.ts#derive(shown)"], [`{ tag: "shownAgain" }`, "src/keys.ts#derive(shown)2"],
+            [`{ tag: "hidden" }`, "src/keys.ts#derive(hidden)"], [`{ tag: "save" }`, "src/keys.ts#default"],
         ]);
         // A composite's list of members takes its id as a declaration does.
         expect(result?.code).toContain(`identify$([move], "src/keys.ts#all")`);
@@ -112,7 +116,7 @@ describe("identify, for systems, rules and finalizers", () => {
         expect(declared(result?.code)).toEqual([[`{ tag: "grow", kernel: true }`, "src/keys.ts#grow"]]);
     });
     test("follows the namespace to the module that exports it, under any local name", async () => {
-        const result = await identify(`import { System as Systems, Rule } from "./system.js";\nconst a = Systems.create({ tag: "a" });\nconst b = Rule.create({});`);
+        const result = await identify(`import { System as Systems, Component } from "./system.js";\nconst a = Systems.create({ tag: "a" });\nComponent.derive(b, {});`);
         expect(declared(result?.code)).toEqual([[`{ tag: "a" }`, "src/keys.ts#a"]]);
     });
     test("labels a call that isn't a top-level binding's by the binding, function, property or method it's in, and leaves other namespaces and methods", async () => {

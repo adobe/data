@@ -134,11 +134,11 @@ Strings in shared memory, alternating against `c6bb3c83`, node, five and six rou
 - **Records up to 512 bytes are carved from slabs** by power-of-two size class: `string write 10K joined` 142 → 127 ns against the arena's blocks, whose size class costs a `Math.log2` per record.
 - **A removed row lets go only of its archetype's string storages,** listed once per archetype: `despawn objects 10K` 104 → 97.7 ns against a check of every storage.
 
-A joined thread's finalizers reading its object resources from its mirror, alternating against `998738a3`, node, three rounds: `despawn objects 10K` 98.2–102 against 99.6–103 ns, within noise. The mirror's archetype holding the resource entity is found once per group of stops that reads one, kept and checked before it's searched for again.
+A joined thread's removed systems reading its object resources from its mirror, alternating against `998738a3`, node, three rounds: `despawn objects 10K` 98.2–102 against 99.6–103 ns, within noise. The mirror's archetype holding the resource entity is found once per group of stops that reads one, kept and checked before it's searched for again.
 
-A joined thread's finalizers reading string resources from copies in the stop list, once per group, alternating against `13eb6d6f`, node, six rounds, medians, on a machine busy elsewhere: all within noise. New `despawn objects 10K string resource`, the despawn benchmark's finalizer reading a string resource too, 95.5 ns a despawn against 99.5 reading the live record (the benchmark run on the old build); `despawn objects 10K` 98.0 against 97.2 ns, `string write 10K joined` 129 against 129 ns, `joined observer strings 10K` 478 against 500 µs a tick. Finalizers reading no string resource copy nothing and the group holds no extra bytes.
+A joined thread's removed systems reading string resources from copies in the stop list, once per group, alternating against `13eb6d6f`, node, six rounds, medians, on a machine busy elsewhere: all within noise. New `despawn objects 10K string resource`, the despawn benchmark's sync system reading a string resource too, 95.5 ns a despawn against 99.5 reading the live record (the benchmark run on the old build); `despawn objects 10K` 98.0 against 97.2 ns, `string write 10K joined` 129 against 129 ns, `joined observer strings 10K` 478 against 500 µs a tick. Sync systems reading no string resource copy nothing and the group holds no extra bytes.
 
-Their linear resources copied into the stop list too, once per group, alternating against `92b823c9`, node, six rounds, medians, on a machine busy elsewhere: all within noise. New `despawn objects 10K linear resource`, the finalizer reading a number and a vec3 resource too, 99.5 ns a despawn against 99.1 reading them where they are (the benchmark run on the old build); `despawn objects 10K` 100.5 against 101.0 ns, `despawn objects 10K string resource` 98.4 against 99.3 ns, `joined observer 10K` 584 against 567 µs a tick, a path this doesn't touch, its rounds spread 500–754 µs.
+Their linear resources copied into the stop list too, once per group, alternating against `92b823c9`, node, six rounds, medians, on a machine busy elsewhere: all within noise. New `despawn objects 10K linear resource`, the sync system reading a number and a vec3 resource too, 99.5 ns a despawn against 99.1 reading them where they are (the benchmark run on the old build); `despawn objects 10K` 100.5 against 101.0 ns, `despawn objects 10K string resource` 98.4 against 99.3 ns, `joined observer 10K` 584 against 567 µs a tick, a path this doesn't touch, its rounds spread 500–754 µs.
 
 Sync points waiting only for tails that read the world's memory, against `c21e8e1e`, node: `tail late snapshot 10K` 474–484 → 9.0–9.5 ns a row copied, against 8.9 for `e3c30aa1` measured beside it (its record 8.2), and in chromium 450 → 6.0 ns (its record 5.0, one or two 5 µs timer steps); within noise in both: `tail prompt`, `tail overlap`, `tail overlap waiting`. Since every run spawns its report, until 256 are, almost every sync point has something to apply, and each one settled every tail, so the run waited out the whole body of the benchmark's 4 ms tail ahead of the late one, whose head it had claimed.
 - **A tail reading only its own thread's objects isn't settled at a sync point,** having nothing there a sync point writes: 474 → 12.8 ns.
@@ -238,6 +238,55 @@ as one pass; a sync point between them with nothing to apply about 11 ns, from 2
 for its activation, rewinds and publishing. The other node benchmarks are within noise of `244f952` over three
 rounds, and `read run` (+3.7%) and `loop tick add remove again` (+3.9%), which make a schedule each run, over ten.
 
+A `despawnWhere` that selects nothing (adobe/data#252), node, three rounds each against `19d61843`: new `end frame
+despawnWhere none`, a frame reading 100 of 10K rows ending with a system that issues `despawnWhere({ with:
+[frameTransient] })` each frame, no entity having it, 1.04–1.07 → 0.71 µs a frame; `end frame despawn rows none`, the
+same frame ending with a row system despawning each event row, which issues nothing, 0.64–0.66 µs before and after. A
+sync point whose queue holds only `despawnWhere`s, none of which matches an archetype with rows, drops them and stays
+idle, checked once everything else it would apply is idle (`dropUnselecting` in `synchronize.ts`). The 0.06 µs left
+is the command itself: resolving its keys and queuing it, and the scan of the world's archetypes.
+
+Archetypes allocated as their first row arrives, adds of several components in one step, and the resource entity's
+left archetypes released (adobe/data#276), measured in `ArrayBuffer` bytes without shared memory, as a page that isn't
+cross-origin isolated has: adding a 16 MiB typed-array resource and six numbers to the resource entity in one command
+128 → 32 MiB, and with 23 numbers 384 → 32 MiB, the 32 being the column and the world's start of the resource, its
+zeros; adding three resources one run after another 48 → 16 MiB once the archetypes left are released. In the shared
+arena, which `archetype-allocations.test.ts` measures, each column a 32 MiB block: 224 → 32 MiB, 768 → 32 MiB, and
+96 → 0 MiB. Node, three rounds each against `35428f95`: `walk to a new cell` 1.83–1.88 against 1.83–1.88 µs, once a
+reclaimed archetype keeps its first capacity as before rather than letting it go and growing again (2.21 µs when it
+did); `create`, `create flat`, `create flat dynamic`, `churn`, `retag`, `move`, `spawn bulk`, `spawn bulk kernel`,
+`spawn singles`, `spawn sixteen archetypes`, `despawn bulk`, `add tag`, `add tag kernel`, `add value`, `add several`,
+`remove several`, `add replace`, `spawn singles shared`, `circle 8 cells` and `run idle` within 3%, and `loop tick add
+remove` 181–184 against 188–192 ms, +4%, where profiles show the same time in the same functions, registration and
+garbage collection.
+
+An allocation audit (node, `HeapProfiler` sampling every KiB with collected objects kept, bytes divided by the
+iterations `fastest` ran), each against the record above:
+
+- **A sync point empties its plan's arrays by count, not by `length = 0`,** which lets an array's storage go, so its
+  next `push` allocates it again (17 elements at the least); maps are cleared only when they hold something, since
+  `clear` allocates a new table; `born` is the plan's own map, the list of queued buffers swaps with a spare rather than
+  being spliced off, `sort` sums each target's rows in an array by archetype id rather than a new map, and a sync point
+  reusing no index shares one empty list of them. `sync point one spawn` 1,286 → 668 bytes, 0.51 → 0.43 µs mean;
+  `spawn singles` 1,249 → 632 bytes, 0.685 → 0.59 µs mean.
+- **Released entity indexes are kept by count** for the same reason: `despawn bulk` 5.46 → 2.58 MB an iteration of
+  100K despawns, 1.49 → 1.32–1.39 ms; `despawn bulk kernel` 1.49–1.55 → 1.38–1.40 ms; `despawn tagged 100K rows`
+  1.34–1.36 → 1.25–1.26 ms.
+- **A run's `start` makes no closure over its locals:** a fused group's own kernel call is made by a function outside
+  it, so `start`'s `values`, `args` and `tick` no longer live in a context allocated on every run, matching or not.
+  `run 50 idle` 1,985 → 336 bytes a run of fifty systems, 1.66–1.70 → 1.58–1.60 µs mean.
+- **Edges cached by archetype id or value number are maps:** a move's storage pairs by target archetype, made on its
+  first move, and a shared component's edges by value number, since an array holds a slot for every id or number below
+  those it caches; and an archetype's storages are found by `storageById` alone, without a map too. Measured over
+  `heapUsed` after collecting, for N entities each in an archetype of its own value of a shared component, then given a
+  tag, given two components, and moved to the next value: with 500 and 1,000 values, 4,111 and 4,953 → 3,110 and 2,952
+  bytes an archetype for its edges, and a move to the next value 4,054 and 6,974 → 1,066 and 968 bytes a walker; 60 to
+  130 bytes less an archetype without the map of storages. `walk to a new cell`, `flicker between 2 cells`, `circle 8
+  cells`, `spawn singles shared`, `retag` and `add tag` within noise; `spawn singles` +1–2%, from the map's lookup per
+  pair; `where 1K cells moving` 10.3 → 9.9 µs mean.
+- **The loop reads its settings into one object, and resources without making a cell:** `loop tick idle` 3,853 →
+  3,414 bytes a tick; most of the rest is the platform's `MessageChannel` events and the tick's promises.
+
 ## Where the gains came from
 
 Step figures marked (vitest) are from the node vitest lane: read them as relative.
@@ -279,7 +328,7 @@ Step figures marked (vitest) are from the node vitest lane: read them as relativ
 
 **Structs.** A struct's read and write, and a nested tuple's, are generated per layout as straight-line code: one literal of its leaves' loads, and one store per leaf, where a closure per leaf built the object a property at a time and read each member through `Reflect.get`. Where `'unsafe-eval'` is forbidden the closures run. `struct copy 100K`, a main-thread row system copying a five-number struct, 147 → 17.6 ns a row in node and 20.4 in chromium; `struct replace kernel main`, a struct and a vec2 added per row as commands, 144 → 118 ns a command. A command of an entity following its previous one in the same buffer, as a body's adds to one row do, extends that one's range of values rather than listing another range in a map: 118 → 60.9 ns, 70 in chromium, 61 on chromium's workers.
 
-**Change sets.** An entry between the same archetypes as the one before it, whose one range of values names the same components, joins that one's group without listing its replaced components or building a group key, as one system's commands over one archetype make: `struct replace kernel watched`, a changes finalizer watching 200K replacing adds, 187 → 76.8 ns a command, against 63.6 unwatched.
+**Change sets.** An entry between the same archetypes as the one before it, whose one range of values names the same components, joins that one's group without listing its replaced components or building a group key, as one system's commands over one archetype make: `struct replace kernel watched`, a changes system watching 200K replacing adds, 187 → 76.8 ns a command, against 63.6 unwatched.
 
 **Joined threads.** A wake notifies only a joined thread that has read every earlier one, by a word the thread clears before it reads what's new, so back-to-back ticks don't notify a thread still busy with the last. A wake landing between the thread's clearing the word and its wait notified no one, and the word then kept later wakes from notifying, so a reader there fell behind and stopped being woken (4,412 of some 6,000 values seen); with the thread reading again while the word is set, it sees every value.
 
@@ -289,7 +338,7 @@ Step figures marked (vitest) are from the node vitest lane: read them as relativ
 
 **Systems on joined threads.** A tier, or consecutive tiers, on a joined thread is a task through its task block. The world spins about 20 µs for it before it waits, and the thread that finished one spins as long for the next, each about one wake-up's latency: `handoff` (five tasks a tick) 68 → 11.5 µs a tick and `fused tiers` (one) 19.3 → 7.5 µs in node, 13.2 and 9.4 µs in chromium. Ten tiers fused into one task cost about what one tier's does.
 
-**Finalizers on joined threads.** Stop lists are written a column at a time, the linear structs copied by 32-bit word and each column's storage found once per run of an archetype, and despawned entities' held indexes counted in an array by index: `despawn objects 10K` 176 → 83 ns a despawn in node, against 77 ns with the same finalizer run inline on the world's thread. A `Map` of holds, and a `copyWithin` per stop and struct, cost most of the difference.
+**Removed systems on joined threads.** Stop lists are written a column at a time, the linear structs copied by 32-bit word and each column's storage found once per run of an archetype, and despawned entities' held indexes counted in an array by index: `despawn objects 10K` 176 → 83 ns a despawn in node, against 77 ns with the same sync system run inline on the world's thread. A `Map` of holds, and a `copyWithin` per stop and struct, cost most of the difference.
 
 **Tails.** A tail's snapshot is laid out for the rows it found passing and copied a run of consecutive rows at a time, its entities and each linear read one `set` each, its positions, archetypes and rows written in place, and tags marked only for a tail that writes objects: `tail late snapshot 10K` 29.8 → 6.7 ns a row in node, from a row at a time through a scratch list, whose tag pass alone cost 3.3 ns a row for a tail that writes nothing. The copy is what lets the world's work after its writer overlap a late tail: `tail overlap` 2.53 ms a tick against 4.70 for `tail overlap waiting` in node (below).
 
@@ -305,7 +354,7 @@ Step figures marked (vitest) are from the node vitest lane: read them as relativ
 - Indexes without a key, kept as sorted tables with no key words: `keyless refresh 1M 1%`, 1% of 1M entities spread through entity order leaving or entering again, 343 → 187 ns an entity, from padding entries to four words, so a block's shift moves 8-byte words, which a copy within shared memory moves about five times faster than 4-byte ones (a 1.8 KB shift 622 ns by 12 bytes, 128 by 16; a loop is no faster), and binary searches by entity within a block; what's left is a shift of about half a block and a search over 10K fences each way. `keyless spawn 1M 1%`, 1% despawned and spawned again at the end of entity order, 22.4 → 2.1 ms: a split or dropped block refreshed every position, fence, Fenwick node and segment tree, and now those from its position on. `keyless length` 60 → 4.8 ns a lookup reading `length` and `changed`: a site without arguments copies no values, the plugin's count-0 site calls it directly, and a whole index's `changed` reads its tree's root rather than two Fenwick descents. `keyless write 1M`, a refresh after a kernel wrote a component all 1M hold, 3.6 µs, as `keyless index idle`'s 7 ns an index: it reads no key ticks.
 - `unique lookup 1M` stays at 44 ns: a build numbers buckets by slot partition, so a lookup in key order reads its slot, record and entry at three unrelated places; a JS microbenchmark of that chain takes 58 ns, and of the slot probe alone 17.8.
 
-**Hot helpers kept small.** TurboFan inlines what a system's body calls into its runner's loop up to a cumulative bytecode budget, so what's left for the row getters depends on everything else the body reaches. `pushCommand`'s growth, a prepared spawn site's plan lookup past the one kept by archetype index, and a list's shape and spawner past the cached ones are outlined: churn 15 → 18 ms in node had come from code elsewhere in the bundle, a dead function placed before `finalizers.ts`'s runner reproducing it on `fe36a99f`, and with `--max-inlined-bytecode-size-cumulative=2000` both measured 14 ms; outlined, churn is 14.9 ms on `fe36a99f` and 15.0 ms here.
+**Hot helpers kept small.** TurboFan inlines what a system's body calls into its runner's loop up to a cumulative bytecode budget, so what's left for the row getters depends on everything else the body reaches. `pushCommand`'s growth, a prepared spawn site's plan lookup past the one kept by archetype index, and a list's shape and spawner past the cached ones are outlined: churn 15 → 18 ms in node had come from code elsewhere in the bundle, a dead function placed before `sync-systems.ts`'s runner reproducing it on `fe36a99f`, and with `--max-inlined-bytecode-size-cumulative=2000` both measured 14 ms; outlined, churn is 14.9 ms on `fe36a99f` and 15.0 ms here.
 
 **Archetype moves.** Each storage knows its element size in 32-bit words, so a cell copy doesn't dispatch on the layout, and move lists are cached in an array by target archetype id rather than a map: retag 1M 46.5–48.8 → 41.8–44.2 ms.
 
@@ -354,6 +403,12 @@ move, chromium, by worker count and entity count (a quarter of the entities move
 
 ## Tried and not kept
 
+- **Finding a sync point's pairs by scanning up to eight before using the map,** since `Map.prototype.clear` allocates
+  a new table: `sync point one spawn` 669 bytes and 0.40–0.42 µs mean before and after, `spawn singles` 0.57–0.59 µs
+  both. The allocations a sync point keeps, about 670 bytes with the benchmark's own, are its closures and records in
+  `preparePending` (the closure for derivations, the list of references written, the record of the sync point in
+  progress and of its reservations) and the run's promises; worth revisiting with the sync point's state kept in one
+  reused record.
 - **Shared components' runs through one loop with `where`'s,** the run list a match list or `where`'s passing one: `run 50 idle` 68.3–69.2 → 75.8–79.2 ns a system, the run's closure grown past what V8 inlines. Kept: `where`'s loop apart from the plain one, which runs as before: 68.3–70.8. Worth revisiting if the two loops grow apart in what they do.
 - **A shared value read through its storage's layout on every row,** `layout.kind === "constant" ? layout.value : …`, so copies of rows across archetypes could hold values by row: `shared read 100K` 5.37 ns a row against 4.20 for `column read 100K`. Kept: the value bound into the row's slot once per archetype, 4.04–4.10, and snapshots and stop lists bound a run of one archetype's rows at a time, each archetype its own copy.
 - **Interning every shared value by its canonical text,** a tuple of numbers included: `spawn singles shared` 604 ns a spawn against 229 for `spawn singles plain`, the text built and the value checked against its schema for every spawner looked up. Kept: tuples of numbers found through a tree of their stored leaves, 313–323. Worth revisiting for structs and strings once a workload looks up spawners of them often.
@@ -423,7 +478,7 @@ move, chromium, by worker count and entity count (a quarter of the entities move
 - **Replay finding a pair of archetypes' source columns once per run of its moves:** `log replay` 23.7–24 → 24.7 ns a move, no gain; a mirror's archetypes hold few columns. Worth revisiting with many objects per archetype.
 - **Finding reports to retire through `Report.byRun`,** the sorted index on their run, oldest first: `run failing` 165–196 µs in node acquiring the index for each report and releasing it after, so each rebuilt it, and 87 µs holding it once the first report was spawned, which also keeps the journal recording every later sync point's moves, against 11.7–12.6 µs for the world's own list of the reports it spawned, in run order, with a liveness check per despawn; a failing run without reports, at `3775940d`, is 9.2–9.5 µs, so a report costs about 2.5 µs. Clean runs are unchanged, measured alternating with `3775940d` (`run idle` 333 / 333 ns, `run observer` 166 / 166, `loop tick idle` 1,737 / 1,698, `run 50 idle` 72 / 74 per system, `sync point one spawn` 875 / 833, `remote run` 9.8 / 9.9 µs, medians of six). Worth revisiting only if lookups through a sorted index get far cheaper to set up.
 - **Emptying a run's list of warnings by setting its length to 0** each run: `run idle` 375 → 416 ns in node, measured alternating; the list is counted instead, and the report of warnings alone reused while they're the same.
-- **Moving `placeFinalizer`,** to the end of `finalizers.ts` or into `activate.ts`, its one caller: churn 17.6–18.6 ms either way, since the budget above, not that function, set it.
+- **Moving `placeSyncSystem`,** to the end of `sync-systems.ts` or into `activate.ts`, its one caller: churn 17.6–18.6 ms either way, since the budget above, not that function, set it.
 - **Writers waiting for a tail to finish instead of snapshotting it,** and **choosing between the two by the tail's rate** (rows read over time since posted, waiting when finishing looked cheaper than copying the rest). Ticks of a world writing every row's place, then working W ms, while the last tick's tail on a joined worker spends T ms on 10,000 rows of a place and a pose, after B ms of other work there; ms a tick, snapshot / waiting / by rate, node then chromium (node's frame is a timer set after each tick):
 
   | Case | node | chromium |
@@ -443,7 +498,7 @@ move, chromium, by worker count and entity count (a quarter of the entities move
 
 - **Records of every string, kept whether or not a joined thread reads them,** read on the world's thread out of a cache by handle: `string read 10K` 23.1 ns a row against 2.79 for an object, and `string write 10K` 154 ns against 21. Values on the world's thread, and records only while a joined thread may read them, put both at an object's cost.
 - **Encoding through `TextEncoder.encodeInto`,** into shared memory or a scratch buffer copied in, and decoding through `TextDecoder` from a scratch copy: 96–118 ns a 30-character label made and encoded, against 98 for `charCodeAt` into the record; 98 ns a decode against 124 for `String.fromCharCode` over a view, where a joined thread decodes each record once. Both flatten the string first, which most of the time is; `TextDecoder` rejects shared views in browsers.
-- **Copies of strings' records in tail snapshots and observer posts,** let go with the snapshot: not needed, so not kept, since a tick posts its tails once the last tick's are done, a run waits for its tails, and a sync point for every post its thread claimed, so neither outlives the second sync point after the one it read. A tail stalled while runs rewrite what it reads six times sees its tick's strings without them. A post of a system reading only struct resources, which nothing waits for, would need them, so a system reading a string resource doesn't post that way. A joined thread's finalizers, which run whenever the thread replays, read copies in the stop lists.
+- **Copies of strings' records in tail snapshots and observer posts,** let go with the snapshot: not needed, so not kept, since a tick posts its tails once the last tick's are done, a run waits for its tails, and a sync point for every post its thread claimed, so neither outlives the second sync point after the one it read. A tail stalled while runs rewrite what it reads six times sees its tick's strings without them. A post of a system reading only struct resources, which nothing waits for, would need them, so a system reading a string resource doesn't post that way. A joined thread's sync systems, which run whenever the thread replays, read copies in the stop lists.
 
 - **Index builds across the pool as messages,** a message to each worker per phase in five phases: `index rebuild 1M workers` 9.5 ms on nine workers; each phase paid about 0.4 ms of round trips (counting, trivial work, took 0.5 ms). Phases go through the workers' task rings as tasks of a reserved kernel number, their plan in the memory, instead.
 - **A separate scatter phase,** copying listed entries into partition order: 8.35 ms. Counting computes each piece's partition counts and listing writes straight into partition order: 6.7 ms.
@@ -484,4 +539,4 @@ move, chromium, by worker count and entity count (a quarter of the entities move
 - Ordered selections recomputed every tick: `joined observer 10K` spends most of its 0.4–0.5 ms a tick sorting 10K entities.
 - `joined observer 10K`, back to back: lookups read the rows in place, so the world's writer waits for each run the thread claimed, about 1.07 ms, in 1,451 of 3,000 ticks; the thread's run is mostly the benchmark's own sort, and of the rest `at` through the index without a key.
 - A tail's body reading from a snapshot ran slower in one case: a loop counted down from an unbounded integer resource (an f64) took 13.6 ms against 11.2 in place over 10,000 rows of 200 steps, in node, while counted as an i32 it took 10.8 against 11.2; deopts didn't account for it.
-- Main-thread spawns reserving in blocks too: `spawn bulk` still takes one atomic add per spawn. Finalizers spawn during the sync point, after it materializes the run's reservations, so a world's block would have to end before each materialization.
+- Main-thread spawns reserving in blocks too: `spawn bulk` still takes one atomic add per spawn. Removed systems spawn during the sync point, after it materializes the run's reservations, so a world's block would have to end before each materialization.

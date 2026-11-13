@@ -28,7 +28,7 @@ A high-performance, multithreaded Entity Component System for web-based applicat
   - Per-component added and changed ticks: an O(1) check per entity, with each change seen exactly once
   - Filters that skip unchanged chunks and 64-row blocks
   - Structural changes batched at sync points, so memory never moves while systems run
-  - Rules, finalizers and traits for derived components, cleanup and references
+  - Derived components, changes and removed systems, and traits for derivation, cleanup and references
 - **Queries**
   - Hash, unique, sorted and keyless indexes, all updated incrementally
   - Hierarchy traversal that reruns only below what changed

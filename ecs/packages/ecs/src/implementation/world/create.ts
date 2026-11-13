@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import type { Finalizer } from '../../interface/finalizer/created.js';
-import type { Rule } from '../../interface/rule/created.js';
-import { definitionOf, requireDefinition, type Definition } from '../../interface/registry/index.js';
+import type { SyncSystem } from '../../interface/system/sync-system.js';
+import type { Derivation } from '../../interface/component/derivation.js';
+import { definitionOf, syncSystemOf, syncSystemsOf, requireDefinition, type Definition } from '../../interface/registry/index.js';
 import type { World } from '../../interface/world/world.js';
 import type { Input } from '../../interface/system/input.js';
 import type { System } from '../../interface/system/system.js';
@@ -13,7 +13,7 @@ import { gpuDevice } from '../../interface/resources/gpu-device.js';
 import { workers } from '../../interface/resources/workers.js';
 import { createGpu } from './gpu.js';
 import { readCell, writeCell } from './cells.js';
-import { finalizeAll, refreshFinalizerIndexes, type Thrown } from './finalizers.js';
+import { runRemovedForAll, refreshSyncSystemIndexes, type Thrown } from './sync-systems.js';
 import { startWatches } from './indexes.js';
 import { clean as cleanReport, execute, prepareFusion, type ExecuteContext } from './execute.js';
 import { groupOnWorkers, groupSetup, liveGroups, loadGroup, type FusedGroup } from './fusion.js';
@@ -34,7 +34,8 @@ import { refreshDirectories } from './directories.js';
 import { createRegistrar, type Registration } from './register.js';
 import type { Schedule } from '../../interface/registry/schedule.js';
 import { ensureResources, findResource, initialOf, setResource } from './resources.js';
-import { ensureProgramResources, activate, finalizerCrossing, placeFinalizers, programResourcesChanged, type Ensured } from './activate.js';
+import { activate, addedResourcesChanged, ensureAddedResources, syncSystemCrossing, placeSyncSystems, releaseRemovedSystems, reorderRunners, type Ensured } from './activate.js';
+import { orderSyncSystems } from './sync-system-order.js';
 import { isObserver, isWorldWritten, kindOf, scheduleOf, type Composite } from '../../interface/registry/index.js';
 import { always } from '../../interface/resources/always.js';
 import { cadence, type Cadence } from '../../interface/resources/cadence.js';
@@ -45,7 +46,7 @@ import { createLoop, platformFrame, platformTimer, type Clock, type LoopPlatform
 import { presetLevelsOf } from './lists.js';
 import { createState, defaultOf, idOf, reside, startTicking, type Key } from './state.js';
 import { asksForChanges, changesOf, resourcesWrittenBy, startRecording, takesInput } from './run-changes.js';
-import type { ChangeSet } from '../../interface/finalizer/body.js';
+import type { ChangeSet } from '../../interface/system/sync-system-body.js';
 import type { Essential } from '../../interface/component/value.js';
 import type { Resource } from '../../interface/resource/resource.js';
 import { indexOf } from './entities.js';
@@ -134,7 +135,7 @@ export type Tables = {
     readonly observed: number;
     readonly afterSync: number;
     readonly directories: number;
-    /** Indexes it keeps, for some registered system or finalizer, and how many builds of them ran in phases, and across the pool. */
+    /** Indexes it keeps, for some registered system or sync system, and how many builds of them ran in phases, and across the pool. */
     readonly indexes: number;
     readonly phasedBuilds: number;
     readonly pooledBuilds: number;
@@ -206,6 +207,14 @@ const sharingHeld = (state: ReturnType<typeof createState>): Tables["sharing"] =
 };
 
 const tickers = new WeakMap<World, (tick: number) => void>();
+const tickReaders = new WeakMap<World, () => number>();
+
+/** For tests: a world's tick, which each sync point that applies something moves on and a skipped one leaves. */
+export const tickOf = (world: World): number => {
+    const read = tickReaders.get(world);
+    if (read === undefined) throw new Error("Only a world createWorld made tells its tick.");
+    return read();
+};
 
 /** For tests: moves a world's tick on to `tick` before it ran anything, as a long-running world's would be. */
 export const startTicksAt = (world: World, tick: number): void => {
@@ -449,9 +458,11 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
     };
 
     /** Pure: a resource no registered system uses still reads as its default. */
+    /** A resource's value, as stored or its initial value, found without making its cell, since the loop reads some each tick. */
     const readResource = (key: Key): unknown => {
-        const cell = findResource(state, key);
-        return cell === undefined ? initialOf(state, key) : readCell(cell.storage, cell.row);
+        const index = state.resourceEntity < 0 ? -1 : indexOf(state.resourceEntity);
+        const storage = index < 0 ? undefined : state.archetypes[state.entities.archetype[index]]?.storageById[idOf(state, key)];
+        return storage === undefined ? initialOf(state, key) : readCell(storage, state.entities.row[index]);
     };
 
     const deviceId = idOf(state, gpuDevice);
@@ -570,8 +581,8 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
     /** Follows what changed since the last run: program resources, change watches, workers and the device; null when nothing did. */
     const prepareRun = (): Promise<void> | null => {
         // Resources added between runs move the resource entity, whose structs a tail may still read.
-        if (programResourcesChanged(ensured) && (state.channels.length > 0 || state.observer.posts.length > 0)) return drainThenPrepare();
-        ensureProgramResources(state, ensured);
+        if (addedResourcesChanged(state, ensured) && (state.channels.length > 0 || state.observer.posts.length > 0)) return drainThenPrepare();
+        ensureAddedResources(state, ensured);
         if (startWatches(state)) return followChanges(true, false);
         if (workersChanged()) return followChanges(false, true);
         if (deviceChanged()) return followChanges(false, false);
@@ -579,7 +590,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
     };
     const drainThenPrepare = async (): Promise<void> => {
         await drainTails();
-        ensureProgramResources(state, ensured);
+        ensureAddedResources(state, ensured);
         await followChanges(startWatches(state), false);
     };
     /**
@@ -817,7 +828,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
 
     /**
      * Ends a tick once its tails are done: what failed is reported out of band, once per system while it keeps
-     * failing; what was reported and ran its body in the tick without failing recovered, as did finalizers that ran
+     * failing; what was reported and ran its body in the tick without failing recovered, as did sync systems that ran
      * and indexes that found no conflict.
      */
     const endTick = (report: RunReport, schedule: Schedule | undefined, ran: Outcome | null): void => {
@@ -828,12 +839,12 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
             if (schedule !== undefined) for (const tier of schedule.tiers) for (const leaf of tier) {
                 if (outOfBand.has(leaf) && !failedIn(failures, leaf) && !report.skipped.includes(leaf) && registrar.runnerOf(leaf).didRun()) outOfBand.recovered(leaf);
             }
-            if (state.finalized !== null) for (const finalizer of state.finalized) if (!failedIn(failures, finalizer)) outOfBand.recovered(finalizer);
+            if (state.syncSystemsRan !== null) for (const syncSystem of state.syncSystemsRan) if (!failedIn(failures, syncSystem)) outOfBand.recovered(syncSystem);
             outOfBand.indexesRecovered(failures);
         }
-        // Finalizers' runs are followed only while one is reported.
-        if (state.finalized !== null) state.finalized.clear();
-        if (outOfBand.size() !== 0 || state.finalized !== null) state.finalized = outOfBand.reports("finalizer") ? state.finalized ?? new Set() : null;
+        // Sync systems' runs are followed only while one is reported.
+        if (state.syncSystemsRan !== null) state.syncSystemsRan.clear();
+        if (outOfBand.size() !== 0 || state.syncSystemsRan !== null) state.syncSystemsRan = outOfBand.reports("sync system") ? state.syncSystemsRan ?? new Set() : null;
         if (recorder !== null && ran !== null) {
             const outcome: Outcome = { ...ran, failures: report.failures, skipped: report.skipped, dropped: report.dropped, warnings: report.warnings };
             for (const listener of recorder.ticks) listener(outcome);
@@ -887,11 +898,17 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
     });
     const clockId = idOf(state, clock);
 
+    /** The loop's settings, one object the loop reads anew each beat before it awaits anything, so a beat allocates none. */
+    let settings: { cadence: Cadence; always: boolean; wake: number } | null = null;
     const loop = createLoop({
         settings: () => {
             // Stored values match each resource's registered schema.
             const cadenceValue = readResource(cadence) as Cadence;
-            return { cadence: cadenceValue, always: readResource(always) === true, wake: Number(readResource(wake)) };
+            settings ??= { cadence: cadenceValue, always: false, wake: Infinity };
+            settings.cadence = cadenceValue;
+            settings.always = readResource(always) === true;
+            settings.wake = Number(readResource(wake));
+            return settings;
         },
         tick,
         now: options.loop?.now ?? (() => performance.now()),
@@ -907,7 +924,11 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
             checkLive();
             definition = requireDefinition(system);
             // A system registers in the world the first time it runs here.
-            if (registrar.registered(definition) === undefined) registration = registrar.register(definition);
+            if (registrar.registered(definition) === undefined) {
+                const held = syncSystemsOf(definition);
+                if (held.length > 0) throw new Error(`System "${definition.name}" holds "${held[0].name}", a changes or removed system, which runs in sync points while it's added; add the composite to the world rather than run it.`);
+                registration = registrar.register(definition);
+            }
         }
         catch (error) {
             return Promise.reject(error);
@@ -967,10 +988,10 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         state,
         run: runWith,
         report: failure => outOfBand.report(failure),
-        crossing: (threads, imported) => registrar.crossing(threads, imported) ?? finalizerCrossing(threads, imported),
+        crossing: (threads, imported) => registrar.crossing(threads, imported) ?? syncSystemCrossing(state, threads, imported),
         placed: () => {
             registrar.place();
-            placeFinalizers(state);
+            placeSyncSystems(state);
         },
         between: task => void enqueue(async () => {
             if (disposed) return;
@@ -993,7 +1014,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
     });
 
     /**
-     * Runs a system or composite, recording its own changes, which it resolves to: what earlier finalizers queued
+     * Runs a system or composite, recording its own changes, which it resolves to: what earlier sync systems queued
      * applies first, at a sync point of its own, and the recording covers the run's sync points alone.
      */
     const runChanging = (definition: Definition, value: unknown): Promise<unknown> => {
@@ -1040,6 +1061,41 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         return runChanging(definition, input ? args[0] : undefined);
     }
 
+    /**
+     * The values added that hold changes or removed systems, each with those it holds; the world's sync systems are those
+     * of all of them. And every sync system added, in the order it was first added, which orders those `before` and
+     * `after` leave unordered.
+     */
+    const holding: { readonly value: object; readonly syncSystems: readonly SyncSystem[] }[] = [];
+    let addOrder: readonly SyncSystem[] = [];
+
+    /**
+     * The world's sync systems in run order once `holding` changes as `change` does, without changing it, and the add
+     * order they come from. Throws for an order that cycles, crosses threads or leaves a resource conflict.
+     */
+    const syncSystemsOnce = (change: (values: typeof holding) => typeof holding): { readonly order: readonly SyncSystem[]; readonly ordered: readonly SyncSystem[] } => {
+        const kept = new Set(change(holding).flatMap(entry => entry.syncSystems));
+        const order = [...addOrder.filter(syncSystem => kept.has(syncSystem)), ...[...kept].filter(syncSystem => !addOrder.includes(syncSystem))];
+        return { order, ordered: orderSyncSystems(order) };
+    };
+
+    /** Makes the world's sync systems `ordered`, from the next sync point on. */
+    const setSyncSystems = (order: readonly SyncSystem[], ordered: readonly SyncSystem[]): void => {
+        addOrder = order;
+        state.added = ordered;
+        state.addedVersion++;
+        state.activation.met = true;
+        reorderRunners(state);
+    };
+
+    /** Between runs: the sync systems no longer added stop, a removed system running for every entity it still matches. */
+    const releaseRemoved = async (): Promise<void> => {
+        if (!state.syncSystems.some(runner => !state.added.includes(runner.syncSystem))) return;
+        await drainTails();
+        if (state.gpu?.anyAhead() === true) await state.gpu.readback();
+        for (const { syncSystem, error } of releaseRemovedSystems(state)) outOfBand.report(failureOf("sync system", syncSystem, error));
+    };
+
     const world: CreatedWorld = {
         // A run gives what its system's body returned, `R` by the system's type.
         run,
@@ -1050,16 +1106,33 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         },
         add: system => {
             checkLive();
-            const definition = requireDefinition(system);
-            loop.add(definition);
-            if (isObserver(definition)) registerObserver(definition);
-            else for (const leaf of scheduleOf(definition).observer) registerObserver(leaf);
+            const syncSystem = syncSystemOf(system);
+            const definition = syncSystem === undefined ? requireDefinition(system) : null;
+            const held = syncSystem === undefined ? syncSystemsOf(system) : [syncSystem];
+            const holds = held.length > 0 && !holding.some(entry => entry.value === system);
+            const next = holds ? syncSystemsOnce(values => [...values, { value: system, syncSystems: held }]) : null;
+            if (definition !== null) {
+                loop.add(definition);
+                if (isObserver(definition)) registerObserver(definition);
+                else for (const leaf of scheduleOf(definition).observer) registerObserver(leaf);
+            }
+            if (next === null) return;
+            holding.push({ value: system, syncSystems: held });
+            setSyncSystems(next.order, next.ordered);
         },
         remove: system => {
-            const definition = requireDefinition(system);
+            const syncSystem = syncSystemOf(system);
+            const definition = syncSystem === undefined ? requireDefinition(system) : null;
             if (disposed) return;
-            const change = loop.remove(definition);
-            if (change === null) return;
+            const at = holding.findIndex(entry => entry.value === system);
+            const next = at < 0 ? null : syncSystemsOnce(values => values.filter((_, k) => k !== at));
+            const change = definition === null ? null : loop.remove(definition);
+            if (next !== null) {
+                holding.splice(at, 1);
+                setSyncSystems(next.order, next.ordered);
+                void enqueue(releaseRemoved);
+            }
+            if (change === null || definition === null) return;
             let forgotten: readonly Definition[];
             if (isObserver(definition)) {
                 // An observer system added alone, which the composite ticks run doesn't hold: forgotten unless an added
@@ -1085,16 +1158,16 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
                 outOfBand.close();
                 // Joined threads' runs reject from here on.
                 sharing.close();
-                // Per-query finalizers release what every live entity they match holds, reading the GPU's writes first.
+                // Per-query sync systems release what every live entity they match holds, reading the GPU's writes first.
                 let errors: Thrown[] = [];
                 try {
-                    // A finalizer added since the last run still releases what the world's entities hold.
-                    ensureProgramResources(state, ensured);
+                    // A removed system added since the last run still releases what the world's entities hold.
+                    ensureAddedResources(state, ensured);
                     activate(state);
-                    if (state.finalizers.length > 0) {
+                    if (state.syncSystems.length > 0) {
                         if (state.gpu?.anyAhead() === true) await state.gpu.readback();
-                        refreshFinalizerIndexes(state);
-                        errors = finalizeAll(state);
+                        refreshSyncSystemIndexes(state);
+                        errors = runRemovedForAll(state);
                     }
                 }
                 finally {
@@ -1134,6 +1207,7 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
         if (state.tick !== 0) throw new Error("A world starts its ticks elsewhere only before it ran anything.");
         state.tick = tick;
     });
+    tickReaders.set(world, () => state.tick);
     return world;
 };
 

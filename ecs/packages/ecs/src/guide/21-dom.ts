@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { always, cadence, clock, Finalizer, System, Vec2, World } from "../index.js";
+import { always, cadence, clock, System, Vec2, World } from "../index.js";
 
 const position = Symbol();
 const velocity = Symbol();
@@ -58,7 +58,7 @@ const draw = System.create({
     row[dot].style.translate = `${x}cqw ${y}cqh`;
     if (row[traced] !== undefined) resources[tracing]?.(resources[clock].tick + 1, row[dot]);
 });
-Finalizer.create({ components: { with: [dot] } }, row => {
+const remove = System.removed({ components: { with: [dot] } }, row => {
     row[dot].remove();
 });
 
@@ -106,7 +106,7 @@ export const main = async (): Promise<void> => {
     // 60 ticks a second, whatever the display's rate.
     await using world = World.create({ [cadence]: { kind: "fixed", step: 1000 / 60 }, [always]: true, [stage]: shown, [tracing]: logFrame });
     await world.run(spawn);
-    world.add(System.create([move, create, draw]));
+    world.add(System.create([move, create, remove, draw]));
     // The first three frames, or two seconds should they never be drawn.
     await Promise.race([traceDone.promise, new Promise(resolve => setTimeout(resolve, 2000))]);
     console.log(shown.count(), "dots drawn");

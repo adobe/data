@@ -5,7 +5,7 @@ import { expression } from './expression.js';
 import { fail } from './failure.js';
 import type { Link } from './link.js';
 import type { PackageCopies } from './package-copies.js';
-import { createLists } from './lists.js';
+import { createLists, type KeyImport } from './lists.js';
 import type { Module } from './module-scope.js';
 import { resolve, type Out } from './out.js';
 import type { Expression, Statement } from './ir.js';
@@ -43,7 +43,13 @@ const parameterValues: readonly Value[] = [{ kind: "row" }, { kind: "context" },
  * identifiers and `program` lowered from the same statements as the JS; `create` is the source of
  * `KernelModule.create`, which references no module bindings and uses `keys[k]` only as opaque property keys.
  */
-export type CompiledKernel = { readonly description: (url: string) => string; readonly create: string; readonly explain: () => KernelExplanation };
+export type CompiledKernel = {
+    readonly description: (url: string) => string;
+    readonly create: string;
+    readonly explain: () => KernelExplanation;
+    /** The keys the description names that the kernel's module doesn't bind, which the module must import. */
+    readonly imports: readonly KeyImport[];
+};
 
 /**
  * What describing a kernel needs of its compiling (`describe.ts`), made only when asked: its statements, its program
@@ -182,6 +188,7 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
     });
     return {
         explain,
+        imports: unit.lists.imports(),
         description: url => [
             "{",
             `columns: [${columns.join(", ")}],`,

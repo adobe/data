@@ -78,7 +78,7 @@ export const releaseThreads = (state: State, log: MoveLog): void => {
     state.claimed = state.logs.length > 0;
     state.counting = state.claimed || state.observer.count > 0;
     if (state.directory !== null) state.directory.guarded = state.claimed;
-    // Finalizers on the threads it gave back activate again.
+    // Sync systems on the threads it gave back activate again.
     state.unplacedSeen.clear();
     state.activation.met = true;
     flushBetween(state.directory, state.bumped, state.archetypes, state.entities, state.resourceEntity, state.counted);

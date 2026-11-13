@@ -78,4 +78,4 @@ All of the runtime lives here. The only export is `create`, which moves here fro
 
 ## Deferred
 
-Builtins, finalizers, rules, the ESLint rule, and GPU.
+Builtins, changes and removed systems, derivations, the ESLint rule, and GPU.

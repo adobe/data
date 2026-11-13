@@ -28,7 +28,7 @@ const scalarArgument = (node: SourceExpression | SpreadElement, scope: Scope, ou
  * A command's or spawn's value for the component `name` as data in a temporary, recording a tuple or struct, which only a
  * component stored in linear memory takes.
  */
-const commandValue = (name: string, node: Node, scope: Scope, out: Out): Expression => {
+export const commandValue = (name: string, node: Node, scope: Scope, out: Out): Expression => {
     const data = toData(scope.unit.expression(node, scope, out), node, scope);
     if (data.kind !== "leaf") scope.unit.structuredValues.add(name);
     return temporary(scope, out, "value", observe(scope.unit, materialize(data)));
@@ -53,17 +53,23 @@ const commandList = (node: Node, call: string, scope: Scope): readonly string[] 
     if (node.type === "ArrayExpression") for (const element of node.elements) if (element !== null && element.type !== "SpreadElement") commandName(element, scope);
     const first = root(node);
     if (first.type === "Identifier" && findLocal(scope, first.name) !== undefined) return fail(node, `${call}: ${first.name} is a local; commands name lists bound at module scope`);
-    const names = scope.unit.lists.names(node);
+    const names = scope.unit.lists.names(node, scope.module);
     if ("error" in names) return fail(node, `${call}: ${names.error}`);
     const twice = names.find((name, k) => names.indexOf(name) < k);
     return twice === undefined ? names : fail(node, `${twice} is listed twice`);
 };
 
-/** A module-scope identifier naming a component in a command. */
-const commandName = (node: Node, scope: Scope): string =>
-    node.type === "Identifier" && findLocal(scope, node.name) === undefined && scope.module.bindings.has(node.name)
-        ? node.name
-        : fail(node, "commands name components by identifiers bound at module scope");
+/**
+ * A module-scope identifier naming a component in a command or a struct keyed by components, as the kernel's module
+ * names it: in a helper's module, by its definition.
+ */
+export const commandName = (node: Node, scope: Scope): string => {
+    if (node.type !== "Identifier" || findLocal(scope, node.name) !== undefined || !scope.module.bindings.has(node.name)) {
+        return fail(node, "commands name components by identifiers bound at module scope");
+    }
+    const name = scope.unit.lists.key(node.name, scope.module);
+    return typeof name === "string" ? name : fail(node, name.error);
+};
 
 const none = scalarValue({ kind: "nullish", value: "undefined" });
 const undefinedValue: Expression = { kind: "nullish", value: "undefined" };
@@ -73,7 +79,14 @@ const undefinedValue: Expression = { kind: "nullish", value: "undefined" };
  * of the list `undefined`, which is its start.
  */
 const listValues = (list: readonly string[], node: SourceExpression | SpreadElement | undefined, call: Node, scope: Scope, out: Out): readonly Expression[] => {
-    if (node?.type !== "ObjectExpression") return fail(node ?? call, "command values must be an object literal like { [position]: value }");
+    if (node === undefined || node.type === "SpreadElement") return fail(node ?? call, "command values are a struct keyed by components, like { [position]: value }");
+    if (node.type !== "ObjectExpression") {
+        // Values assembled elsewhere, in a local or by a helper, were each evaluated where their struct was written.
+        const value = scope.unit.expression(node, scope, out);
+        if (value.kind !== "keyed") return fail(node, "command values are a struct keyed by components, like { [position]: value }");
+        for (const [name] of value.fields) if (!list.includes(name)) return fail(node, `${name} isn't one of the command's components`);
+        return list.map(name => value.fields.find(([field]) => field === name)?.[1] ?? undefinedValue);
+    }
     const given = new Map<string, Expression>();
     for (const property of node.properties) {
         if (property.type === "SpreadElement" || !property.computed) return fail(property, "command value keys must be computed component identifiers like [position]");
@@ -107,7 +120,7 @@ const componentOf = (node: Node, call: string, scope: Scope): readonly string[] 
     if (node.type === "ArrayExpression") return commandList(node, call, scope);
     const first = root(node);
     if (first.type !== "Identifier" || findLocal(scope, first.name) !== undefined) return { key: commandName(node, scope) };
-    const named = scope.unit.lists.component(node);
+    const named = scope.unit.lists.component(node, scope.module);
     switch (named.kind) {
         case "list": return commandList(node, call, scope);
         case "key": return { key: node.type === "Identifier" ? commandName(node, scope) : named.name };
@@ -184,17 +197,18 @@ const forkScope = (scope: Scope): Scope => ({ ...scope, locals: new Map(scope.lo
 
 /**
  * A helper body's value. A return inside an `if` splits the block: each branch runs its own statements and then
- * the rest of the block, and their returned values merge as a conditional would.
+ * the rest of the block, and their returned values merge as a conditional would. A helper returning nothing, at its
+ * end or with `return;`, gives `undefined`.
  */
 const helperBlock = (name: string, segments: readonly Segment[], node: Node, out: Out): Value => {
     const [segment, ...after] = segments;
-    if (segment === undefined) return fail(node, `${name} must end with return <value>`);
+    if (segment === undefined) return none;
     const { statements, scope } = segment;
     const unit = scope.unit;
     for (let index = 0; index < statements.length; index++) {
         const statement = statements[index];
         if (statement.type === "ReturnStatement") {
-            if (!statement.argument) return fail(statement, `${name} must return a value`);
+            if (!statement.argument) return none;
             return unit.expression(statement.argument, scope, out);
         }
         if (statement.type === "IfStatement" && containsReturn(statement)) {

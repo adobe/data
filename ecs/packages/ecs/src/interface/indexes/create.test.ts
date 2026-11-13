@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import { createResolved } from "../system/create-resolved.js";
 import { giveAccess } from "../registry/ids.test-helper.js";
 import { Entity } from "../entity/entity.js";
-import { Finalizer } from "../finalizer/finalizer.js";
 import { identify } from "../registry/ids.test-helper.js";
 import { isLeaf, requireDefinition } from "../registry/index.js";
 import { accessOf } from "../registry/schedule.js";
@@ -89,7 +88,7 @@ describe("Index.create", () => {
     });
 });
 
-describe("systems and finalizers looking up through an index", () => {
+describe("systems and sync systems looking up through an index", () => {
     const grid = Index.create({ key: [cell], components: { with: [amount] } });
     /** A system of a declaration as the world takes it, what its body reads and writes listed, bypassing the types' checks. */
     const untypedSystem = (declaration: object): unknown => Reflect.apply(createResolved, undefined, [declaration, () => {}]);
@@ -111,7 +110,7 @@ describe("systems and finalizers looking up through an index", () => {
         expect(() => untypedSystem({ name: "bad", components: { write: [amount] }, lookup: { near: { index: grid, read: [amount] } } })).toThrow(`reads "indexCreateTest/amount", which the system writes`);
         expect(() => untypedSystem({ name: "bad", kernel: true, components: { write: [amount] }, lookup: { near: { index: Index.create({ key: [name] }) } } })).toThrow(`keyed by "indexCreateTest/name", a string, which kernels don't read yet`);
         const reading = giveAccess({ components: { with: [amount] }, lookup: { near: { index: grid } } }, { read: [amount], lookup: { near: [name] } });
-        expect(() => Reflect.apply(Finalizer.create, undefined, [reading, () => {}])).toThrow(`lookup "near" reads`);
+        expect(() => Reflect.apply(System.removed, undefined, [reading, () => {}])).toThrow(`lookup "near" reads`);
         expect(grid.name).toBe("grid");
     });
 });

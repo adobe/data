@@ -117,7 +117,7 @@ export const requireKey = (kind: Kind, key: unknown): symbol => {
 
 /**
  * Whether two declarations are the same, as a module evaluated again declares them, such as on a hot reload. Keys
- * compare as `sameKey` does, and systems and finalizers they list as `sameItem` does, since evaluating their modules
+ * compare as `sameKey` does, and systems and sync systems they list as `sameItem` does, since evaluating their modules
  * again makes new values of them.
  */
 export const sameDeclaration = (a: unknown, b: unknown): boolean => {

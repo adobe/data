@@ -49,5 +49,11 @@ export const present = System.render({
     }
 });
 
-/** Every system of a frame, in order: targets, surfaces and views updated and targets cleared, then surfaces presented. */
-export const systems = System.create({ systems: [update, present] });
+/** What `update` makes, released: each target's textures, surface's configured canvas and view's uniform buffer, when it stops being one. */
+export const releases = System.create([Target.release, Surface.release, View.release]);
+
+/**
+ * Every system of a frame, which a world adds: targets, surfaces and views updated and targets cleared, then surfaces
+ * presented, with the releases of what `update` makes.
+ */
+export const systems = System.create({ systems: [update, present, releases] });

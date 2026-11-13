@@ -47,9 +47,9 @@ export const lookupKeysOf = (lookup: AnyLookup): readonly Key[] => indexOfLookup
  * `index` isn't a value `Index.create` returned, or whose `read` or `changed` names a component that not every entity
  * the index holds has, and for a `changed: true` but on a system's index lookup.
  */
-export const checkLookup = (what: "System" | "Finalizer", name: string, lookupName: string, lookup: AnyLookup): void => {
+export const checkLookup = (what: "System" | "Removed system" | "Changes system", name: string, lookupName: string, lookup: AnyLookup): void => {
     if (lookup.changed === true) {
-        if (what === "Finalizer") throw new Error(`Finalizer "${name}": lookup "${lookupName}"'s changed is true, which only a system's index lookup takes; a finalizer runs on each entity that stops matching.`);
+        if (what !== "System") throw new Error(`${what} "${name}": lookup "${lookupName}"'s changed is true, which only a system's index lookup takes.`);
         if (lookup.index === undefined) throw new Error(`System "${name}": lookup "${lookupName}"'s changed is true, which only an index lookup takes; name the components it watches.`);
     }
     if (lookup.index === undefined) {

@@ -458,9 +458,11 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
     };
 
     /** Pure: a resource no registered system uses still reads as its default. */
+    /** A resource's value, as stored or its initial value, found without making its cell, since the loop reads some each tick. */
     const readResource = (key: Key): unknown => {
-        const cell = findResource(state, key);
-        return cell === undefined ? initialOf(state, key) : readCell(cell.storage, cell.row);
+        const index = state.resourceEntity < 0 ? -1 : indexOf(state.resourceEntity);
+        const storage = index < 0 ? undefined : state.archetypes[state.entities.archetype[index]]?.storageById[idOf(state, key)];
+        return storage === undefined ? initialOf(state, key) : readCell(storage, state.entities.row[index]);
     };
 
     const deviceId = idOf(state, gpuDevice);
@@ -896,11 +898,17 @@ export const createWorld = (resources: InitialResources = {}, options: WorldOpti
     });
     const clockId = idOf(state, clock);
 
+    /** The loop's settings, one object the loop reads anew each beat before it awaits anything, so a beat allocates none. */
+    let settings: { cadence: Cadence; always: boolean; wake: number } | null = null;
     const loop = createLoop({
         settings: () => {
             // Stored values match each resource's registered schema.
             const cadenceValue = readResource(cadence) as Cadence;
-            return { cadence: cadenceValue, always: readResource(always) === true, wake: Number(readResource(wake)) };
+            settings ??= { cadence: cadenceValue, always: false, wake: Infinity };
+            settings.cadence = cadenceValue;
+            settings.always = readResource(always) === true;
+            settings.wake = Number(readResource(wake));
+            return settings;
         },
         tick,
         now: options.loop?.now ?? (() => performance.now()),

@@ -126,8 +126,10 @@ export type State = {
     arrivalRing: Arrivals | null;
     /** By component set, archetypes of shared values reclaimed, waiting to be reused for others (`reclaim.ts`). */
     readonly pools: Map<string, Archetype[]>;
-    /** Archetypes of shared values found empty, which may be reclaimed. */
+    /** Archetypes of shared values found empty, which may be reclaimed, and those the resource entity left, to release. */
     readonly emptied: Archetype[];
+    /** The archetype holding the resource entity as of the last sync point, -1 before it's spawned. */
+    resourceArchetype: number;
     /**
      * Archetypes reclaimed or reused, in order, which systems' match lists follow from their own position: the log
      * holds those from `base` on, trimmed as it grows.
@@ -172,8 +174,12 @@ export type State = {
     readonly referencesWritten: number[];
     /** The entities sync points spawned, despawned, moved or wrote references of, for `up` systems and indexes. */
     readonly journal: Journal;
-    /** Command buffers for the next sync point, in merge order. */
-    readonly queued: Queued[];
+    /**
+     * Command buffers for the next sync point, in merge order. A sync point takes the list, leaving `spareQueued`, empty,
+     * in its place, and its own list is the spare, emptied once it's done, so no sync point allocates one.
+     */
+    queued: Queued[];
+    spareQueued: Queued[];
     /** Buffers that workers' command ring segments drain into, the first `drained` in use until the sync point's end. */
     readonly drains: CommandBuffer[];
     drained: number;
@@ -361,6 +367,7 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
         arrivalRing: null,
         pools: new Map(),
         emptied: [],
+        resourceArchetype: -1,
         membership: { log: [], base: 0 },
         reshapes: 0,
         syncs: 0,
@@ -379,6 +386,7 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
         resources: new Set(),
         tick: 0,
         queued: [],
+        spareQueued: [],
         drains: [],
         drained: 0,
         resourceEntity: -1,
@@ -666,14 +674,14 @@ export const sharedNumberOf = (state: State, id: number, value: unknown): number
  */
 export const withShared = (state: State, archetype: Archetype, id: number, number: number): Archetype => {
     if (archetype.shared[id] === number) return archetype;
-    const edges = archetype.sharing[id] ??= [];
-    let next = edges[number];
+    const edges = archetype.sharing[id] ??= new Map();
+    let next = edges.get(number);
     if (next === undefined) {
         const values = [...archetype.shared];
         values[id] = number;
         const components = archetype.storageById[id] === undefined ? [...archetype.components, id].sort((a, b) => a - b) : archetype.components;
         next = archetypeOf(state, components, values);
-        edges[number] = next;
+        edges.set(number, next);
         noteEdge(edges, number, undefined, archetype, next);
     }
     return next;
@@ -717,6 +725,62 @@ export const withComponent = (state: State, archetype: Archetype, id: number): A
     return next;
 };
 
+/**
+ * The archetype with every component `ids` names from `start` to `end` added, but shared ones, which `withShared` adds:
+ * through cached edges while there are any, then in one step, so no archetype is made between them. Allocates only
+ * where it makes or first finds one, so only at sync points.
+ */
+export const withComponents = (state: State, archetype: Archetype, ids: ArrayLike<number>, start: number, end: number): Archetype => {
+    let to = archetype;
+    let k = start;
+    for (; k < end; k++) {
+        const id = ids[k];
+        if (to.storageById[id] !== undefined || state.shared[id] !== undefined) continue;
+        const next = to.adding[id];
+        if (next === undefined) break;
+        to = next;
+    }
+    return k === end ? to : jump(state, to, ids, k, end);
+};
+
+/** Whether `ids` from `start` to `at` names `id`. */
+const names = (ids: ArrayLike<number>, start: number, at: number, id: number): boolean => {
+    for (let k = start; k < at; k++) if (ids[k] === id) return true;
+    return false;
+};
+
+/**
+ * `withComponents` from where the cached edges end, `ids[start]` the first component without one: one more is a cached
+ * edge as `withComponent`'s; several are found among the targets `archetype.jumps` caches, or made and cached there.
+ */
+const jump = (state: State, archetype: Archetype, ids: ArrayLike<number>, start: number, end: number): Archetype => {
+    let missing = 0;
+    for (let k = start; k < end; k++) {
+        const id = ids[k];
+        if (archetype.storageById[id] === undefined && state.shared[id] === undefined && !names(ids, start, k, id)) missing++;
+    }
+    if (missing === 1) return withComponent(state, archetype, ids[start]);
+    // A target made from this archetype holds its components; one of as many more, holding every one named, is this one.
+    const size = archetype.components.length + missing;
+    const { jumps } = archetype;
+    for (let j = 0; j < jumps.length; j++) {
+        const target = jumps[j];
+        if (target === undefined || target.components.length !== size) continue;
+        let holds = true;
+        for (let k = start; k < end && holds; k++) holds = target.storageById[ids[k]] !== undefined || state.shared[ids[k]] !== undefined;
+        if (holds) return target;
+    }
+    const components = [...archetype.components];
+    for (let k = start; k < end; k++) {
+        const id = ids[k];
+        if (archetype.storageById[id] === undefined && state.shared[id] === undefined && !names(ids, start, k, id)) components.push(id);
+    }
+    const target = archetypeOf(state, components.sort((a, b) => a - b), archetype.shared);
+    noteEdge(jumps, jumps.length, undefined, archetype, target);
+    jumps.push(target);
+    return target;
+};
+
 export const withoutComponent = (state: State, archetype: Archetype, id: number): Archetype => {
     if (archetype.storageById[id] === undefined) return archetype;
     let next = archetype.removing[id];
@@ -730,13 +794,14 @@ export const withoutComponent = (state: State, archetype: Archetype, id: number)
 
 /** The storages two archetypes share, as source and target pairs, cached per pair. */
 export const movesOf = (from: Archetype, to: Archetype): readonly Storage[] => {
-    let moves = from.moves[to.id];
+    const cached = from.moves ??= new Map();
+    let moves = cached.get(to.id);
     if (moves === undefined) {
         moves = to.storages.flatMap(storage => {
             const source = from.storageById[storage.component];
             return source === undefined ? [] : [source, storage];
         });
-        from.moves[to.id] = moves;
+        cached.set(to.id, moves);
     }
     return moves;
 };

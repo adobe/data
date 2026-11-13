@@ -2,6 +2,7 @@
 import type { Layout } from '../../interface/registry/layout.js';
 import { bump, noShared, release, type Archetype, type Edge } from './archetype.js';
 import { createArrivals, membershipWord } from './arrivals.js';
+import { indexOf } from './entities.js';
 import { forgetTexts } from './layout-directory.js';
 import { holdShared, releaseShared, sweepShared } from './shared.js';
 import type { State } from './state.js';
@@ -58,6 +59,23 @@ export const noteEmptied = (state: State): void => {
 };
 
 /**
+ * Notes the archetype the resource entity left at the sync point just applied, if it did, as a candidate: only the
+ * resource entity lives there, so it's released, its arrays let go, once no reader can still read them.
+ */
+export const noteResourceLeft = (state: State): void => {
+    const id = state.entities.archetype[indexOf(state.resourceEntity)];
+    const left = state.resourceArchetype;
+    if (id === left) return;
+    state.resourceArchetype = id;
+    if (left < 0) return;
+    const archetype = state.archetypes[left];
+    if (archetype.count !== 0 || archetype.emptiedAt >= 0) return;
+    archetype.emptiedAt = state.syncs;
+    archetype.emptiedTick = state.tick;
+    state.emptied.push(archetype);
+};
+
+/**
  * Whether every joined thread acknowledged its stop lists through the sync point of `tick`, an archetype's last with
  * rows: a stop list names its stops' archetypes, whose values the thread reads by id as it runs their stops.
  */
@@ -87,7 +105,8 @@ export const reclaimEmptied = (state: State): void => {
             emptied[kept++] = archetype;
             continue;
         }
-        reclaim(state, archetype);
+        if (archetype.resource) releaseLeft(state, archetype);
+        else reclaim(state, archetype);
     }
     emptied.length = kept;
     for (const values of state.sharedList) if (values.fresh.length > 0) sweepShared(values);
@@ -99,7 +118,8 @@ const clearEdges = (archetype: Archetype): void => {
     if (edges === null) return;
     archetype.edges = null;
     for (const edge of edges) {
-        if (Reflect.get(edge.holder, edge.key) !== undefined) Reflect.set(edge.holder, edge.key, edge.cleared);
+        if (edge.holder instanceof Map) edge.holder.delete(edge.key);
+        else if (Reflect.get(edge.holder, edge.key) !== undefined) Reflect.set(edge.holder, edge.key, edge.cleared);
         for (const end of edge.ends) {
             if (end === archetype || end.edges === null) continue;
             const at = end.edges.indexOf(edge);
@@ -120,12 +140,19 @@ export const noteEdge = (holder: object, key: PropertyKey, cleared: unknown, fro
     for (const end of ends) (end.edges ??= []).push(edge);
 };
 
+/** Lets go of the arrays of an archetype the resource entity left, keeping it, its id and its edges, for its return. */
+const releaseLeft = (state: State, archetype: Archetype): void => {
+    archetype.emptiedAt = -1;
+    release(state.memory, archetype, true);
+    state.gpu?.forget(archetype);
+};
+
 const reclaim = (state: State, archetype: Archetype): void => {
     archetype.reclaimed = true;
     archetype.emptiedAt = -1;
     state.archetypeByKey.delete(archetype.key);
     clearEdges(archetype);
-    archetype.adding.length = archetype.removing.length = archetype.sharing.length = 0;
+    archetype.adding.length = archetype.removing.length = archetype.sharing.length = archetype.jumps.length = 0;
     release(state.memory, archetype);
     state.gpu?.forget(archetype);
     const pool = state.pools.get(poolKeyOf(archetype.components));

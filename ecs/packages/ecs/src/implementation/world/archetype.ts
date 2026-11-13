@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Entity } from '../../interface/entity/entity.js';
 import type { Layout, Views } from '../../interface/registry/layout.js';
-import { allocateArray, allocateViews, emptyViews, freeArray, freeViews, growArray } from './arrays.js';
+import { allocateArray, allocateViews, emptyViews, freeArray, growArray, type ArrayConstructor } from './arrays.js';
 import { blockShift, chunkShift } from './kernel.js';
 import type { Memory } from './memory.js';
 import { nullTag, startTag, type MoveLog } from './move-log.js';
@@ -141,6 +141,8 @@ export type Archetype = {
     /** The archetype with one more or one fewer component, by component id, cached as edges are first taken. */
     readonly adding: (Archetype | undefined)[];
     readonly removing: (Archetype | undefined)[];
+    /** The archetypes several components added at once lead to, each with this one's components and more (`withComponents`). */
+    readonly jumps: (Archetype | undefined)[];
     /** For a move to another archetype: each component they share, as source and target storages. */
     /** By target archetype id: the storages they share, as source and target pairs, flattened. */
     readonly moves: (readonly Storage[] | undefined)[];
@@ -184,8 +186,14 @@ export const bump = (archetype: Archetype): void => {
 
 const initialCapacity = 16;
 
-/** The rows an archetype starts with, and keeps once released: the resource entity's archetypes hold its one row. */
+/**
+ * The rows an archetype's arrays first hold, made as its first row arrives: the resource entity's archetypes hold its
+ * one row. Until then, and once released, it holds none, so one only passed through or left holds no memory.
+ */
 const startingCapacity = (resource: boolean): number => resource ? 1 : initialCapacity;
+
+/** An archetype's entities while it has no rows. */
+const noEntities = new Float64Array(0);
 
 /** An archetype without shared components holds no values: one empty list for them all. */
 export const noShared: readonly (number | undefined)[] = [];
@@ -207,6 +215,7 @@ export const alias = (layout: Layout): boolean => layout.kind === "constant" && 
  */
 const allocateTicks = (memory: Memory, storage: Storage, capacity: number, tick: number): void => {
     storage.ticked = true;
+    if (capacity === 0) return;
     storage.added = allocateArray(memory, Float64Array, capacity).fill(tick);
     const aliased = alias(storage.layout);
     storage.changed = aliased ? storage.added : allocateArray(memory, Float64Array, capacity).fill(tick);
@@ -218,6 +227,7 @@ const allocateTicks = (memory: Memory, storage: Storage, capacity: number, tick:
 
 /** Views of a new column, for a linear layout's or a string's `capacity` rows; a string's handles start at 0. */
 const columnOf = (memory: Memory, layout: Layout, capacity: number): Views => {
+    if (capacity === 0) return emptyViews;
     if (layout.kind === "linear") return allocateViews(memory, capacity * layout.stride + columnSlack);
     if (layout.kind !== "string") return emptyViews;
     const views = allocateViews(memory, capacity * layout.stride + columnSlack);
@@ -264,8 +274,7 @@ export const startTicks = (memory: Memory, archetype: Archetype, storage: Storag
  * thread fills, by `remote`, hold their tags.
  */
 export const createArchetype = (memory: Memory, strings: StringStore | null, id: number, components: readonly number[], layouts: readonly Layout[], resource: boolean, ticked: ReadonlySet<number>, bumped: Archetype[], replaced: { count: number }, remote: readonly (MoveLog | undefined)[], shared: readonly (number | undefined)[] = noShared, sharedLayouts: readonly (Layout | undefined)[] = noLayouts, texts: readonly (string | undefined)[] = noTexts, key = ""): Archetype => {
-    const capacity = startingCapacity(resource);
-    const storages = components.map(component => createStorage(memory, strings, component, sharedLayouts[component] ?? layouts[component], capacity, resource || ticked.has(component)));
+    const storages = components.map(component => createStorage(memory, strings, component, sharedLayouts[component] ?? layouts[component], 0, resource || ticked.has(component)));
     const storageById: (Storage | undefined)[] = [];
     for (const storage of storages) storageById[storage.component] = storage;
     const archetype: Archetype = {
@@ -285,10 +294,11 @@ export const createArchetype = (memory: Memory, strings: StringStore | null, id:
         storageById,
         adding: [],
         removing: [],
+        jumps: [],
         moves: [],
-        entities: allocateArray(memory, Float64Array, capacity),
+        entities: noEntities,
         count: 0,
-        capacity,
+        capacity: 0,
         resource,
         objects: storages.some(storage => storage.layout.kind === "object" || storage.layout.kind === "string"),
         strings: storages.filter(storage => storage.layout.kind === "string"),
@@ -307,78 +317,101 @@ export const createArchetype = (memory: Memory, strings: StringStore | null, id:
     return archetype;
 };
 
+/** Frees an archetype's array unless it's one of the empty ones it holds while it has no rows, which aren't the arena's. */
+const freeHeld = (memory: Memory, array: { readonly byteOffset: number; readonly byteLength: number }): void => {
+    if (array.byteLength > 0) freeArray(memory, array);
+};
+
+/** Moves an array's first `used` elements into a new one of `length`, freeing the old one: `growArray` from an empty one too. */
+const regrow = <T extends Float64Array | Uint32Array>(memory: Memory, array: T, constructor: ArrayConstructor<T>, length: number, used: number): T => {
+    if (array.length > 0) return growArray(memory, array, constructor, length, used);
+    return allocateArray(memory, constructor, length);
+};
+
 const growViews = (memory: Memory, storage: Storage, capacity: number, count: number): void => {
     const { layout } = storage;
     if (layout.kind !== "linear" && layout.kind !== "string") return;
     const grown = allocateViews(memory, capacity * layout.stride + columnSlack);
     grown.u8.set(storage.views.u8.subarray(0, count * layout.stride));
     if (layout.kind === "string") grown.u32.fill(0, count);
-    freeViews(memory, storage.views);
+    freeHeld(memory, storage.views.u8);
     storage.views = grown;
 };
 
-const grow = (memory: Memory, archetype: Archetype, capacity = archetype.capacity * 2): void => {
+const grow = (memory: Memory, archetype: Archetype, capacity = Math.max(archetype.capacity * 2, startingCapacity(archetype.resource))): void => {
     const { count } = archetype;
     for (const storage of archetype.storages) {
         growViews(memory, storage, capacity, count);
-        if (storage.remote !== null) storage.tags = growArray(memory, storage.tags, Uint32Array, capacity, count);
+        if (storage.remote !== null) {
+            const used = storage.tags.length;
+            storage.tags = regrow(memory, storage.tags, Uint32Array, capacity, count);
+            if (used === 0) storage.tags.fill(startTag);
+        }
         if (!storage.ticked) continue;
-        const shared = storage.changed === storage.added;
-        storage.added = growArray(memory, storage.added, Float64Array, capacity, count);
-        storage.changed = shared ? storage.added : growArray(memory, storage.changed, Float64Array, capacity, count);
+        const aliased = alias(storage.layout);
+        storage.added = regrow(memory, storage.added, Float64Array, capacity, count);
+        storage.changed = aliased ? storage.added : regrow(memory, storage.changed, Float64Array, capacity, count);
         const chunks = chunksFor(capacity);
         if (chunks > storage.chunkAdded.length) {
             const used = storage.chunkAdded.length;
-            storage.chunkAdded = growArray(memory, storage.chunkAdded, Float64Array, chunks, used).fill(0, used);
-            storage.chunkChanged = shared ? storage.chunkAdded : growArray(memory, storage.chunkChanged, Float64Array, chunks, used).fill(0, used);
+            storage.chunkAdded = regrow(memory, storage.chunkAdded, Float64Array, chunks, used).fill(0, used);
+            storage.chunkChanged = aliased ? storage.chunkAdded : regrow(memory, storage.chunkChanged, Float64Array, chunks, used).fill(0, used);
             const blocks = blocksFor(capacity);
             const usedBlocks = storage.blockAdded.length;
-            storage.blockAdded = growArray(memory, storage.blockAdded, Float64Array, blocks, usedBlocks).fill(0, usedBlocks);
-            storage.blockChanged = shared ? storage.blockAdded : growArray(memory, storage.blockChanged, Float64Array, blocks, usedBlocks).fill(0, usedBlocks);
+            storage.blockAdded = regrow(memory, storage.blockAdded, Float64Array, blocks, usedBlocks).fill(0, usedBlocks);
+            storage.blockChanged = aliased ? storage.blockAdded : regrow(memory, storage.blockChanged, Float64Array, blocks, usedBlocks).fill(0, usedBlocks);
         }
     }
-    archetype.entities = growArray(memory, archetype.entities, Float64Array, capacity, count);
+    archetype.entities = regrow(memory, archetype.entities, Float64Array, capacity, count);
     archetype.capacity = capacity;
     bump(archetype);
 };
 
-/**
- * Lets go of an empty archetype's arrays, past what a new one holds: its columns, ticks and entities, each replaced
- * by one of the first capacity, as when it was made. Its storages stay, so the edges that name them do.
- */
-export const release = (memory: Memory, archetype: Archetype): void => {
-    const capacity = startingCapacity(archetype.resource);
-    if (archetype.capacity <= capacity) return;
-    for (const storage of archetype.storages) {
-        const { layout } = storage;
-        if (layout.kind === "linear" || layout.kind === "string") {
-            freeViews(memory, storage.views);
-            storage.views = columnOf(memory, layout, capacity);
-        }
-        if (storage.remote !== null) {
-            freeArray(memory, storage.tags);
-            storage.tags = allocateArray(memory, Uint32Array, capacity).fill(startTag);
-        }
-        storage.values.length = 0;
-        if (!storage.ticked) continue;
-        const aliased = storage.changed === storage.added;
-        freeArray(memory, storage.added);
-        if (!aliased) freeArray(memory, storage.changed);
-        freeArray(memory, storage.chunkAdded);
-        if (!aliased) freeArray(memory, storage.chunkChanged);
-        freeArray(memory, storage.blockAdded);
-        if (!aliased) freeArray(memory, storage.blockChanged);
-        // As it starts: new rows' ticks are written as they arrive.
-        storage.added = allocateArray(memory, Float64Array, capacity).fill(0);
-        storage.changed = aliased ? storage.added : allocateArray(memory, Float64Array, capacity).fill(0);
-        storage.chunkAdded = allocateArray(memory, Float64Array, chunksFor(capacity)).fill(0);
-        storage.chunkChanged = aliased ? storage.chunkAdded : allocateArray(memory, Float64Array, chunksFor(capacity)).fill(0);
-        storage.blockAdded = allocateArray(memory, Float64Array, blocksFor(capacity)).fill(0);
-        storage.blockChanged = aliased ? storage.blockAdded : allocateArray(memory, Float64Array, blocksFor(capacity)).fill(0);
-        storage.columnChanged = 0;
+/** Gives a storage's arrays for `capacity` rows: a reclaimed archetype's, as when its first row arrived, or none. */
+const reset = (memory: Memory, storage: Storage, capacity: number): void => {
+    const { layout } = storage;
+    if (layout.kind === "linear" || layout.kind === "string") {
+        freeHeld(memory, storage.views.u8);
+        storage.views = columnOf(memory, layout, capacity);
     }
-    freeArray(memory, archetype.entities);
-    archetype.entities = allocateArray(memory, Float64Array, capacity);
+    if (storage.remote !== null) {
+        freeHeld(memory, storage.tags);
+        storage.tags = capacity === 0 ? noTags : allocateArray(memory, Uint32Array, capacity).fill(startTag);
+    }
+    storage.values.length = 0;
+    if (!storage.ticked) return;
+    const aliased = alias(storage.layout);
+    freeHeld(memory, storage.added);
+    if (!aliased) freeHeld(memory, storage.changed);
+    freeHeld(memory, storage.chunkAdded);
+    if (!aliased) freeHeld(memory, storage.chunkChanged);
+    freeHeld(memory, storage.blockAdded);
+    if (!aliased) freeHeld(memory, storage.blockChanged);
+    storage.columnChanged = 0;
+    if (capacity === 0) {
+        storage.added = storage.changed = storage.chunkAdded = storage.chunkChanged = storage.blockAdded = storage.blockChanged = noTicks;
+        return;
+    }
+    // As it starts: new rows' ticks are written as they arrive.
+    storage.added = allocateArray(memory, Float64Array, capacity).fill(0);
+    storage.changed = aliased ? storage.added : allocateArray(memory, Float64Array, capacity).fill(0);
+    storage.chunkAdded = allocateArray(memory, Float64Array, chunksFor(capacity)).fill(0);
+    storage.chunkChanged = aliased ? storage.chunkAdded : allocateArray(memory, Float64Array, chunksFor(capacity)).fill(0);
+    storage.blockAdded = allocateArray(memory, Float64Array, blocksFor(capacity)).fill(0);
+    storage.blockChanged = aliased ? storage.blockAdded : allocateArray(memory, Float64Array, blocksFor(capacity)).fill(0);
+};
+
+/**
+ * Lets go of an empty archetype's arrays: past its first capacity, for one reclaimed, whose next rows likely come soon,
+ * as an entity crossing cells brings them; or all of them, `whole`, for one the resource entity left. Its storages
+ * stay, so the edges that name them do.
+ */
+export const release = (memory: Memory, archetype: Archetype, whole = false): void => {
+    const capacity = whole ? 0 : Math.min(archetype.capacity, startingCapacity(archetype.resource));
+    if (archetype.capacity === capacity) return;
+    for (const storage of archetype.storages) reset(memory, storage, capacity);
+    freeHeld(memory, archetype.entities);
+    archetype.entities = capacity === 0 ? noEntities : allocateArray(memory, Float64Array, capacity);
     archetype.capacity = capacity;
     bump(archetype);
 };
@@ -386,7 +419,7 @@ export const release = (memory: Memory, archetype: Archetype): void => {
 /** Grows once to fit `needed` rows, so a sync point adding many doesn't double over and over. */
 export const ensureCapacity = (memory: Memory, archetype: Archetype, needed: number): void => {
     if (needed <= archetype.capacity) return;
-    let capacity = archetype.capacity;
+    let capacity = Math.max(archetype.capacity, startingCapacity(archetype.resource));
     while (capacity < needed) capacity *= 2;
     grow(memory, archetype, capacity);
 };
@@ -477,7 +510,7 @@ export const swapRemove = (archetype: Archetype, row: number): number => {
  */
 export const makeRemote = (memory: Memory, archetype: Archetype, storage: Storage, log: MoveLog): void => {
     storage.remote = log;
-    storage.tags = allocateArray(memory, Uint32Array, archetype.capacity).fill(startTag);
+    storage.tags = archetype.capacity === 0 ? noTags : allocateArray(memory, Uint32Array, archetype.capacity).fill(startTag);
     storage.values.length = 0;
     if (archetype.logs === null) archetype.logs = [log];
     else if (!archetype.logs.includes(log)) archetype.logs.push(log);
@@ -493,7 +526,7 @@ export const makeLocal = (memory: Memory, archetype: Archetype, storage: Storage
     const log = storage.remote;
     if (log === null) return;
     for (let row = 0; row < archetype.count; row++) storage.values[row] = storage.tags[row] === nullTag ? null : start;
-    freeArray(memory, storage.tags);
+    freeHeld(memory, storage.tags);
     storage.tags = noTags;
     storage.remote = null;
     if (!archetype.storages.some(other => other.remote === log)) {

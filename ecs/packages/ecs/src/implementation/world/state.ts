@@ -126,8 +126,10 @@ export type State = {
     arrivalRing: Arrivals | null;
     /** By component set, archetypes of shared values reclaimed, waiting to be reused for others (`reclaim.ts`). */
     readonly pools: Map<string, Archetype[]>;
-    /** Archetypes of shared values found empty, which may be reclaimed. */
+    /** Archetypes of shared values found empty, which may be reclaimed, and those the resource entity left, to release. */
     readonly emptied: Archetype[];
+    /** The archetype holding the resource entity as of the last sync point, -1 before it's spawned. */
+    resourceArchetype: number;
     /**
      * Archetypes reclaimed or reused, in order, which systems' match lists follow from their own position: the log
      * holds those from `base` on, trimmed as it grows.
@@ -361,6 +363,7 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
         arrivalRing: null,
         pools: new Map(),
         emptied: [],
+        resourceArchetype: -1,
         membership: { log: [], base: 0 },
         reshapes: 0,
         syncs: 0,
@@ -715,6 +718,62 @@ export const withComponent = (state: State, archetype: Archetype, id: number): A
         noteEdge(archetype.adding, id, undefined, archetype, next);
     }
     return next;
+};
+
+/**
+ * The archetype with every component `ids` names from `start` to `end` added, but shared ones, which `withShared` adds:
+ * through cached edges while there are any, then in one step, so no archetype is made between them. Allocates only
+ * where it makes or first finds one, so only at sync points.
+ */
+export const withComponents = (state: State, archetype: Archetype, ids: ArrayLike<number>, start: number, end: number): Archetype => {
+    let to = archetype;
+    let k = start;
+    for (; k < end; k++) {
+        const id = ids[k];
+        if (to.storageById[id] !== undefined || state.shared[id] !== undefined) continue;
+        const next = to.adding[id];
+        if (next === undefined) break;
+        to = next;
+    }
+    return k === end ? to : jump(state, to, ids, k, end);
+};
+
+/** Whether `ids` from `start` to `at` names `id`. */
+const names = (ids: ArrayLike<number>, start: number, at: number, id: number): boolean => {
+    for (let k = start; k < at; k++) if (ids[k] === id) return true;
+    return false;
+};
+
+/**
+ * `withComponents` from where the cached edges end, `ids[start]` the first component without one: one more is a cached
+ * edge as `withComponent`'s; several are found among the targets `archetype.jumps` caches, or made and cached there.
+ */
+const jump = (state: State, archetype: Archetype, ids: ArrayLike<number>, start: number, end: number): Archetype => {
+    let missing = 0;
+    for (let k = start; k < end; k++) {
+        const id = ids[k];
+        if (archetype.storageById[id] === undefined && state.shared[id] === undefined && !names(ids, start, k, id)) missing++;
+    }
+    if (missing === 1) return withComponent(state, archetype, ids[start]);
+    // A target made from this archetype holds its components; one of as many more, holding every one named, is this one.
+    const size = archetype.components.length + missing;
+    const { jumps } = archetype;
+    for (let j = 0; j < jumps.length; j++) {
+        const target = jumps[j];
+        if (target === undefined || target.components.length !== size) continue;
+        let holds = true;
+        for (let k = start; k < end && holds; k++) holds = target.storageById[ids[k]] !== undefined || state.shared[ids[k]] !== undefined;
+        if (holds) return target;
+    }
+    const components = [...archetype.components];
+    for (let k = start; k < end; k++) {
+        const id = ids[k];
+        if (archetype.storageById[id] === undefined && state.shared[id] === undefined && !names(ids, start, k, id)) components.push(id);
+    }
+    const target = archetypeOf(state, components.sort((a, b) => a - b), archetype.shared);
+    noteEdge(jumps, jumps.length, undefined, archetype, target);
+    jumps.push(target);
+    return target;
 };
 
 export const withoutComponent = (state: State, archetype: Archetype, id: number): Archetype => {

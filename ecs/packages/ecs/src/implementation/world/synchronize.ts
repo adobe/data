@@ -10,7 +10,7 @@ import { commitBatches, commitStaged } from './batches.js';
 import { applyIndexChanges, cascadeReferences, indexChangesOf, linkBorn, type IndexChanges, type Written } from './cascade.js';
 import { refreshDirectories } from './directories.js';
 import { createArrivals, logArrival } from './arrivals.js';
-import { noteEdge, noteEmptied, reclaimEmptied } from './reclaim.js';
+import { noteEdge, noteEmptied, noteResourceLeft, reclaimEmptied } from './reclaim.js';
 import { beginStructure, countChanged, endStructure, flushDirectory } from './layout-directory.js';
 import { beginLog, logAppend, logMove, logSet, logSwap, publishLog, startTag, tagOf } from './move-log.js';
 import { record } from './journal.js';
@@ -21,7 +21,7 @@ import { settleStops } from './stop-lists.js';
 import { closureOf, derives, gainsOf } from './structure.js';
 import type { Plan } from './plan.js';
 import type { MoveLog } from './move-log.js';
-import { archetypeOf, movesOf, sharedNumberOf, withComponent, withoutComponent, withShared, type State } from './state.js';
+import { archetypeOf, movesOf, sharedNumberOf, withComponents, withoutComponent, withShared, type State } from './state.js';
 import { releaseValue } from './transfers.js';
 import { resourcesWritten } from './resource-changes.js';
 import { rowsWritten } from './rows-written.js';
@@ -443,8 +443,8 @@ const planCommand = (state: State, queued: readonly Queued[], b: number, command
         plan.spawned++;
         const start = starts[command];
         const end = endOf(buffer, command);
-        let to = archetypes[empty];
-        for (let k = start; k < end; k++) to = state.shared[ids[k]] === undefined ? withComponent(state, to, ids[k]) : withShared(state, to, ids[k], sharedNumberOf(state, ids[k], buffer.values[k]));
+        let to = withComponents(state, archetypes[empty], ids, start, end);
+        for (let k = start; k < end; k++) if (state.shared[ids[k]] !== undefined) to = withShared(state, to, ids[k], sharedNumberOf(state, ids[k], buffer.values[k]));
         plan.to[entry] = to.id;
         if (end > start) addRange(state, entry, b, start, end);
         if (references) for (let k = start; k < end; k++) if (structure.references[ids[k]] !== 0) written.push(entity, ids[k], referenceAt(buffer, k));
@@ -501,21 +501,25 @@ const planCommand = (state: State, queued: readonly Queued[], b: number, command
     const keeps = shape !== null && shape.shared.length === 0;
     const known = keeps ? shape.adding[to.id] : undefined;
     const source = to.id;
+    const planned = to;
     for (let k = start; k < end; k++) {
         const id = ids[k];
         // Removed earlier in this sync point and added again: a new start, so a new `added` tick.
-        if (from !== null && from !== to && to.storageById[id] === undefined && from.storageById[id] !== undefined) {
+        if (from !== null && from !== planned && planned.storageById[id] === undefined && from.storageById[id] !== undefined) {
             let fresh = plan.fresh.get(entry);
             if (fresh === undefined) plan.fresh.set(entry, fresh = []);
-            fresh.push(id);
+            if (!fresh.includes(id)) fresh.push(id);
         }
-        if (known === undefined) to = state.shared[id] === undefined ? withComponent(state, to, id) : withShared(state, to, id, sharedNumberOf(state, id, buffer.values[k]));
         if (references && structure.references[id] !== 0) written.push(entity, id, referenceAt(buffer, k));
     }
     if (known !== undefined) to = archetypes[known];
-    else if (keeps) {
-        shape.adding[source] = to.id;
-        noteEdge(shape.adding, source, undefined, archetypes[source], to);
+    else {
+        to = withComponents(state, to, ids, start, end);
+        for (let k = start; k < end; k++) if (state.shared[ids[k]] !== undefined) to = withShared(state, to, ids[k], sharedNumberOf(state, ids[k], buffer.values[k]));
+        if (keeps) {
+            shape.adding[source] = to.id;
+            noteEdge(shape.adding, source, undefined, archetypes[source], to);
+        }
     }
     plan.to[entry] = to.id;
     if (end > start) addRange(state, entry, b, start, end);
@@ -575,7 +579,8 @@ const blockAt = (state: State, queued: readonly Queued[], b: number, command: nu
     let to = -1;
     if (kind !== despawnCommand) {
         let target = from;
-        for (let k = first; k < first + width; k++) target = kind === removeCommand ? withoutComponent(state, target, ids[k]) : withComponent(state, target, ids[k]);
+        if (kind === addCommand) target = withComponents(state, from, ids, first, first + width);
+        else for (let k = first; k < first + width; k++) target = withoutComponent(state, target, ids[k]);
         // Commands that leave the archetype as it is only replace values: entries write them in place.
         if (target === from) return 0;
         to = target.id;
@@ -1276,11 +1281,11 @@ export const applySync = (state: State): readonly Thrown[] => {
         }
         recycle(state.memory, state.entities);
         state.syncs++;
-        // Archetypes of shared values left empty are reclaimed once they stayed so (`reclaim.ts`).
-        if (state.sharing) {
-            noteEmptied(state);
-            reclaimEmptied(state);
-        }
+        // Archetypes of shared values left empty are reclaimed once they stayed so, and those the resource entity left
+        // released (`reclaim.ts`).
+        if (state.resourceEntity >= 0) noteResourceLeft(state);
+        if (state.sharing) noteEmptied(state);
+        if (state.sharing || state.emptied.length > 0) reclaimEmptied(state);
     }
     finally {
         cleanUp(state, queued);

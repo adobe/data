@@ -246,6 +246,19 @@ sync point whose queue holds only `despawnWhere`s, none of which matches an arch
 idle, checked once everything else it would apply is idle (`dropUnselecting` in `synchronize.ts`). The 0.06 µs left
 is the command itself: resolving its keys and queuing it, and the scan of the world's archetypes.
 
+Archetypes allocated as their first row arrives, adds of several components in one step, and the resource entity's
+left archetypes released (adobe/data#276), measured in `ArrayBuffer` bytes without shared memory, as a page that isn't
+cross-origin isolated has (`archetype-allocations.test.ts`): adding a 16 MiB typed-array resource and six numbers to the
+resource entity in one command 128 → 32 MiB, and with 23 numbers 384 → 32 MiB, the 32 being the column and the world's
+start of the resource, its zeros; adding three resources one run after another 48 → 16 MiB once the archetypes left are
+released. Node, three rounds each against `35428f95`: `walk to a new cell` 1.83–1.88 against 1.83–1.88 µs, once a
+reclaimed archetype keeps its first capacity as before rather than letting it go and growing again (2.21 µs when it
+did); `create`, `create flat`, `create flat dynamic`, `churn`, `retag`, `move`, `spawn bulk`, `spawn bulk kernel`,
+`spawn singles`, `spawn sixteen archetypes`, `despawn bulk`, `add tag`, `add tag kernel`, `add value`, `add several`,
+`remove several`, `add replace`, `spawn singles shared`, `circle 8 cells` and `run idle` within 3%, and `loop tick add
+remove` 181–184 against 188–192 ms, +4%, where profiles show the same time in the same functions, registration and
+garbage collection.
+
 ## Where the gains came from
 
 Step figures marked (vitest) are from the node vitest lane: read them as relative.

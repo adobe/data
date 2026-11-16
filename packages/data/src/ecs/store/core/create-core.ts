@@ -1,7 +1,11 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
 import { Schema } from "../../../schema/index.js";
-import { createEntityLocationTable, remapSerializedArchetypeIds } from "../../entity-location-table/index.js";
+import {
+    createEntityLocationTable,
+    remapSerializedArchetypeIds,
+    validateSerializedArchetypeIds,
+} from "../../entity-location-table/index.js";
 import * as ARCHETYPE from "../../archetype/index.js";
 import { Table, addRow, updateRow } from "../../../table/index.js";
 // getRowData returns the WHOLE row (incl. the internal `id` column); it is only
@@ -591,6 +595,18 @@ export function createCore<NC extends ComponentSchemas>(
                 );
                 return;
             }
+            const inScopeQuadrants = scopeQuadrants(scope);
+            const hasSerializedArchetypes = data.archetypesData.length > 0;
+            const validArchetypeCount = hasSerializedArchetypes
+                ? data.archetypesData.length
+                : archetypes.length;
+            const validArchetypeSource = hasSerializedArchetypes ? "archetypesData" : "archetypes";
+            for (const quadrant of inScopeQuadrants) {
+                const restored = data.entityLocationTables[quadrant];
+                if (restored !== undefined) {
+                    validateSerializedArchetypeIds(restored, validArchetypeCount, validArchetypeSource);
+                }
+            }
             // Component schemas are adopted per-restored-archetype below (not
             // wholesale here), so a schema no restored data uses does not
             // round-trip, and the loading store's own declared schema always
@@ -657,7 +673,7 @@ export function createCore<NC extends ComponentSchemas>(
                 archetype.fromData(archetypeData, true);
                 restoredArchetypes.push(archetype as unknown as Archetype<any>);
             }
-            for (const quadrant of scopeQuadrants(scope)) {
+            for (const quadrant of inScopeQuadrants) {
                 const restored = data.entityLocationTables[quadrant];
                 // Restore the quadrant's table, or reset it if the snapshot
                 // carried no entities for it. When any archetype resolved to a

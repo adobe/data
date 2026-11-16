@@ -49,11 +49,21 @@ const base64ToUint8Array = (base64: string): Uint8Array => {
     return bytes;
 };
 
+export interface SerializeToJSONOptions {
+    /**
+     * Indentation passed to `JSON.stringify`. Defaults to `2`; pass `0` or `""` for compact output.
+     */
+    readonly space?: number | string;
+}
+
 /**
  * Serializes data to a single JSON string with base64-encoded and compressed binary data.
  * The binary arrays are concatenated, compressed using deflate, and their original lengths are stored to allow reconstruction.
  */
-export const serializeToJSON = async <T>(data: T): Promise<string> => {
+export const serializeToJSON = async <T>(
+    data: T,
+    options?: SerializeToJSONOptions,
+): Promise<string> => {
     const serialized = serialize(data);
     
     const lengths = serialized.binary.map(chunk => chunk.byteLength);
@@ -76,7 +86,7 @@ export const serializeToJSON = async <T>(data: T): Promise<string> => {
         binary: base64Binary
     };
     
-    return JSON.stringify(result, null, 2);
+    return JSON.stringify(result, null, options?.space ?? 2);
 };
 
 /**

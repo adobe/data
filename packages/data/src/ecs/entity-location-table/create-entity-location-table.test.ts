@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, it, expect } from 'vitest';
-import { createEntityLocationTable } from './create-entity-location-table.js';
+import { createEntityLocationTable, remapSerializedArchetypeIds } from './create-entity-location-table.js';
 import { Entity } from '../entity/entity.js';
 
 describe('createEntityLocationTable', () => {
@@ -179,5 +179,27 @@ describe('quadrant-encoded entity location table', () => {
             const e = table.create({ archetype: 1, row: 0 });
             expect(e & 0b11).toBe(q);
         }
+    });
+});
+
+describe('remapSerializedArchetypeIds', () => {
+    it('throws naming entity index and archetype id when an occupied slot exceeds archetypeIdMap', () => {
+        const table = createEntityLocationTable();
+        table.create({ archetype: 0, row: 0 });
+        table.create({ archetype: 5, row: 0 });
+        const data = table.toData(true);
+
+        expect(() => remapSerializedArchetypeIds(data, [2])).toThrow(
+            /entity index 1.*archetype id 5/,
+        );
+    });
+
+    it('ignores stale values beyond nextIndex left behind by reset', () => {
+        const table = createEntityLocationTable();
+        table.create({ archetype: 9, row: 0 });
+        table.reset();
+        const data = table.toData(true);
+
+        expect(() => remapSerializedArchetypeIds(data, [0])).not.toThrow();
     });
 });

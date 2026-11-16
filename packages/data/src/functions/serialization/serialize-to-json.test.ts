@@ -263,5 +263,32 @@ describe("serializeToJSON", () => {
         expect(result.uint32).toEqual(data.uint32);
         expect(result.int32).toEqual(data.int32);
     });
+
+    it("pretty-prints with 2 spaces by default and supports compact or custom space options", async () => {
+        const data = {
+            label: "mesh",
+            positions: new Float32Array([1.5, -2.5, 3.25]),
+            indices: new Uint16Array([0, 1, 2]),
+        };
+
+        const defaultJson = await serializeToJSON(data);
+        const emptyOptionsJson = await serializeToJSON(data, {});
+        expect(defaultJson).toBe(JSON.stringify(JSON.parse(defaultJson), null, 2));
+        expect(emptyOptionsJson).toBe(defaultJson);
+
+        const compactZero = await serializeToJSON(data, { space: 0 });
+        const compactEmpty = await serializeToJSON(data, { space: "" });
+        expect(compactZero).toBe(JSON.stringify(JSON.parse(defaultJson)));
+        expect(compactEmpty).toBe(compactZero);
+        expect(compactZero).not.toContain("\n");
+        expect(compactZero.length).toBeLessThan(defaultJson.length);
+
+        const restored = await deserializeFromJSON<typeof data>(compactZero);
+        expect(restored).toEqual(data);
+
+        const tabJson = await serializeToJSON(data, { space: "\t" });
+        expect(tabJson).toBe(JSON.stringify(JSON.parse(defaultJson), null, "\t"));
+        expect(await deserializeFromJSON<typeof data>(tabJson)).toEqual(data);
+    });
 });
 

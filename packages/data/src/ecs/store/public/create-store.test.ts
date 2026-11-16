@@ -895,6 +895,118 @@ describe("createStore", () => {
             expect(v2.read(eX)).toEqual({ x: { x: 2, y: 2, z: 2 } });
         });
 
+        it("rejects a stored archetype id past archetypesData.length and leaves the store unchanged", () => {
+            const source = createStore({
+                components: { position: positionSchema, extra: nameSchema },
+                resources: {},
+                archetypes: {},
+            });
+            source.ensureArchetype(["position", "extra"]).insert({
+                position: { x: 1, y: 2, z: 3 },
+                extra: "only-in-snapshot",
+            });
+            source.ensureArchetype(["position"]).insert({
+                position: { x: 4, y: 5, z: 6 },
+            });
+            // Runtime invariant: toData({ copy: true }) returns a detached SerializedCore snapshot.
+            const snapshot = source.toData({ copy: true }) as {
+                entityLocationTables: { [quadrant: number]: { entities: Int32Array } };
+                archetypesData: readonly unknown[];
+            };
+            expect(snapshot.archetypesData).toHaveLength(2);
+            // Corrupt entity index 1 to name archetype id 127 (no entry in archetypesData).
+            snapshot.entityLocationTables[0]!.entities[2] = 127;
+
+            const target = createStore({
+                components: { position: positionSchema },
+                resources: { score: { default: 10 as number } },
+                archetypes: {},
+            });
+            target.resources.score = 42;
+            const existing = target.ensureArchetype(["position"]).insert({
+                position: { x: 9, y: 9, z: 9 },
+            });
+            const transient = target.ensureArchetype(["position", "nonPersistent"]).insert({
+                position: { x: 7, y: 7, z: 7 },
+                nonPersistent: true,
+            });
+
+            expect(() => target.fromData(snapshot)).toThrow(
+                /entity index 1.*archetype id 127/,
+            );
+
+            // Store state is untouched after the rejected restore.
+            expect(target.read(existing)).toEqual({ position: { x: 9, y: 9, z: 9 } });
+            expect(target.read(transient)).toEqual({ position: { x: 7, y: 7, z: 7 }, nonPersistent: true });
+            expect(target.resources.score).toBe(42);
+            expect("extra" in target.componentSchemas).toBe(false);
+        });
+
+        it("rejects a stored archetype id >= archetypesData.length that would otherwise alias a live archetype", () => {
+            // Source snapshot has only 1 entry in archetypesData (id 0: ["position"]).
+            const source = createStore({
+                components: { position: positionSchema },
+                resources: {},
+                archetypes: {},
+            });
+            const posArch = source.ensureArchetype(["position"]);
+            posArch.insert({ position: { x: 1, y: 2, z: 3 } });
+            posArch.insert({ position: { x: 4, y: 5, z: 6 } });
+            // Runtime invariant: toData({ copy: true }) returns a detached SerializedCore snapshot.
+            const snapshot = source.toData({ copy: true }) as {
+                entityLocationTables: { [quadrant: number]: { entities: Int32Array } };
+                archetypesData: readonly unknown[];
+            };
+            expect(snapshot.archetypesData).toHaveLength(1);
+            // Corrupt entity index 1 to name archetype id 1 (>= archetypesData.length).
+            snapshot.entityLocationTables[0]!.entities[2] = 1;
+            snapshot.entityLocationTables[0]!.entities[3] = 0;
+
+            // Target pre-declares two archetypes so live archetype id 1 exists ("Position").
+            // Without validation, raw id 1 survives the remap and silently aliases a live archetype.
+            const target = createStore({
+                components: { health: healthSchema, position: positionSchema },
+                resources: {},
+                archetypes: { Health: ["health"], Position: ["position"] },
+            });
+            const existingHealth = target.archetypes.Health.insert({
+                health: { current: 50, max: 100 },
+            });
+
+            expect(() => target.fromData(snapshot)).toThrow(
+                /entity index 1.*archetype id 1/,
+            );
+            expect(target.read(existingHealth)).toEqual({ health: { current: 50, max: 100 } });
+        });
+
+        it("rejects occupied location slots pointing at missing archetypes even when archetypesData is empty", () => {
+            const source = createStore({
+                components: { position: positionSchema },
+                resources: {},
+                archetypes: {},
+            });
+            source.ensureArchetype(["position"]).insert({ position: { x: 1, y: 2, z: 3 } });
+            // Runtime invariant: toData({ copy: true }) returns a detached SerializedCore snapshot.
+            const snapshot = source.toData({ copy: true }) as {
+                entityLocationTables: { [quadrant: number]: { entities: Int32Array } };
+                archetypesData: unknown[];
+            };
+            snapshot.archetypesData = [];
+            snapshot.entityLocationTables[0]!.entities[0] = 3;
+
+            const target = createStore({
+                components: { position: positionSchema },
+                resources: {},
+                archetypes: { Position: ["position"] },
+            });
+            const existing = target.archetypes.Position.insert({ position: { x: 9, y: 9, z: 9 } });
+
+            expect(() => target.fromData(snapshot)).toThrow(
+                /entity index 0.*archetype id 3/,
+            );
+            expect(target.read(existing)).toEqual({ position: { x: 9, y: 9, z: 9 } });
+        });
+
         it("stamps a version and skips (warns, does not throw) snapshots of an incompatible or legacy format", () => {
             const store = createStore({ components: { position: positionSchema }, resources: {}, archetypes: {} });
             const entity = store.ensureArchetype(["position"]).insert({ position: { x: 1, y: 2, z: 3 } });

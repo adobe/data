@@ -1,7 +1,7 @@
 # view
 
-The filter on the page: its buttons, and the rows it hides.
+The filter on the page: its buttons, and which todos are listed.
 
-`filterPlugin` defines `<todo-filters>` and runs `setFilter` for its events. `filterRows` hides each row the filter
-leaves out, as its todo or the filter changes, moving focus off it, and `bindFilters` shows the filter on the
+`filterPlugin` defines `<todo-filters>` and runs `setFilter` for its events. `filterRows` has the todos' list show only
+the todos the filter keeps, through `onlyDone`, as the filter changes, and `bindFilters` shows the filter on the
 buttons, which `filterResources` finds on the page.

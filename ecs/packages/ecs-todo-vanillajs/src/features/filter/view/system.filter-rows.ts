@@ -1,40 +1,12 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { System } from "@adobe/ecs";
-import { TodoRow } from "../../todos/elements/index.js";
-import { done } from "../../todos/model/index.js";
-import { row } from "../../todos/view/index.js";
-import { filter, type Filter } from "../model/index.js";
+import { onlyDone } from "../../todos/view/index.js";
+import { filter } from "../model/index.js";
 
-/**
- * Hides each row the filter leaves out, as its todo or the filter changes, moving focus off it. A new filter passes
- * every row, but writes only those whose visibility changes; restyling them costs far more than the pass (see the
- * README).
- */
+/** Has the list show only the todos the filter keeps, as the filter changes. */
 export const filterRows: System = System.create({
-    readonly: true,
-    components: { with: [done, row], changed: [done, row] },
     resources: { changed: [filter] },
-}, (item, { resources }) => {
-    const element = item[row];
-    const hidden = leavesOut(resources[filter], item[done]);
-    if (element.hidden === hidden) return;
-    if (hidden && element.matches(":focus-within")) focusNearest(element, resources[filter]);
-    element.hidden = hidden;
+}, ({ resources }) => {
+    const chosen = resources[filter];
+    resources[onlyDone] = chosen === "all" ? null : chosen === "completed";
 });
-
-/** Whether the filter leaves a todo out. */
-const leavesOut = (chosen: Filter, isDone: boolean): boolean => chosen === "completed" ? !isDone : chosen === "active" && isDone;
-
-const siblingOf = (node: Element, forward: boolean): Element | null => forward ? node.nextElementSibling : node.previousElementSibling;
-
-/**
- * Focuses the row nearest `hiding` that the filter shows, after it or else before it, judged by the rows' `done`
- * rather than their `hidden`, which this pass may not have reached yet.
- */
-const focusNearest = (hiding: Element, chosen: Filter): void => {
-    for (const forward of [true, false]) {
-        for (let node = siblingOf(hiding, forward); node !== null; node = siblingOf(node, forward)) {
-            if (node instanceof TodoRow && !leavesOut(chosen, node.done)) return node.focus({ preventScroll: true });
-        }
-    }
-};

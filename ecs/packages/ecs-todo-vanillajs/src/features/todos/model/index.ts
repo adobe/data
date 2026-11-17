@@ -1,5 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 export * from "./archetype.todo.js";
+export * from "./index.by-done-in-order.js";
 export * from "./component.done.js";
 export * from "./component.label.js";
 export * from "./component.order.js";

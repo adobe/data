@@ -114,15 +114,18 @@ describe("todo-row", () => {
 describe("todo-list", () => {
     type Row = HTMLElementTagNameMap["todo-row"];
 
-    /** A list of four rows, a to d, on the page. */
-    const createList = (): { readonly list: HTMLElementTagNameMap["todo-list"]; readonly rows: readonly [Row, Row, Row, Row] } => {
+    /** A list of `count` items whose first four, a to d, it shows, on the page. */
+    const createList = (count = 4): { readonly list: HTMLElementTagNameMap["todo-list"]; readonly rows: readonly [Row, Row, Row, Row] } => {
         const list = document.createElement("todo-list");
         document.body.append(list);
-        const row = (label: string): Row => {
-            const created = document.createElement("todo-row");
-            created.label = label;
-            list.append(created);
-            return created;
+        list.count = count;
+        list.render(0, ["a", "b", "c", "d"], (row, key) => {
+            row.label = String(key);
+        });
+        const row = (key: string): Row => {
+            const found = list.elementOf(key);
+            if (found === null) throw new Error(`No row ${key}.`);
+            return found;
         };
         return { list, rows: [row("a"), row("b"), row("c"), row("d")] };
     };
@@ -131,34 +134,43 @@ describe("todo-list", () => {
         row.dispatchEvent(new KeyboardEvent("keydown", { key, altKey, bubbles: true }));
     };
 
+    it("makes todo-rows, and says there's nothing to do while it has none", () => {
+        const { list, rows } = createList();
+        expect(rows.map(row => row.label)).toEqual(["a", "b", "c", "d"]);
+        const empty = part(list, ".empty", HTMLElement);
+        expect(empty.checkVisibility()).toBe(false);
+        list.count = 0;
+        list.render(0, [], () => {});
+        expect(empty.checkVisibility()).toBe(true);
+    });
+
     it("dispatches todo-move for Alt+ArrowUp and Alt+ArrowDown, and never moves children itself", () => {
         const { list, rows } = createList();
         const [a, b, c, d] = rows;
+        const children = [...list.children];
         const seen = record(document.body, "todo-move");
         press(c, "ArrowUp");
         press(a, "ArrowDown");
-        press(b, "ArrowDown");
+        press(c, "ArrowDown");
         // At either end there's nowhere to go, and without Alt the keys do nothing.
         press(a, "ArrowUp");
         press(d, "ArrowDown");
         press(c, "ArrowUp", false);
-        expect(seen.map(event => event.detail)).toEqual([{ item: c, before: b }, { item: a, before: c }, { item: b, before: d }]);
-        expect([...list.children]).toEqual(rows);
+        expect(seen.map(event => event.detail)).toEqual([{ item: c, before: b }, { item: a, before: c }, { item: c, before: null }]);
+        expect([...list.children]).toEqual(children);
+        expect(rows.map(row => list.indexOf(row))).toEqual([0, 1, 2, 3]);
     });
 
-    it("skips hidden children when moving by keyboard", () => {
-        const { rows } = createList();
-        const [a, b, c, d] = rows;
-        b.hidden = true;
-        d.hidden = true;
+    it("drops a move to before an item it has no row for", () => {
+        const { rows } = createList(10);
         const seen = record(document.body, "todo-move");
-        press(c, "ArrowDown");
-        press(a, "ArrowDown");
-        press(c, "ArrowUp");
-        expect(seen.map(event => event.detail)).toEqual([{ item: a, before: null }, { item: c, before: a }]);
+        // Items 4 and 5, which c and d would go before, have no rows.
+        press(rows[2], "ArrowDown");
+        press(rows[3], "ArrowDown");
+        expect(seen).toEqual([]);
     });
 
-    it("dispatches todo-move for a drop: before the child dropped on, or after it in its lower half", () => {
+    it("dispatches todo-move for a drop: before the row dropped on, or after it in its lower half", () => {
         const { list, rows } = createList();
         const [a, b, c] = rows;
         const seen = record(document.body, "todo-move");
@@ -173,7 +185,7 @@ describe("todo-list", () => {
         drop(c, a, false);
         drop(a, b, true);
         expect(seen.map(event => event.detail)).toEqual([{ item: c, before: a }, { item: a, before: c }]);
-        expect([...list.children]).toEqual(rows);
+        expect(rows.map(row => list.indexOf(row))).toEqual([0, 1, 2, 3]);
     });
 });
 

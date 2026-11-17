@@ -21,20 +21,24 @@ flowchart TB
   features_2f_generate["<b>features/generate</b><br/><i>Adding many todos at once, to try the app at scale</i>"]:::feature
   features_2f_page["<b>features/page</b><br/><i>What every feature's view uses of the page: events and elements</i>"]:::feature
   features_2f_todos["<b>features/todos</b><br/><i>Adding, toggling, editing, deleting and moving todos</i>"]:::feature
+  features_2f_virtual_2d_list["<b>features/virtual-list</b><br/><i>A scrolling list keeping only the rows near the view in the DOM</i>"]:::feature
   features_2f_completion --> features_2f_todos
   features_2f_filter --> features_2f_todos
   features_2f_generate --> features_2f_todos
+  features_2f_todos --> features_2f_virtual_2d_list
   features_2f_todos --> features_2f_page
   app_3a_app --> features_2f_completion
   app_3a_app --> features_2f_filter
   app_3a_app --> features_2f_generate
   ground[" "]:::ground
   features_2f_page ~~~ ground
+  features_2f_virtual_2d_list ~~~ ground
   click features_2f_completion "features/completion/ARCHITECTURE.md"
   click features_2f_filter "features/filter/ARCHITECTURE.md"
   click features_2f_generate "features/generate/ARCHITECTURE.md"
   click features_2f_page "features/page/view/README.md"
   click features_2f_todos "features/todos/ARCHITECTURE.md"
+  click features_2f_virtual_2d_list "features/virtual-list/elements/README.md"
   click app_3a_app "app"
 ```
 
@@ -45,4 +49,5 @@ flowchart TB
 | [features/generate](features/generate/ARCHITECTURE.md) | Adding many todos at once, to try the app at scale |
 | [features/page](features/page/view/README.md) | What every feature's view uses of the page: events and elements |
 | [features/todos](features/todos/ARCHITECTURE.md) | Adding, toggling, editing, deleting and moving todos |
+| [features/virtual-list](features/virtual-list/elements/README.md) | A scrolling list keeping only the rows near the view in the DOM |
 <!-- architecture:end -->

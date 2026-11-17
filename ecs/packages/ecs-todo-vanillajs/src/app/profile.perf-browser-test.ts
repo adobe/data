@@ -6,9 +6,9 @@ import { Entity, System, workers, World } from "@adobe/ecs";
 import { bindCompletion } from "../features/completion/view/index.js";
 import { bindFilters, filterRows } from "../features/filter/view/index.js";
 import { addGenerated } from "../features/generate/model/index.js";
-import { bindRows, createRows, placeRows } from "../features/todos/view/index.js";
+import { bindRows, renderRows } from "../features/todos/view/index.js";
 import { toggleTodo } from "../features/todos/model/index.js";
-import { entityOfElement } from "../features/page/view/index.js";
+import { todosOf } from "../features/todos/model/todos.test-helper.js";
 import { createApp } from "./function.create-app.js";
 import type { App } from "./type.app.js";
 
@@ -38,13 +38,12 @@ const timeRuns = async (run: (repeat: number) => Promise<unknown>, repeats: numb
 
 const markup = "<todo-toggle-all></todo-toggle-all><todo-list></todo-list><todo-summary></todo-summary><todo-filters></todo-filters>";
 
-/** The app on the page with `n` todos and their rows, and its todos in list order. */
+/** The app on the page with `n` todos and the rows it renders, and its todos in list order. */
 const appWith = async (n: number): Promise<{ readonly app: App; readonly listed: readonly Entity[] }> => {
     document.body.innerHTML = markup;
     const app = createApp(document.body);
     await app.world.run(addGenerated, { count: n });
-    await app.world.run(createRows);
-    return { app, listed: [...document.querySelectorAll("todo-row")].map(entityOfElement) };
+    return { app, listed: (await todosOf(app.world)).map(item => item.entity) };
 };
 
 /** The share of a profile's samples each function took, by itself, largest first. */
@@ -75,7 +74,7 @@ it("profiles a run's fixed cost", async () => {
     {
         await using world = World.create({ [workers]: 0 });
         lines.push(`| empty world, a run that changes nothing | ${await timeRuns(() => world.run(nothing), 2001)} |`);
-        for (const system of [bindRows, placeRows, filterRows, bindFilters, bindCompletion, createRows]) {
+        for (const system of [renderRows, bindRows, filterRows, bindFilters, bindCompletion]) {
             world.add(system);
             lines.push(`| + ${system.name} | ${await timeRuns(() => world.run(nothing), 2001)} |`);
         }

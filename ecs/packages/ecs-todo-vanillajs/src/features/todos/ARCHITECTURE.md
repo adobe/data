@@ -21,13 +21,16 @@ flowchart TB
     features_2f_todos_2f_view["<b>view</b><br/><i>Todos on the page: rows in its list, and runs for its events</i>"]:::view
   end
   uses__features_2f_page["<b>features/page</b><br/><i>What every feature's view uses of the page: events and elements</i>"]:::feature
+  uses__features_2f_virtual_2d_list["<b>features/virtual-list</b><br/><i>A scrolling list keeping only the rows near the view in the DOM</i>"]:::feature
   features_2f_todos_2f_view --> features_2f_todos_2f_elements
   features_2f_todos_2f_view --> features_2f_todos_2f_model
+  features_2f_todos_2f_elements --> uses__features_2f_virtual_2d_list
   features_2f_todos_2f_view --> uses__features_2f_page
   click features_2f_todos_2f_elements "elements/README.md"
   click features_2f_todos_2f_model "model/README.md"
   click features_2f_todos_2f_view "view/README.md"
   click uses__features_2f_page "../page/view/README.md"
+  click uses__features_2f_virtual_2d_list "../virtual-list/elements/README.md"
 ```
 
 | | What |

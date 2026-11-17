@@ -5,9 +5,8 @@ import { toggleAll } from "../features/completion/model/index.js";
 import { setFilter } from "../features/filter/model/index.js";
 import { addGenerated } from "../features/generate/model/index.js";
 import { TodoRow } from "../features/todos/elements/index.js";
-import { addTodo, deleteTodo, editTodo, moveTodo, todo, toggleTodo } from "../features/todos/model/index.js";
-import { row } from "../features/todos/view/index.js";
-import { entityOfElement } from "../features/page/view/index.js";
+import { addTodo, deleteTodo, editTodo, label, moveTodo, todo, toggleTodo } from "../features/todos/model/index.js";
+import { todosOf } from "../features/todos/model/todos.test-helper.js";
 import { part } from "../features/page/view/elements.test-helper.js";
 import { nextTick, watchTicks } from "../features/page/view/ticks.test-helper.js";
 import { createApp } from "./function.create-app.js";
@@ -46,7 +45,11 @@ describe("on the page's markup", () => {
         expect(errors).toEqual([]);
     });
 
-    const rows = (): HTMLElementTagNameMap["todo-row"][] => [...found("todo-list").querySelectorAll("todo-row")];
+    /** The list's rows, in the order of the todos they show. */
+    const rows = (): HTMLElementTagNameMap["todo-row"][] => {
+        const list = found("todo-list");
+        return [...list.querySelectorAll("todo-row")].sort((a, b) => list.indexOf(a) - list.indexOf(b));
+    };
     /** What a user sees in the list: each shown row, `x` when done. */
     const shown = (): string[] => rows().filter(row => row.checkVisibility()).map(row => `${row.done ? "x" : "-"} ${row.label}`);
     const left = (): string => part(found("todo-summary"), ".count", HTMLElement).textContent ?? "";
@@ -143,10 +146,12 @@ describe("on the page's markup", () => {
             expect(shown()).toEqual(["- c", "- b", "- a"]);
         });
 
-        it("generates todos and clears them all, leaving no rows", async () => {
+        it("generates todos, with rows for only those near the view, and clears them all, leaving no rows", async () => {
             part(found("todo-generate"), "[data-count='1000']", HTMLButtonElement).click();
             await nextTick();
-            expect(rows()).toHaveLength(1000);
+            expect(found("todo-list").count).toBe(1000);
+            expect(rows()).toHaveLength(found("todo-list").range.end);
+            expect(rows().length).toBeLessThan(100);
             expect(left()).toBe("1000 items left");
             part(found("todo-toggle-all"), "input", HTMLInputElement).click();
             await nextTick();
@@ -188,11 +193,11 @@ describe("on the page's markup", () => {
         });
     });
 
-    // It runs in the tick that gives the todo its row, alongside createRows.
+    // It runs in the tick after the todo is added.
     const failing = System.create({ components: { with: [todo] } }, () => {
         throw new Error("a tick's system failed");
     });
-    const failingObserver = System.create({ readonly: true, components: { with: [row], changed: [row] } }, () => {
+    const failingObserver = System.create({ readonly: true, components: { with: [todo, label], changed: [label] } }, () => {
         throw new Error("a tick's observer failed");
     });
     const pass = System.create({ readonly: true }, () => {});
@@ -255,7 +260,7 @@ describe("on the page's markup", () => {
 /** The fixed elements the DOM systems drive. */
 const fixedMarkup = `<todo-toggle-all></todo-toggle-all><todo-list></todo-list><todo-summary></todo-summary><todo-filters></todo-filters>`;
 
-/** How often the DOM systems reached rows: the row properties they write, `hidden`, and what placing reads and calls. */
+/** How often the DOM systems wrote rows' label and done; moving a row is a mutation of its style. */
 let reaches = 0;
 
 /** Counts calls of an accessor's `kind` on `target`, until the returned function puts it back. */
@@ -273,31 +278,10 @@ const countAccessor = (target: object, name: string, kind: "get" | "set"): (() =
     return () => Object.defineProperty(target, name, descriptor);
 };
 
-/** Counts calls of a method on `target`, until the returned function puts it back. */
-const countMethod = (target: object, name: string): (() => void) => {
-    const descriptor = Object.getOwnPropertyDescriptor(target, name);
-    const original: unknown = descriptor?.value;
-    if (descriptor === undefined || typeof original !== "function") throw new Error(`No method ${name}.`);
-    Object.defineProperty(target, name, {
-        ...descriptor,
-        value: function (this: unknown, ...values: unknown[]): unknown {
-            reaches += 1;
-            return Reflect.apply(original, this, values);
-        },
-    });
-    return () => Object.defineProperty(target, name, descriptor);
-};
-
 const countReaches = (): (() => void) => {
     const restores = [
         countAccessor(TodoRow.prototype, "label", "set"),
         countAccessor(TodoRow.prototype, "done", "set"),
-        countAccessor(HTMLElement.prototype, "hidden", "get"),
-        countAccessor(HTMLElement.prototype, "hidden", "set"),
-        countAccessor(Element.prototype, "nextElementSibling", "get"),
-        countAccessor(Element.prototype, "firstElementChild", "get"),
-        countMethod(Element.prototype, "moveBefore"),
-        countMethod(Node.prototype, "insertBefore"),
     ];
     return () => {
         for (const restore of restores) restore();
@@ -334,7 +318,7 @@ const workWith = async (n: number): Promise<Record<string, Work>> => {
     const { world } = app;
     await world.run(addGenerated, { count: n });
     await nextTick();
-    const listed = [...document.querySelectorAll("todo-row")].map(entityOfElement);
+    const listed = (await todosOf(world)).map(item => item.entity);
     const at = (index: number): Entity => listed[(index + n) % n] ?? Entity.none;
     for (let i = 0; i < n; i += 2) await world.run(toggleTodo, { entity: at(i) });
     await nextTick();
@@ -346,21 +330,30 @@ const workWith = async (n: number): Promise<Record<string, Work>> => {
         "add one": await workOf(() => world.run(addTodo, { label: "added" })),
         "delete one": await workOf(() => world.run(deleteTodo, { entity: at(5) })),
     };
-    // A new filter passes every row, reading whether it's hidden, and writes those that change.
-    const filtered = await workOf(() => world.run(setFilter, { filter: "active" }));
-    const hidden = rows().filter(row => row.hidden).length;
-    work["filter, beyond each row read and each hidden"] = beyond({ mutations: filtered.mutations, reaches: filtered.reaches - rows().length }, hidden, 1);
+    // A new filter renders the range again, with the todos it keeps.
+    work["filter"] = await workOf(() => world.run(setFilter, { filter: "active" }));
     await world.run(setFilter, { filter: "all" });
     await nextTick();
-    // Each row marked done gets its label and done written and its visibility read.
+    // Each row marked done gets its label and done written.
     const notDone = rows().filter(row => !row.done).length;
-    work["toggle all, beyond each row marked done"] = beyond(await workOf(() => world.run(toggleAll, { done: true })), notDone, 3);
+    work["toggle all, beyond each row marked done"] = beyond(await workOf(() => world.run(toggleAll, { done: true })), notDone, 2);
     await app.dispose();
     return work;
 };
 
+/** How many rows the list renders when holding `n` todos. */
+const renderedWith = async (n: number): Promise<number> => {
+    document.body.innerHTML = fixedMarkup;
+    const app = createApp(document.body);
+    await watchTicks(app.world);
+    await app.world.run(addGenerated, { count: n });
+    const rendered = document.querySelectorAll("todo-row").length;
+    await app.dispose();
+    return rendered;
+};
+
 /**
- * Each operation's work follows what it changed, whatever the list holds: both the DOM's mutations and how often the
+ * Each operation's work follows what it changed and the rows rendered, whatever the list holds: both the DOM's mutations and how often the
  * DOM systems reach rows, since elements drop equal writes and systems skip rows already right, which would hide a
  * system that visits every row. `app/todo.perf-browser-test.ts` times them.
  */
@@ -375,25 +368,29 @@ describe("the work of each operation", () => {
             const small = await workWith(100);
             const large = await workWith(2000);
             expect(large).toEqual(small);
-            expect(small).toEqual({
-                // The row's done attribute, and the summary's count; its label, done and visibility, and the summary's
-                // clear button, shown.
-                "toggle one": { mutations: 2, reaches: 4 },
+            // The rows rendered, those in view and half a screen more: fewer than either list holds.
+            const rendered = await renderedWith(100);
+            expect(rendered).toBeLessThan(100);
+            const { filter, ...rest } = small;
+            expect(rest).toEqual({
+                // The row's done attribute, and the summary's count; its label and done.
+                "toggle one": { mutations: 2, reaches: 2 },
                 // The row's label; its label and done.
                 "edit one": { mutations: 1, reaches: 2 },
-                // The row out of the list and in again; where it is, and the move.
-                "move one": { mutations: 2, reaches: 2 },
-                // The new row into the list, the tabindex and draggable it sets once connected, and the summary's count,
-                // its label being written in a shadow root made after the count began; its label, done, visibility, and
-                // where it goes, and its placing.
-                "add one": { mutations: 4, reaches: 5 },
-                // The row out of the list, and the summary's count.
-                "delete one": { mutations: 2, reaches: 0 },
-                // The filter buttons pressed and released.
-                "filter, beyond each row read and each hidden": { mutations: 2, reaches: 0 },
-                // The summary's count; its clear button.
-                "toggle all, beyond each row marked done": { mutations: 1, reaches: 1 },
+                // The last todo, moved to the top, takes the last row: its label, done and place; every other row moves
+                // down one; its label and done.
+                "move one": { mutations: rendered + 2, reaches: 2 },
+                // Added past the range: the list's height, and the summary's count.
+                "add one": { mutations: 2, reaches: 0 },
+                // The rows after it move up one, the one freed shows the todo entering at the bottom, its label, done and
+                // place, and the summary's count; its label and done.
+                "delete one": { mutations: rendered - 2, reaches: 2 },
+                // The summary's count; nothing beyond the rows marked done.
+                "toggle all, beyond each row marked done": { mutations: 1, reaches: 0 },
             });
+            // A new filter renders the range again: at most each row given a todo and placed, and the buttons.
+            expect(filter?.reaches).toBeLessThanOrEqual(2 * rendered);
+            expect(filter?.mutations).toBeLessThanOrEqual(3 * rendered + 2);
         }
         finally {
             restore();

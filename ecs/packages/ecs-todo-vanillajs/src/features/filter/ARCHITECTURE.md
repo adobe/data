@@ -18,7 +18,7 @@ flowchart TB
   subgraph self ["features/filter"]
     features_2f_filter_2f_elements["<b>elements</b><br/><i>The filter's element: buttons choosing which todos show</i>"]:::elements
     features_2f_filter_2f_model["<b>model</b><br/><i>Which todos the list shows: all, those not done, or those done</i>"]:::model
-    features_2f_filter_2f_view["<b>view</b><br/><i>The filter on the page: its buttons, and the rows it hides</i>"]:::view
+    features_2f_filter_2f_view["<b>view</b><br/><i>The filter on the page: its buttons, and which todos are listed</i>"]:::view
   end
   uses__features_2f_todos["<b>features/todos</b><br/><i>Adding, toggling, editing, deleting and moving todos</i>"]:::feature
   features_2f_filter_2f_view --> features_2f_filter_2f_elements
@@ -34,5 +34,5 @@ flowchart TB
 |---|---|
 | [elements](elements/README.md) | The filter's element: buttons choosing which todos show |
 | [model](model/README.md) | Which todos the list shows: all, those not done, or those done |
-| [view](view/README.md) | The filter on the page: its buttons, and the rows it hides |
+| [view](view/README.md) | The filter on the page: its buttons, and which todos are listed |
 <!-- architecture:end -->

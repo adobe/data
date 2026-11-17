@@ -15,9 +15,6 @@ importers:
       '@types/node':
         specifier: ^25.6.0
         version: 25.6.0
-      pnpm:
-        specifier: ^9.0.0
-        version: 9.0.0
 
   ecs/packages/ecs:
     devDependencies:
@@ -4345,11 +4342,6 @@ packages:
   pngjs@7.0.0:
     resolution: {integrity: sha512-LKWqWJRhstyYo9pGvgor/ivk2w94eSjE3RGVuzLGlr3NmD8bf7RcYGze1mNdEHRP6TRP6rMuDHk5t44hnTRyow==}
     engines: {node: '>=14.19.0'}
-
-  pnpm@9.0.0:
-    resolution: {integrity: sha512-tBBnB8ciWxdIthWVlTzL6/+XtUrQXQAqo2NfYzucU81mb3zpuLxEcE8foEi5pJtVNxqy2enWZ9Hv4u8VFLzVEw==}
-    engines: {node: '>=18.12'}
-    hasBin: true
 
   possible-typed-array-names@1.1.0:
     resolution: {integrity: sha512-/+5VFTchJDoVj3bhoqi6UeymcD00DAwb1nJwamzPvHEszJ4FpF6SNNbUbOS8yI56qHzdV8eK0qEfOSiodkTdxg==}
@@ -9202,8 +9194,6 @@ snapshots:
       irregular-plurals: 3.5.0
 
   pngjs@7.0.0: {}
-
-  pnpm@9.0.0: {}
 
   possible-typed-array-names@1.1.0: {}
 

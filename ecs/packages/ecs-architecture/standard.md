@@ -94,7 +94,8 @@ feature, and of its sub-features, import them, and they add no systems to an app
   one `export`, typed as its interface (`export const clearCompleted: System = System.create(...)`); what it needs comes
   beneath it. Only what the export's statement needs as the module loads, such as an `Index` its declaration names, may
   sit above it, with what fills it, such as a loop pushing into an array the export reads. A function declared beneath
-  and called as the module loads reads what is declared above it only, so what such a call needs sits above too. (check)
+  and called as the module loads may call other hoisted functions and read `var`s and imports, but a `const`, `let` or
+  `class` it reads sits above the call: beneath it, it isn't initialized yet. (check)
 - **A system is typed `System`**, with type arguments only for its input and result: `System<{ readonly amount: number }, Entity>`,
   `void` for no input. (check)
 - **Anything else is private, and lives with what uses it.** What only one declaration uses is its part: by default an

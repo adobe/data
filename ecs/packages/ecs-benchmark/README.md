@@ -33,11 +33,11 @@ system alone doesn't give. The comparison lists each system's cost so.
 
 ## What runs
 
-`src/scenarios/model` holds the suite's components, its seven systems (`MovementSystem`, `DataSystem`,
-`MoreComplexSystem`, `HealthSystem`, `DamageSystem`, `SpriteSystem`, `RenderSystem`) and the entities each benchmark
-makes, ported line for line: the same counts and loops, the same widths (`float` is `F32`, `double` is `number`, the
+`src/model` holds the suite's components and the entities each benchmark makes, `src/features/cpu/model` its seven
+systems (`MovementSystem`, `DataSystem`, `MoreComplexSystem`, `HealthSystem`, `DamageSystem`, `SpriteSystem`,
+`RenderSystem`) and its scenarios, and `src/features/gpu/model` the same frames as GPU kernels, all ported line for line: the same counts and loops, the same widths (`float` is `F32`, `double` is `number`, the
 integers `I32` and `U32`), the suite's xoshiro128** generator exactly, and the frame buffer a `Uint8Array` of character
-codes. `src/perftest` measures them.
+codes. `src/features/main/ports` measures them, its entries running them in node and in a page.
 
 Each benchmark is timed as an app pays for it:
 

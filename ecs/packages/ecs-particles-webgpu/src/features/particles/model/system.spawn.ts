@@ -1,11 +1,10 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { System } from '@adobe/ecs';
+import { type F32, System } from '@adobe/ecs';
 import { color } from './component.color.js';
 import { enabled } from './component.enabled.js';
 import { position } from './component.position.js';
 import { visible } from './component.visible.js';
-import { mass } from './shared/component.mass.js';
-import { velocity } from './shared/component.velocity.js';
+import { velocity } from './internal/component.velocity.js';
 
 /** Spawns `count` particles over a field `width` by `height` pixels; entity i goes to archetype i % 4. */
 export const spawn: System<{ readonly count: number; readonly width: number; readonly height: number }> = System.create({
@@ -21,6 +20,15 @@ export const spawn: System<{ readonly count: number; readonly width: number; rea
         commands.spawn(archetypes[i % 4])({ [color]: (0xff000000 | rgb) >>> 0, [mass]: 1, [position]: p, [velocity]: v });
     }
 });
+
+/** Each particle's mass. */
+const mass = Symbol();
+
+declare module '@adobe/ecs' {
+    interface Components {
+        [mass]: { type: F32 };
+    }
+}
 
 /** The four archetypes, by visible and enabled. */
 const archetypes = [

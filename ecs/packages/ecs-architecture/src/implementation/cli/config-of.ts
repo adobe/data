@@ -17,11 +17,15 @@ export const configOf = (value: unknown): Config | string => {
     } = {};
     for (const [key, item] of entriesOf(value)) {
         switch (key) {
+            case 'maxLines':
+                if (typeof item !== 'number' || !Number.isInteger(item) || item < 1) return '"ecsArchitecture.maxLines" is a whole number of lines.';
+                config[key] = item;
+                break;
             case 'source': case 'agents':
                 if (typeof item !== 'string') return `"ecsArchitecture.${key}" is a folder's path.`;
                 config[key] = item;
                 break;
-            case 'kinds': case 'apps': case 'headless': case 'systems':
+            case 'kinds': case 'headless':
                 if (!isStrings(item)) return `"ecsArchitecture.${key}" is a list of names.`;
                 config[key] = item;
                 break;
@@ -46,7 +50,7 @@ export const configOf = (value: unknown): Config | string => {
                 break;
             }
             default:
-                return `"ecsArchitecture.${key}" isn't a setting: source, layers, kinds, apps, headless, systems, banned or agents.`;
+                return `"ecsArchitecture.${key}" isn't a setting: source, layers, kinds, maxLines, headless, banned or agents.`;
         }
     }
     return config;

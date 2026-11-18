@@ -18,6 +18,10 @@ const plain: Plugin = { systems: [] };
 // A config holds every name its plugins ask for, and an optional one may be left out.
 Plugin.start(world, [named, counted, plain], { pluginTypeTestName: "a", pluginTypeTestCount: 2 });
 Plugin.start(world, [plain], {});
+// With no names asked for, the config may be left out; with any, it may not.
+Plugin.start(world, [plain]);
+// @ts-expect-error named asks for pluginTypeTestName.
+Plugin.start(world, [named]);
 
 // @ts-expect-error pluginTypeTestCount is asked for by a plugin and not given.
 Plugin.start(world, [named, counted], { pluginTypeTestName: "a" });

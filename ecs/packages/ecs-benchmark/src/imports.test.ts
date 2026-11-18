@@ -46,7 +46,6 @@ const broken = (file: string, specifier: string): string | null => {
     if (from === null) return relative(packageRoot, target).startsWith("..") ? "configuration imports what's outside the package by its path" : null;
     const to = segmentsOf(target);
     if (to === null) return "imports what's outside the benchmark by its path";
-    if (to[0] === "perftest" && from[0] !== "perftest") return "imports the app";
     return null;
 };
 
@@ -58,7 +57,7 @@ const violations = (files: readonly string[], codeOf: (file: string) => string):
     }));
 
 describe("the benchmark's imports", () => {
-    it("import the package only by its root, the build plugin only in the configuration, and never the app or what's outside the benchmark", () => {
+    it("import the package only by its root, the build plugin only in the configuration, and never what's outside the benchmark", () => {
         // This file's cases are imports in strings, which break the rules on purpose.
         const files = [...filesOf(sources).filter(file => file !== fileURLToPath(import.meta.url)), ...configsOf()];
         expect(configsOf().length).toBeGreaterThan(0);
@@ -69,16 +68,16 @@ describe("the benchmark's imports", () => {
         const at = (...path: string[]): string => join(sources, ...path);
         const imports = new Map<string, string>([
             [join(packageRoot, "vite.config.ts"), `import { Compiler } from "@adobe/ecs/compiler"; import { sources } from "../ecs/vitest.plugins.ts";`],
-            [at("scenarios", "model", "system.systems-update.ts"), `import { scenarios } from "../../perftest/constant.scenarios.js"; import { thing } from "@adobe/ecs/dist/implementation/world/create.js";`],
-            [at("perftest", "main.ts"), `import { Compiler } from "@adobe/ecs/compiler";`],
-            [at("perftest", "constant.scenarios.ts"), `import { create } from "../../../ecs/src/implementation/index.js";`],
+            [at("features", "cpu", "model", "system.systems-update.ts"), `import { run } from "../../../../scripts/ours.js"; import { thing } from "@adobe/ecs/dist/implementation/world/create.js";`],
+            [at("features", "main", "ports", "function.lane-world.ts"), `import { Compiler } from "@adobe/ecs/compiler";`],
+            [at("features", "main", "ports", "constant.scenarios.ts"), `import { create } from "../../../../ecs/src/implementation/index.js";`],
         ]);
         expect(violations([...imports.keys()], file => imports.get(file) ?? "")).toEqual([
             "../vite.config.ts: ../ecs/vitest.plugins.ts: configuration imports what's outside the package by its path",
-            "scenarios/model/system.systems-update.ts: ../../perftest/constant.scenarios.js: imports the app",
-            "scenarios/model/system.systems-update.ts: @adobe/ecs/dist/implementation/world/create.js: imports the package other than by its root",
-            "perftest/main.ts: @adobe/ecs/compiler: imports the build plugin outside the configuration",
-            "perftest/constant.scenarios.ts: ../../../ecs/src/implementation/index.js: imports what's outside the benchmark by its path",
+            "features/cpu/model/system.systems-update.ts: ../../../../scripts/ours.js: imports what's outside the benchmark by its path",
+            "features/cpu/model/system.systems-update.ts: @adobe/ecs/dist/implementation/world/create.js: imports the package other than by its root",
+            "features/main/ports/function.lane-world.ts: @adobe/ecs/compiler: imports the build plugin outside the configuration",
+            "features/main/ports/constant.scenarios.ts: ../../../../ecs/src/implementation/index.js: imports what's outside the benchmark by its path",
         ]);
     });
 });

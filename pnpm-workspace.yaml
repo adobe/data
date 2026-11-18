@@ -36,3 +36,6 @@ allowBuilds:
   edgedriver: false
   esbuild: false
   geckodriver: false
+overrides:
+  '@oxc-parser/binding-wasm32-wasip1>@napi-rs/wasm-runtime': 1.2.5
+  '@oxc-transform/binding-wasm32-wasip1>@napi-rs/wasm-runtime': 1.2.5

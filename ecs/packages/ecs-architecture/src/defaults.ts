@@ -10,10 +10,9 @@ export const defaults: Required<Omit<Config, 'agents'>> = {
         ports: ['model', 'ports'],
         view: ['model', 'elements', 'view'],
     },
-    kinds: ['type', 'constant', 'component', 'resource', 'archetype', 'index', 'function', 'system', 'element'],
-    apps: ['app', 'apps', 'samples', 'perftest'],
+    kinds: ['type', 'constant', 'component', 'resource', 'archetype', 'index', 'function', 'system', 'plugin', 'element'],
+    maxLines: 400,
     headless: ['model'],
-    systems: ['model', 'view'],
     banned: {
         elements: [{
             module: '@adobe/', rule: 'elements-know-nothing-of-the-ecs',

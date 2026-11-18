@@ -25,7 +25,7 @@ const results = join(root, "results", "ours");
 const history = join(root, "results", "history");
 /** A change within this fraction is noise. */
 const noise = 0.1;
-const main = join(root, "dist", "perftest", "main.js");
+const main = join(root, "dist", "main", "node.js");
 
 const defaultSizes = [1, 4, 16, 64, 256, 1024, 4096, 16384, 65536, 262144, 1048576, 2097152];
 const quickSizes = [16384, 262144, 1048576];

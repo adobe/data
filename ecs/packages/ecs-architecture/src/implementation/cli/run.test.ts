@@ -26,17 +26,18 @@ const repository = (files: Readonly<Record<string, string>>, manifest: object = 
 };
 
 const valid = {
-    'thing/model/README.md': '# model\n\nThe things.\n',
-    'thing/model/index.ts': "export * from './component.thing.js';\nexport * from './constant.systems.js';\n",
-    'thing/model/component.thing.ts': '/** A thing. */\nexport const thing = Symbol();\n',
-    'thing/model/constant.systems.ts': "import type { System } from '@adobe/ecs';\n\nexport const systems: readonly System[] = [];\n",
-    'app/main.ts': "import { thing } from '../thing/model/index.js';\nexport const app = thing;\n",
+    'features/thing/model/README.md': '# model\n\nThe things.\n',
+    'features/thing/model/index.ts': "export * from './component.thing.js';\n",
+    'features/thing/model/component.thing.ts': '/** A thing. */\nexport const thing = Symbol();\n',
+    'features/main/model/README.md': '# model\n\nThe app.\n',
+    'features/main/model/index.ts': 'export {};\n',
+    'features/main/model/entry.page.ts': "import { thing } from '../../thing/model/index.js';\n\nconsole.log(thing);\n",
 };
 
 describe('ecs-architecture check', () => {
     it('reports a source that follows the standard, and exits 0', async () => {
         const root = repository(valid);
-        expect(await run(['check'], join(root, 'app'))).toEqual({ output: 'architecture ok: 5 files, no violations\n', code: 0 });
+        expect(await run(['check'], join(root, 'app'))).toEqual({ output: 'architecture ok: 6 files, no violations\n', code: 0 });
     });
 
     it('reports each violation with its fix, as text or as GitHub annotations by the file\'s path in the repository, and exits 1', async () => {
@@ -50,21 +51,10 @@ describe('ecs-architecture check', () => {
     });
 
     it('reads its configuration from package.json, and says what\'s wrong with it', async () => {
-        const root = repository({ ...valid, 'thing/model/component.thing.ts': '/** A thing. */\nexport const thing = Symbol();\n' }, { ecsArchitecture: { kinds: ['component', 'constant'] } });
+        const root = repository({ ...valid, 'features/thing/model/component.thing.ts': '/** A thing. */\nexport const thing = Symbol();\n' }, { ecsArchitecture: { kinds: ['component'] } });
         expect((await run(['check'], join(root, 'app'))).code).toBe(0);
         const wrong = repository(valid, { ecsArchitecture: { kind: [] } });
-        expect(await run(['check'], join(wrong, 'app'))).toEqual({ output: '"ecsArchitecture.kind" isn\'t a setting: source, layers, kinds, apps, headless, systems, banned or agents.\n', code: 2 });
-    });
-});
-
-describe('ecs-architecture diagrams', () => {
-    it('writes the diagrams, and then finds them current', async () => {
-        const root = repository(valid);
-        const app = join(root, 'app');
-        expect(await run(['diagrams', '--check'], app)).toEqual({ output: 'out of date: ARCHITECTURE.md (run ecs-architecture diagrams)\n', code: 1 });
-        expect(await run(['diagrams'], app)).toEqual({ output: 'wrote ARCHITECTURE.md\n', code: 0 });
-        expect(readFileSync(join(app, 'src', 'ARCHITECTURE.md'), 'utf8')).toContain('<!-- architecture:start -->');
-        expect(await run(['diagrams', '--check'], app)).toEqual({ output: 'diagrams ok\n', code: 0 });
+        expect(await run(['check'], join(wrong, 'app'))).toEqual({ output: '"ecsArchitecture.kind" isn\'t a setting: source, layers, kinds, maxLines, headless, banned or agents.\n', code: 2 });
     });
 });
 

@@ -89,4 +89,24 @@ describe("Plugin.start", () => {
         using _started = Plugin.start(world, [{ systems: [] }, { systems: [idle] }], {});
         await world.run(idle);
     });
+
+    it("leaves out the config when no plugin asks for anything", async () => {
+        await using world = World.create({ [workers]: 0 });
+        using _started = Plugin.start(world, [{ systems: [idle] }]);
+        await world.run(idle);
+    });
+
+    it("connects plugins without systems on a joined world, which adds only readonly systems", async () => {
+        const channel = new MessageChannel();
+        await using world = World.create({ [workers]: 0 });
+        const [joined] = await Promise.all([World.join(channel.port2), world.share(channel.port1)]);
+        await using _joined = joined;
+        const log: string[] = [];
+        const started = Plugin.start(joined, [{ systems: [], connect: () => {
+            log.push("connected");
+            return () => log.push("disconnected");
+        } }]);
+        started[Symbol.dispose]();
+        expect(log).toEqual(["connected", "disconnected"]);
+    });
 });

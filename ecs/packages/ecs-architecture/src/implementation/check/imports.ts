@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { basename, dirname, relative } from '../path.js';
-import { isTest } from '../graph.js';
+import { isTest, isTestFeature, isWithin, testFeatureOwner } from '../graph.js';
 import { isLocal, namesOnly, topLevelNames, walk, type Module, type Node } from '../syntax.js';
 import { relativeSpec, type Context } from './context.js';
 
@@ -10,7 +10,7 @@ const headlessGlobals = new Set([
     'indexedDB', 'navigator', 'fetch', 'XMLHttpRequest', 'WebSocket', 'setTimeout', 'setInterval', 'globalThis',
 ]);
 
-/** Each component, or feature, to those it imports at runtime. */
+/** Each component to those it imports at runtime. */
 export type Edges = Map<string, Set<string>>;
 
 /** What the import checks find, which the checks of systems and exports read. */
@@ -45,7 +45,6 @@ const globalsIn = (module: Module): string[] => {
 /** Imports: through an index, never into a part from outside its layer, never to a parent, down the layers, and no cycles. */
 export const checkImports = ({ graph, settings, violate }: Context): Imports => {
     const edges: Edges = new Map();
-    const featureEdges: Edges = new Map();
     const uses: Imports['uses'] = new Map();
     const addUse = (component: string, importer: string, names: readonly string[]): void => {
         let list = uses.get(component);
@@ -56,10 +55,13 @@ export const checkImports = ({ graph, settings, violate }: Context): Imports => 
         if (basename(file) === 'index.ts') {
             // An index's re-exports are no imports to check, but they load the parts they name.
             const from = graph.componentOf(file);
-            for (const { spec, typeOnly } of graph.importsOf(file)) {
+            for (const { spec, typeOnly, names } of graph.importsOf(file)) {
                 const target = spec.startsWith('.') && !typeOnly ? graph.resolve(file, spec) : undefined;
                 const to = target === undefined ? undefined : graph.componentOf(target);
                 if (from !== undefined && to !== undefined && to !== from) addEdge(edges, from, to);
+                // The source root's index is the package's public API: what it re-exports is used.
+                // `export *` names nothing: it passes on every name.
+                if (file === 'index.ts' && to !== undefined && target === `${to}/index.ts`) addUse(to, file, names.length === 0 ? ['*'] : names);
             }
             continue;
         }
@@ -70,7 +72,13 @@ export const checkImports = ({ graph, settings, violate }: Context): Imports => 
             if (testing) {
                 const target = spec.startsWith('.') ? graph.resolve(file, spec) : undefined;
                 const to = target === undefined ? undefined : graph.componentOf(target);
-                if (to !== undefined && to !== from && target === `${to}/index.ts`) addUse(to, file, names);
+                const owner = to === undefined ? undefined : testFeatureOwner(to);
+                if (owner !== undefined && !isWithin(file, owner)) {
+                    violate(file, 'test-feature-import', `imports \`${to}\`, a test feature of \`${owner}\`, from outside it.`,
+                        `Import it only from tests, or from other test features, inside ${owner}/; move the test, or move the test feature up to a feature holding both.`);
+                }
+                // A test's imports don't make an export public, but for a test feature's, which only tests use.
+                if (to !== undefined && to !== from && target === `${to}/index.ts` && owner !== undefined) addUse(to, file, names);
                 continue;
             }
             if (!spec.startsWith('.')) {
@@ -82,6 +90,11 @@ export const checkImports = ({ graph, settings, violate }: Context): Imports => 
             if (target === undefined) continue;
             const to = graph.componentOf(target);
             if (to === undefined || to === from) continue;
+            const owner = testFeatureOwner(to);
+            if (owner !== undefined && !(isTestFeature(file) && isWithin(file, owner))) {
+                violate(file, 'test-feature-import', `imports \`${to}\`, a test feature, which only tests and test features of ${owner === '.' ? 'the source root' : `\`${owner}\``} may import.`,
+                    `Import it only from tests, or from other test features, inside ${owner === '.' ? 'the source folder' : `${owner}/`}. If code outside tests needs it, move it out of test/ into a feature.`);
+            }
             if (from !== undefined && from.startsWith(`${to}/`)) {
                 violate(file, 'part-imports-parent', `imports its parent component \`${to}\` (${spec}).`,
                     'A part never imports its parent. Move what both need into a component of its own beside the part, and import that.');
@@ -90,7 +103,7 @@ export const checkImports = ({ graph, settings, violate }: Context): Imports => 
             if (target === `${to}/index.ts`) addUse(to, file, names);
             else {
                 const inside = relative(to, target);
-                violate(file, 'deep-import', `imports ${spec}, inside component \`${to}\`${inside.startsWith('shared/') ? ', in its private shared/' : ''}.`,
+                violate(file, 'deep-import', `imports ${spec}, inside component \`${to}\`${inside.startsWith('internal/') ? ', in its private internal/' : ''}.`,
                     `Import from the component's index.ts (${relativeSpec(relative(dirname(file), `${to}/index.js`))}). If the name isn't exported there, either it should be public, declared in the component's root and its index.ts, or this file uses something it shouldn't.`);
             }
             const outer = graph.topOf(to);
@@ -99,6 +112,12 @@ export const checkImports = ({ graph, settings, violate }: Context): Imports => 
                     `Import \`${outer}\`'s index.ts. If it doesn't export what you need, re-export it there by name: export { name } from './<part>/index.js'.`);
             }
             if (from === undefined) continue;
+            const fromFeature = graph.featureOf(from);
+            const toFeature = graph.featureOf(to);
+            if (fromFeature !== toFeature && isWithin(toFeature, fromFeature) && owner === undefined && !(basename(file).startsWith('plugin.') && dirname(file) === from)) {
+                violate(file, 'parent-imports-sub-feature', `imports \`${to}\`, a layer of \`${toFeature}\`, a sub-feature of this file's feature${fromFeature === '.' ? ', the source root' : ` \`${fromFeature}\``}.`,
+                    'A parent uses its sub-features only to aggregate them, in its plugin (plugin.<feature>-<layer>.ts) or its index.ts. Move the logic into the sub-feature, or into the parent\'s layers for the sub-feature to import.');
+            }
             const fromLayer = graph.layerOf(from);
             const toLayer = graph.layerOf(to);
             const allowed = fromLayer === undefined ? undefined : settings.layers[fromLayer];
@@ -108,10 +127,7 @@ export const checkImports = ({ graph, settings, violate }: Context): Imports => 
                         ? 'Reverse the dependency: the view or port calls the model, never the other way; if a model system must be ordered against a view system, put the before or after on the view system.'
                         : 'Move the shared part down into a layer both may import.'}`);
             }
-            if (!typeOnly) {
-                addEdge(edges, from, to);
-                if (graph.featureOf(from) !== graph.featureOf(to)) addEdge(featureEdges, graph.featureOf(from), graph.featureOf(to));
-            }
+            if (!typeOnly) addEdge(edges, from, to);
         }
         if (layer !== undefined && settings.headless.includes(layer) && !testing) {
             const found = globalsIn(graph.moduleOf(file));
@@ -144,8 +160,5 @@ export const checkImports = ({ graph, settings, violate }: Context): Imports => 
     cycles(edges, 'import-cycle', 'components',
         'Components form a directed acyclic graph. Move what the cycle shares into a component of its own both import, or reverse one dependency (an ordering `after: [x]` can often flip to `before`). Type-only imports may close a cycle.',
         node => `${node}/index.ts`);
-    cycles(featureEdges, 'feature-cycle', 'features',
-        'Features form a directed acyclic graph: a feature may extend those below it. Move what the cycle shares into a lower feature both import.',
-        node => node);
     return { edges, uses };
 };

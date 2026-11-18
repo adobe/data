@@ -5,9 +5,9 @@ paths:
 <!-- Written by `ecs-architecture agents` from the rules of @adobe/ecs-architecture and @adobe/ecs: run it again, never edit. -->
 
 - Export it typed as its interface: `export const name: System = System.create(...)`, with type arguments only for input and result (`System<{ readonly amount: number }, Entity>`, `void` for no input).
-- The world reaches it only if something lists it: the layer's `systems` in `constant.systems.ts`, a composite, or `world.run`/`world.add`. A system only `systems` reaches stays private (in `systems/`); export one others run or order against.
+- The world reaches it only if something in the source lists it: its layer's plugin's `systems`, a composite, or `world.run`/`world.add`; a test doesn't count. A layer's root holds only systems others add, run or order against; the rest are parts of their plugin, in `plugin.<feature>-<layer>/`, or of a composite, in `system.<name>/`.
 - A model system never names a view system: put the `before`/`after` on the view system, or order both against a phase.
-- A changes or removed system is typed `System<never>`, which `run` never takes; list it in `systems` like any other.
+- A changes or removed system is typed `System<never>`, which `run` never takes; compose it with the system making what it reacts to.
 - Read entities with a query (`components: { with, not }`). Define an `Index` only to look up by key, or to read a set from inside another system's body: every structural change updates it.
 - A system that only reads is `readonly: true`; `changed: [x]` skips rows whose `x` didn't change, `resources: { is: [r] }` waits for a resource.
 - Spawn, despawn, add and remove through `commands`; they apply at the next sync point. Order systems with `before`, `after` and `during`, never by list position.

@@ -20,11 +20,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      # The version is package.json's packageManager.
+      - uses: pnpm/action-setup@v6
+
       - uses: actions/setup-node@v6
         with:
           node-version-file: .nvmrc
-
-      - run: npm install --global pnpm@9
 
       - run: pnpm install --frozen-lockfile
 

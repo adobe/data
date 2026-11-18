@@ -4,7 +4,6 @@ import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { check } from '../../check.js';
 import type { Config } from '../../config.js';
-import { diagrams } from '../../diagrams.js';
 import type { Violation } from '../../violation.js';
 import { agentFiles, claudeRules, copilotInstructions, parseRule, type RuleSource } from '../agents.js';
 import { configOf } from './config-of.js';
@@ -15,7 +14,6 @@ export type Outcome = { readonly output: string; readonly code: number };
 const usage = `Usage: ecs-architecture <command> [options], in the app's package folder
 
   check [--format text|github|json]   report what breaks the standard, 1 if anything does
-  diagrams [--check]                  write the architecture diagrams, or say which are out of date
   agents [--check]                    write the agent rules at the repository's root, or say which are out of date
 `;
 
@@ -25,10 +23,9 @@ export const run = async (args: readonly string[], folder: string): Promise<Outc
     const read = readConfig(folder);
     if (typeof read === 'string') return { output: `${read}\n`, code: 2 };
     const source = join(folder, read.source ?? 'src');
-    if ((command === 'check' || command === 'diagrams') && !existsSync(source)) return { output: `No source folder ${source}: set "ecsArchitecture.source" in package.json.\n`, code: 2 };
+    if (command === 'check' && !existsSync(source)) return { output: `No source folder ${source}: set "ecsArchitecture.source" in package.json.\n`, code: 2 };
     switch (command) {
         case 'check': return runCheck(options, source, read);
-        case 'diagrams': return runDiagrams(options.includes('--check'), source, read);
         case 'agents': return runAgents(options.includes('--check'), read.agents === undefined ? repositoryOf(folder) : join(folder, read.agents));
         default: return { output: usage, code: command === undefined || command === '--help' ? 0 : 2 };
     }
@@ -86,25 +83,6 @@ const runCheck = async (options: readonly string[], source: string, config: Conf
     if (violations.length === 0) return { output: `architecture ok: ${Object.keys(files).length} files, no violations\n`, code };
     const listed = violations.map(violation => `${violation.file}\n  [${violation.rule}] ${violation.problem}\n  fix: ${violation.fix}\n`).join('\n');
     return { output: `${listed}\n${violations.length} violation(s). The standard is node_modules/@adobe/ecs-architecture/standard.md.\n`, code };
-};
-
-const runDiagrams = async (checking: boolean, source: string, config: Config): Promise<Outcome> => {
-    const { updates, problems } = await diagrams(filesOf(source), config);
-    const lines = problems.map(problem => `problem: ${problem}`);
-    const paths = Object.keys(updates).sort();
-    if (checking) {
-        lines.push(...paths.map(path => `out of date: ${path} (run ecs-architecture diagrams)`));
-        if (problems.length === 0 && paths.length === 0) lines.push('diagrams ok');
-        return { output: `${lines.join('\n')}\n`, code: problems.length > 0 || paths.length > 0 ? 1 : 0 };
-    }
-    for (const path of paths) {
-        const target = join(source, path);
-        mkdirSync(dirname(target), { recursive: true });
-        writeFileSync(target, updates[path] ?? '');
-        lines.push(`wrote ${path}`);
-    }
-    if (lines.length === 0) lines.push('diagrams ok');
-    return { output: `${lines.join('\n')}\n`, code: problems.length > 0 ? 1 : 0 };
 };
 
 /** The rule sources in a package's `rules` folder. */

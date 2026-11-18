@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { basename, dirname, join } from '../path.js';
-import { isTest } from '../graph.js';
+import { isEntry, isTest, isWithin } from '../graph.js';
 import { declarationOf, declaredBy, exportedVariables, firstLine, isExport, isReExport, textOf, walk, type Module, type Node } from '../syntax.js';
 import { camel, type Context } from './context.js';
 
@@ -13,53 +13,86 @@ export const checkRoot = ({ graph, violate }: Context): void => {
     for (const path of graph.paths) {
         if (dirname(path) !== '.' || isRootFile(path)) continue;
         violate(path, 'src-root-files', `${path} is in the root of the source folder, which holds only index.ts, documents, tests and folders.`,
-            'Move it into a layer of a feature (<feature>/<layer>/), or into an app\'s folder if it belongs to an app.');
+            'Move it into a layer: one of the source root\'s (<layer>/), or of a feature (features/<feature>/<layer>/).');
     }
     if (!graph.files.has('index.ts')) return;
     const module = graph.moduleOf('index.ts');
     for (const statement of module.program.body) {
         if (isReExport(statement)) continue;
         violate('index.ts', 'index-is-only-re-exports', `index.ts has a statement that isn't a re-export: ${firstLine(module, statement)}`,
-            'The source root\'s index.ts re-exports the app\'s entry points and nothing else; the call that starts the app belongs in an app\'s file, which nothing imports.');
+            'The source root\'s index.ts re-exports the package\'s public API and nothing else; code that runs as the app starts belongs in an entry, entry.<name>.ts, in the layer it starts.');
     }
 };
 
-/** Features and groups hold only folders, a feature only its layers, and a component outside another is a layer in a feature. */
+/**
+ * The source root is the root feature. A feature holds its layers, `features/`, which holds only features, and
+ * `test/`, which holds only test features, each holding only its layers; beside them, only documents. A feature but
+ * the root has a layer of its own. A component outside another is a layer.
+ */
 export const checkFolders = ({ graph, violate }: Context): void => {
     const { layers } = graph;
     const list = layers.join(', ');
-    for (const dir of graph.dirs) {
-        if (graph.isApp(dir) || graph.componentSet.has(dir) || graph.componentOf(`${dir}/x`) !== undefined) continue;
-        if (layers.includes(basename(dir))) {
-            violate(`${dir}/index.ts`, 'layer-needs-index', `\`${dir}/\` is named like a layer but has no index.ts.`,
-                'A layer is a component: give it index.ts and README.md, or rename the folder if it isn\'t a layer.');
+    const childrenOf = (dir: string): string[] => [...graph.dirs].filter(child => dirname(child) === dir).sort();
+    const filesIn = (dir: string): string[] => graph.paths.filter(path => dirname(path) === dir);
+    const holdsOnlyFeatures = (dir: string, what: string): void => {
+        for (const path of filesIn(dir)) {
+            if (path.endsWith('.md')) continue;
+            violate(path, 'folder-holds-only-folders', `\`${dir}/\` holds only ${what}, but it holds ${basename(path)}.`,
+                `Move ${basename(path)} into a layer (${list}) of a feature.`);
         }
-        const children = [...graph.dirs].filter(child => dirname(child) === dir);
-        if (children.some(child => layers.includes(basename(child)))) {
-            for (const child of children.filter(child => !layers.includes(basename(child)))) {
-                violate(`${child}/`, 'feature-holds-only-layers', `\`${dir}/\` is a feature, since it has layer folders, but it also holds \`${basename(child)}/\`.`,
-                    `A feature holds only its layers (${list}). Move \`${basename(child)}/\` into one of them, or make it a feature of its own beside \`${basename(dir)}\`.`);
+    };
+    const feature = (dir: string, test: boolean): void => {
+        const root = dir === '.';
+        const at = (name: string): string => root ? name : `${dir}/${name}`;
+        let ownLayers = 0;
+        for (const child of childrenOf(dir)) {
+            const name = basename(child);
+            if (layers.includes(name)) {
+                ownLayers++;
+                if (!graph.componentSet.has(child)) {
+                    violate(`${child}/index.ts`, 'layer-needs-index', `\`${child}/\` is named like a layer but has no index.ts.`,
+                        'A layer is a component: give it index.ts and README.md, or rename the folder if it isn\'t a layer.');
+                }
+            } else if (!test && (name === 'features' || name === 'test')) {
+                holdsOnlyFeatures(child, name === 'features' ? 'features' : 'test features');
+                for (const sub of childrenOf(child)) feature(sub, name === 'test');
+            } else if (!graph.componentSet.has(child)) {
+                violate(`${child}/`, 'feature-contents', `\`${root ? 'src' : dir}/\` is a feature, which holds only its layers${test ? '' : ', features/ and test/'}, but it holds \`${name}/\`.`,
+                    test ? `A test feature holds only its layers (${list}): move \`${name}/\` into one of them.`
+                        : `Move \`${name}/\` into one of its layers (${list}), or, if it's a feature, into ${at('features')}/.`);
             }
         }
-        for (const path of graph.paths) {
-            if (dirname(path) !== dir || basename(path) === 'ARCHITECTURE.md') continue;
-            violate(path, 'folder-holds-only-folders', `\`${dir}/\` is a feature or a group of features, which holds only folders, but it holds ${basename(path)}.`,
-                `Move ${basename(path)} into a layer (${list}) of this feature.`);
+        if (root) return;
+        holdsOnlyFeatures(dir, 'folders and documents');
+        if (ownLayers === 0) {
+            violate(`${dir}/`, 'feature-without-layers', `feature \`${dir}\` has no layer of its own.`,
+                `A feature has at least one layer (${list}): there are no groups of features. Give it the layer that composes its sub-features (its plugin, its index), or move its sub-features up into the features/ folder holding it.`);
         }
-    }
+    };
+    feature('.', false);
     for (const component of graph.components) {
-        if (graph.componentOf(component) !== undefined) continue;
-        if (!layers.includes(basename(component))) {
-            violate(`${component}/index.ts`, 'layer-name', `component \`${component}\` isn't a layer: a component outside another is named one of ${list}.`,
-                `Move it under a feature as <feature>/<layer> (for example ${dirname(component) === '.' ? component : dirname(component)}/model), or make ${component} a feature and move its parts into layers.`);
-        } else if (dirname(component) === '.') {
-            violate(`${component}/index.ts`, 'layer-in-feature', `layer \`${component}\` isn't inside a feature.`, `Put it in a feature folder: <feature>/${component}.`);
-        }
+        if (graph.componentOf(component) !== undefined || layers.includes(basename(component))) continue;
+        violate(`${component}/index.ts`, 'layer-name', `component \`${component}\` isn't a layer: a component outside another is named one of ${list}.`,
+            `Make it a layer of a feature (features/<feature>/<layer>, or <layer> at the source root), or make it a feature and move its parts into layers.`);
     }
 };
 
+/** `export {}`: what the index of a layer holding only entries and private code says. */
+const isEmptyExport = (statement: Node): boolean =>
+    statement.type === 'ExportNamedDeclaration' && statement.source === null && statement.declaration === null && statement.specifiers.length === 0;
+
 /** Each component's README, index and root files. */
 export const checkComponents = ({ graph, settings, violate }: Context): void => {
+    // A layer's index may pass on a sub-feature's layer: a parent aggregates its sub-features.
+    const isSubFeatureLayer = (component: string, spec: string): boolean => {
+        const target = graph.resolve(`${component}/index.ts`, spec);
+        const to = target === undefined ? undefined : graph.componentOf(target);
+        if (to === undefined || target !== `${to}/index.ts` || graph.componentOf(to) !== undefined) return false;
+        const parent = graph.featureOf(component);
+        const child = graph.featureOf(to);
+        return child !== parent && isWithin(child, parent);
+    };
+    const hasEntry = (component: string): boolean => graph.tsPaths.some(path => dirname(path) === component && isEntry(path));
     for (const component of graph.components) {
         const readme = graph.files.get(`${component}/README.md`);
         if (readme === undefined) {
@@ -78,6 +111,8 @@ export const checkComponents = ({ graph, settings, violate }: Context): void => 
             const exported = isReExport(statement)
                 ? { spec: statement.source.value, all: statement.type === 'ExportAllDeclaration' && statement.exported === null } : undefined;
             if (exported?.all === true && /^\.\/[^/]+\.js$/.test(exported.spec)) reexported.add(exported.spec.slice(2, -3));
+            else if (isEmptyExport(statement) && hasEntry(component)) continue;
+            else if (exported !== undefined && isSubFeatureLayer(component, exported.spec)) continue;
             else if (!(exported?.all === false && /^\.\/[^/]+\/index\.js$/.test(exported.spec))) {
                 violate(indexPath, 'index-is-only-re-exports', `index.ts has a statement that isn't a re-export of a root file or a part: ${firstLine(index, statement)}`,
                     'index.ts holds only `export * from \'./<root file>.js\'` and named re-exports of parts (`export { name } from \'./part/index.js\'`).');
@@ -123,12 +158,13 @@ const exportedNames = (module: Module, declared: readonly string[]): string[] =>
 
 /** A file declaring an export: named for its kind and export, which it exports alone and first, a system typed as its interface. */
 const checkDeclarationFile = ({ graph, settings, violate }: Context, file: string, base: string): void => {
-    const match = /^([a-z]+)\.([a-z0-9]+(?:-[a-z0-9]+)*)$/.exec(base);
+    // Any modifiers, then the kind, then the name: `persistent.component.done`. Modifiers are the app's own, for grouping.
+    const match = /^(?:[a-z0-9]+(?:-[a-z0-9]+)*\.)*([a-z]+)\.([a-z0-9]+(?:-[a-z0-9]+)*)$/.exec(base);
     const kind = match?.[1];
     const name = match?.[2];
     if (kind === undefined || name === undefined || !settings.kinds.includes(kind)) {
         violate(file, 'file-name', `\`${base}.ts\` isn't named <kind>.<name>.ts with a known kind.`,
-            `Rename it <kind>.<kebab-name>.ts with its kind one of: ${settings.kinds.join(', ')}. A file exports one declaration: give each other export a file of its own, in a folder without an index.ts if it's private.`);
+            `Rename it <kind>.<kebab-name>.ts, after any modifiers of the app's own (<modifier>.<kind>.<kebab-name>.ts), with its kind one of: ${settings.kinds.join(', ')}. A file exports one declaration: give each other export a file of its own, in a folder without an index.ts if it's private.`);
         return;
     }
     const exported = camel(name);

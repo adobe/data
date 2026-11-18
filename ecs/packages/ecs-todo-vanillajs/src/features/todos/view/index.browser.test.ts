@@ -1,11 +1,14 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { afterEach, describe, expect, it } from "vitest";
 import { Entity, System, workers, World } from "@adobe/ecs";
-import { define, entityOfElement } from "../../page/view/index.js";
-import { list, onlyDone, renderRows, systems } from "./index.js";
+import { define, entityOfElement, root } from "../../../view/index.js";
+import { todosView } from "./index.js";
+import { onlyDone } from "../model/index.js";
+import { renderRows } from "./plugin.todos-view/system.render-rows.js";
+import { findList } from "./plugin.todos-view/system.find-list.js";
 import { TodoList, TodoRow } from "../elements/index.js";
 import { addTodo, deleteTodo, done, editTodo, label, moveTodo, order, Todo, toggleTodo } from "../model/index.js";
-import { todosOf } from "../model/todos.test-helper.js";
+import { todosOf } from "../../../test/todos/model/index.js";
 
 define({ "todo-list": TodoList, "todo-row": TodoRow });
 
@@ -18,8 +21,10 @@ const createDriven = async (height = ""): Promise<{ readonly world: World; reado
     const element = document.createElement("todo-list");
     element.style.height = height;
     document.body.append(element);
-    const world = World.create({ [workers]: 0, [list]: element });
-    for (const system of systems) world.add(system);
+    const world = World.create({ [workers]: 0, [root]: document.body });
+    for (const system of todosView.systems) world.add(system);
+    // Finds the list now, rather than on the first tick.
+    await world.run(findList);
     return { world, element };
 };
 
@@ -84,8 +89,8 @@ describe("the todos feature's DOM systems", () => {
         await world.run(editTodo, { entity: todoAt(element, 2), label: "C" });
         records.push(...observer.takeRecords());
         const changed = new Set(records.map(record => {
-            const root = record.target.getRootNode();
-            return root instanceof ShadowRoot ? root.host : record.target;
+            const node = record.target.getRootNode();
+            return node instanceof ShadowRoot ? node.host : record.target;
         }));
         observer.disconnect();
         expect([...changed]).toEqual([rows[1], rows[2]]);
@@ -134,8 +139,9 @@ describe("the todos feature's DOM systems", () => {
     });
 
     it("make no rows while the page has no list", async () => {
-        await using world = World.create({ [workers]: 0 });
-            for (const system of systems) world.add(system);
+        await using world = World.create({ [workers]: 0, [root]: document.body });
+        for (const system of todosView.systems) world.add(system);
+        await world.run(findList);
         await world.run(addTodo, { label: "a" });
         expect(document.querySelectorAll("todo-row")).toHaveLength(0);
     });

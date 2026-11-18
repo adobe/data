@@ -7,9 +7,15 @@ import type { Plugin } from './plugin.js';
 /** The names a plugin's `connect` asks for. */
 type NamesOf<P> = P extends { readonly connect?: (world: World, config: infer Config) => unknown } ? keyof Config & keyof PluginConfig : never;
 
+/** The config `start` takes: every name the plugins ask for, or nothing when they ask for none. */
+type ConfigOf<Plugins extends readonly Plugin<keyof PluginConfig>[]> = [NamesOf<Plugins[number]>] extends [never]
+    ? [config?: Pick<PluginConfig, never>]
+    : [config: Pick<PluginConfig, NamesOf<Plugins[number]>>];
+
 /**
  * Adds every plugin's systems to `world` as one composite, then connects each plugin in order with `config`, which
- * holds every name they ask for. Disposing it disconnects them in reverse order, then removes their systems, and
+ * holds every name they ask for and may be left out when they ask for none. Plugins with no systems add nothing, so
+ * they start on a joined world too, which adds only readonly systems. Disposing it disconnects them in reverse order, then removes their systems, and
  * throws what threw doing so once all are done: one error as it is, more as an `AggregateError`. When a `connect`
  * throws, the plugins already connected are disconnected and the systems removed before it rethrows, in an
  * `AggregateError` after what the disconnects threw where they threw.
@@ -17,11 +23,12 @@ type NamesOf<P> = P extends { readonly connect?: (world: World, config: infer Co
 export function start<const Plugins extends readonly Plugin<keyof PluginConfig>[]>(
     world: World,
     plugins: Plugins,
-    config: Pick<PluginConfig, NamesOf<Plugins[number]>>,
+    ...config: ConfigOf<Plugins>
 ): Disposable;
-export function start(world: World, plugins: readonly Plugin[], config: Pick<PluginConfig, never>): Disposable {
-    const systems = create({ systems: plugins.flatMap(plugin => plugin.systems) });
-    world.add(systems);
+export function start(world: World, plugins: readonly Plugin[], config: Pick<PluginConfig, never> = {}): Disposable {
+    const listed = plugins.flatMap(plugin => plugin.systems);
+    const systems = listed.length === 0 ? null : create({ systems: listed });
+    if (systems !== null) world.add(systems);
     const disconnects: (() => void)[] = [];
     /** Disconnects every plugin connected, in reverse order, then removes the systems; gives what threw. */
     const stop = (): unknown[] => {
@@ -35,7 +42,7 @@ export function start(world: World, plugins: readonly Plugin[], config: Pick<Plu
         }
         disconnects.length = 0;
         try {
-            world.remove(systems);
+            if (systems !== null) world.remove(systems);
         } catch (error) {
             failures.push(error);
         }

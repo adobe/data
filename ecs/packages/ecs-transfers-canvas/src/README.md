@@ -10,33 +10,36 @@ counts the sprites and frames.
 
 ## Threads
 
-The three threads' entry points are in `app/`:
+The feature `features/main` starts the three threads:
 
-- **Main** (`app/main.ts`) owns the page. It starts both workers, hands each a port to the world, and joins the
-  world. It moves its `<canvas>` to the world's thread with `transferControlToOffscreen()`, as the input of a run of
-  `attachSurface`, and adds `show`, a readonly system that writes the counts into the overlay after each frame that
-  changes them.
-- **The world's worker** (`app/world.ts`) creates the world, which ticks every frame, adds the sprites' model and
-  view systems, and shares the world on the ports main sends. The canvas becomes its `surface` resource.
-- **The loader's worker** (`app/loader.ts`) joins the world and runs the sprites' `loadSprites`, which makes one image
-  every 120 ms: it draws a disc of its own hue, encodes it as a PNG, decodes it to an `ImageBitmap` and runs
-  `addSprite` with it. The bitmap is detached in the loader once the run is posted.
+- **The page** loads `features/main/view/entry.page.ts`, which starts both workers, hands
+  each a port to the world, and joins the world. It moves its `<canvas>` to the world's thread with
+  `transferControlToOffscreen()`, as the input of a run of `attachSurface`, and adds `showStats`, a readonly system
+  that writes the counts into the overlay after each frame that changes them.
+- **The world's worker** runs `features/main/view/entry.world-worker.ts`: it creates the world,
+  which ticks every frame, starts the sprites' model and view plugins, and shares the world on the ports the page
+  sends. The canvas becomes its `surface` resource.
+- **The loader's worker** runs `features/main/ports/entry.loader-worker.ts`: it joins the world
+  and starts the sprites' ports plugin, which makes one image every 120 ms: it draws a disc of its own hue, encodes
+  it as a PNG, decodes it to an `ImageBitmap` and runs `addSprite` with it. The bitmap is detached in the loader once
+  the run is posted.
+
+Each thread's module is an entry, `entry.<name>.ts`, the only kind of module that does something as it loads: it
+holds its thread's start-up, read top to bottom.
 
 ## The sprites feature
 
-`features/sprites/` holds the data and systems every thread imports, in three layers:
+`features/sprites/` holds the data and systems every thread imports, in three layers, each exporting its plugin:
 
 - `model`: `texture`, a component registered with `transfer: true`, holds a sprite's `ImageBitmap`; `position` and
   velocity are `Vec2`s, in pixels and pixels per second. `surface`, a resource registered with `transfer: true`, holds
-  the `OffscreenCanvas`; `stats` counts sprites and frames. `attachSurface` and `addSprite` take what main and the
-  loader move in their input, and `move` moves each sprite, bouncing off the edges.
-- `view`: each frame, clears the canvas and draws each sprite's texture where it is.
-- `ports`: `loadSprites`, the loader's textures.
-
-`ARCHITECTURE.md` draws the features and what uses what.
+  the `OffscreenCanvas`; `stats` counts sprites and frames. `attachSurface` and `addSprite` take what the page and the
+  loader move in their input, and `move`, in `spritesModel`, moves each sprite, bouncing off the edges.
+- `view`: `spritesView` clears the canvas each frame and draws each sprite's texture where it is.
+- `ports`: `spritesPorts` loads the textures on the thread it connects on.
 
 ## Tests
 
 - `build.test.ts`: the sample builds as an application, with the world's worker and the loader's.
-- `architecture.test.ts`: the source follows the architecture standard, and its diagrams and the repository's agent
-  rules are up to date.
+- `architecture.test.ts`: the source follows the architecture standard, and the repository's agent rules are up to
+  date.

@@ -11,6 +11,28 @@ export type Settings = Required<Omit<Config, 'agents'>>;
 /** Whether a file is a test or a test's helper, which may import anything by its path. */
 export const isTest = (path: string): boolean => /[.-](test|type-test|test-helper)\.ts$/.test(path);
 
+/** Whether a file is an entry, `entry.<name>.ts`: a module that runs code as it loads, which nothing imports. */
+export const isEntry = (path: string): boolean => /^entry\.[a-z0-9]+(?:-[a-z0-9]+)*\.ts$/.test(basename(path));
+
+/**
+ * The feature owning the test feature a path is in, `.` for the source root, or undefined when it's in none: a test
+ * feature is a feature in the `test/` folder of a feature, the source root or one in a `features/` folder.
+ */
+export const testFeatureOwner = (path: string): string | undefined => {
+    const segments = path.split('/');
+    for (let at = 0; at < segments.length - 1; at++) {
+        if (segments[at] !== 'test' || !(at === 0 || segments[at - 2] === 'features')) continue;
+        return at === 0 ? '.' : segments.slice(0, at).join('/');
+    }
+    return undefined;
+};
+
+/** Whether a path is in a test feature: what only tests, and test features, of its owner's subtree may import. */
+export const isTestFeature = (path: string): boolean => testFeatureOwner(path) !== undefined;
+
+/** Whether `feature` is `ancestor` or a feature inside it, `.` being the source root. */
+export const isWithin = (feature: string, ancestor: string): boolean => ancestor === '.' || feature === ancestor || feature.startsWith(`${ancestor}/`);
+
 export const settingsOf = (config: Config = {}): Settings => ({ ...defaults, ...config });
 
 /**
@@ -51,21 +73,10 @@ export const analyze = (input: Readonly<Record<string, string>>, settings: Setti
         return files.has(target) ? target : undefined;
     };
 
-    /** The app a path is in: a folder of an apps folder, or the apps folder itself for its own files. */
-    const appOf = (path: string): string | undefined => {
-        for (const folder of settings.apps) {
-            if (!path.startsWith(`${folder}/`)) continue;
-            const rest = path.slice(folder.length + 1);
-            const slash = rest.indexOf('/');
-            return slash < 0 ? folder : `${folder}/${rest.slice(0, slash)}`;
-        }
-        return undefined;
-    };
-    const isApp = (path: string): boolean => settings.apps.some(folder => path === folder || path.startsWith(`${folder}/`));
     const dirs = new Set<string>();
     for (const path of paths) for (let dir = dirname(path); dir !== '.'; dir = dirname(dir)) dirs.add(dir);
 
-    const components = [...dirs].filter(dir => files.has(`${dir}/index.ts`) && !isApp(dir)).sort();
+    const components = [...dirs].filter(dir => files.has(`${dir}/index.ts`)).sort();
     const componentSet = new Set(components);
     /** The nearest component holding a path. */
     const componentOf = (path: string): string | undefined => {
@@ -82,13 +93,14 @@ export const analyze = (input: Readonly<Record<string, string>>, settings: Setti
         const name = basename(topOf(component));
         return layers.includes(name) ? name : undefined;
     };
+    /** The feature holding a component's layer: `features/todos`, or `.` for a layer of the source root. */
     const featureOf = (component: string): string => dirname(topOf(component));
     /** A component's public declarations: the files in its folder but its index and tests. */
     const rootFiles = (component: string): string[] =>
-        tsPaths.filter(path => dirname(path) === component && path !== `${component}/index.ts` && !isTest(path));
+        tsPaths.filter(path => dirname(path) === component && path !== `${component}/index.ts` && !isTest(path) && !isEntry(path));
     return {
         files, paths, tsPaths, dirs, components, componentSet, layers,
-        textOf, moduleOf, exportsOf: exportsIn, importsOf: importsIn, resolve, appOf, isApp, componentOf, topOf, layerOf, featureOf, rootFiles,
+        textOf, moduleOf, exportsOf: exportsIn, importsOf: importsIn, resolve, componentOf, topOf, layerOf, featureOf, rootFiles,
     };
 };
 

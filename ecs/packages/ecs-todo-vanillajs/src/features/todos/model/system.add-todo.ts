@@ -1,9 +1,9 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { System } from "@adobe/ecs";
 import { Todo } from "./archetype.todo.js";
-import { done } from "./component.done.js";
-import { label } from "./component.label.js";
-import { order } from "./component.order.js";
+import { done } from "./persistent.component.done.js";
+import { label } from "./persistent.component.label.js";
+import { order } from "./persistent.component.order.js";
 import { orderAfter } from "./function.order-after.js";
 import { ordered } from "./index.ordered.js";
 

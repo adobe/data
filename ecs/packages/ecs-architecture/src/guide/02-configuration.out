@@ -1,0 +1,3 @@
+the standard's layers: feature-without-layers, file-name, layer-name
+its own: none
+core importing ui: import-cycle, layer-rank

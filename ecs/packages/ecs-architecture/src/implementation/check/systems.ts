@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { basename, dirname, relative } from '../path.js';
 import type { ESTree } from 'vite';
-import { isTest, type Graph } from '../graph.js';
+import { isEntry, isTest, isTestFeature, type Graph } from '../graph.js';
 import { exportedVariables, isLocal, nameOf, textOf, topLevelNames, walk, type Module, type Node } from '../syntax.js';
 import { camel, relativeSpec, type Context } from './context.js';
 import type { Imports } from './imports.js';
@@ -9,35 +9,6 @@ import type { Imports } from './imports.js';
 
 /** A declaration: the file declaring it and its name there. */
 type Origin = { readonly file: string; readonly name: string };
-
-/** What a component's `constant.systems.ts` says: how `systems` is typed, the names it lists and the parts it spreads. */
-type Listing = { readonly type: string | undefined; readonly listed: ReadonlySet<string>; readonly spread: ReadonlySet<string> };
-
-const systemsFile = 'constant.systems.ts';
-
-const listingOf = (graph: Graph, component: string): Listing | undefined => {
-    const path = `${component}/${systemsFile}`;
-    if (!graph.files.has(path)) return undefined;
-    const module = graph.moduleOf(path);
-    const aliases = new Map<string, string>();
-    for (const statement of module.program.body) {
-        if (statement.type !== 'ImportDeclaration') continue;
-        for (const specifier of statement.specifiers) {
-            if (specifier.type === 'ImportSpecifier' && nameOf(specifier.imported) === 'systems') aliases.set(specifier.local.name, statement.source.value);
-        }
-    }
-    const declaration = exportedVariables(module).flatMap(each => each.declarations).find(each => each.id.type === 'Identifier' && each.id.name === 'systems');
-    const listed = new Set<string>();
-    const spread = new Set<string>();
-    if (declaration?.init?.type === 'ArrayExpression') {
-        for (const element of declaration.init.elements) {
-            if (element?.type === 'SpreadElement' && element.argument.type === 'Identifier') spread.add(aliases.get(element.argument.name) ?? element.argument.name);
-            else if (element?.type === 'Identifier') listed.add(element.name);
-        }
-    }
-    const annotation = declaration?.id.typeAnnotation;
-    return { type: annotation === undefined || annotation === null ? undefined : textOf(module, annotation.typeAnnotation).replace(/\s+/g, ' '), listed, spread };
-};
 
 /** The declaration a module's export `name` is, through its re-exports. */
 const exportOrigin = (graph: Graph, file: string, name: string, seen = new Set<string>()): Origin | undefined => {
@@ -127,7 +98,8 @@ const runSystems = (graph: Graph): Set<string> => {
         if (list.type !== 'ArrayExpression') return;
         for (const element of list.elements) if (element !== null) reach(module, file, element.type === 'SpreadElement' ? element.argument : element);
     };
-    for (const file of graph.tsPaths) {
+    // Only the source reaches a system: a test running one doesn't make it part of the app.
+    for (const file of graph.tsPaths.filter(path => !isTest(path))) {
         const module = graph.moduleOf(file);
         walk(module, node => {
             if (node.type === 'VariableDeclarator' && node.id.type === 'Identifier' && node.id.name === 'systems' && node.init !== null) reachAll(module, file, node.init);
@@ -145,111 +117,17 @@ const runSystems = (graph: Graph): Set<string> => {
     return reached;
 };
 
-/** Every model and view exports its systems; a parent spreads its parts'; nothing declares a system nothing runs. */
-export const checkSystems = ({ graph, settings, violate }: Context): void => {
-    const hasSystems = (component: string): boolean => {
-        const layer = graph.layerOf(component);
-        return layer !== undefined && settings.systems.includes(layer);
-    };
-    for (const component of graph.components) {
-        const layer = graph.layerOf(component);
-        const own = listingOf(graph, component);
-        const parent = graph.componentOf(component);
-        if (parent === undefined && hasSystems(component) && own === undefined) {
-            violate(`${component}/${systemsFile}`, 'systems-export', `${layer} \`${component}\` has no ${systemsFile}.`,
-                `Every ${settings.systems.join(' and ')} exports \`systems\`, the systems the world adds (empty if none): export const systems: readonly System[] = [a, b, ...part];`);
-        }
-        if (own !== undefined && own.type !== 'readonly System[]') {
-            violate(`${component}/${systemsFile}`, 'systems-export', '`systems` must be declared `export const systems: readonly System[] = [...]`.',
-                'Type it readonly System[], so a parent can spread it.');
-        }
-        if (own === undefined || parent === undefined) continue;
-        const spec = `./${relative(parent, component)}/index.js`;
-        if (listingOf(graph, parent)?.spread.has(spec) === true) continue;
-        const alias = camel(basename(component));
-        violate(`${parent}/${systemsFile}`, 'systems-spread', `\`${parent}\` doesn't spread the systems of its part \`${relative(parent, component)}\`.`,
-            `In ${parent}/${systemsFile}: import { systems as ${alias} } from '${spec}'; and spread ...${alias} into systems.`);
-    }
+/** Nothing declares a system nothing runs: each is in a plugin's `systems`, a composite, or passed to `run` or `add`. */
+export const checkSystems = ({ graph, violate }: Context): void => {
     const reached = runSystems(graph);
     for (const file of graph.tsPaths) {
         const component = graph.componentOf(file);
-        if (component === undefined || !hasSystems(component) || !/^system\.[a-z0-9-]+\.ts$/.test(basename(file))) continue;
+        // A test feature's systems are run by the tests using it.
+        if (component === undefined || isTestFeature(component) || !/^system\.[a-z0-9-]+\.ts$/.test(basename(file))) continue;
         const name = graph.exportsOf(file)[0];
         if (name === undefined || reached.has(`${file}#${name}`)) continue;
-        violate(file, 'unlisted-system', `system \`${name}\` isn't in a \`systems\` list, a composite, or passed to run or add, so nothing runs it.`,
-            `Add ${name} to systems in ${graph.topOf(component)}/${systemsFile} (or the part's) if the world runs it each tick; for a one-off, call world.run(${name}) where it's needed.`);
-    }
-};
-
-/** An app that lists layers' systems lists those of the layers they depend on, too. */
-export const checkApps = ({ graph, settings, violate }: Context, { edges }: Imports): void => {
-    const outer = graph.components.filter(component => graph.componentOf(component) === undefined);
-    const outerSet = new Set(outer);
-    const withSystems = new Set(outer.filter(component => {
-        const layer = graph.layerOf(component);
-        return layer !== undefined && settings.systems.includes(layer);
-    }));
-    const listsAny = (component: string): boolean => {
-        const listing = listingOf(graph, component);
-        return listing !== undefined && listing.listed.size + listing.spread.size > 0;
-    };
-    const dependsOn = new Map<string, Set<string>>();
-    for (const [from, targets] of edges) {
-        for (const to of targets) {
-            const [a, b] = [graph.topOf(from), graph.topOf(to)];
-            if (a === b) continue;
-            let set = dependsOn.get(a);
-            if (set === undefined) dependsOn.set(a, set = new Set());
-            set.add(b);
-        }
-    }
-    /** The layer whose index an import from `from` names, if it's one of `among`. */
-    const layerImported = (from: string, spec: string, among: ReadonlySet<string>): string | undefined => {
-        const target = graph.resolve(from, spec);
-        return target !== undefined && basename(target) === 'index.ts' && among.has(dirname(target)) ? dirname(target) : undefined;
-    };
-    /** The layer whose systems an import of `systems` in a layer's root file names: another's index, or its own list. */
-    const systemsImported = (from: string, spec: string): string | undefined => {
-        const target = graph.resolve(from, spec);
-        const component = target === undefined ? undefined : graph.componentOf(target);
-        if (target === undefined || component === undefined) return undefined;
-        const layer = graph.topOf(component);
-        return withSystems.has(layer) && (target === `${layer}/index.ts` || target === `${component}/${systemsFile}`) ? layer : undefined;
-    };
-    /** The layers whose systems each app lists: an app is a folder of an apps folder, and any other file is one of its own. */
-    const listing = new Map<string, { readonly file: string; readonly layers: Set<string> }>();
-    for (const file of graph.tsPaths) {
-        if (graph.componentOf(file) !== undefined || isTest(file)) continue;
-        const listed = new Set<string>();
-        for (const { spec, typeOnly, values: names } of graph.importsOf(file)) {
-            if (!spec.startsWith('.') || typeOnly) continue;
-            const layer = layerImported(file, spec, outerSet);
-            if (layer === undefined) continue;
-            if (names.includes('systems') && withSystems.has(layer)) listed.add(layer);
-            // A plugin, or anything else a layer exports, that lists layers' systems covers those layers.
-            for (const root of graph.rootFiles(layer)) {
-                if (!graph.exportsOf(root).some(name => names.includes(name))) continue;
-                for (const inner of graph.importsOf(root)) {
-                    if (!inner.spec.startsWith('.') || inner.typeOnly || !inner.values.includes('systems')) continue;
-                    const covered = systemsImported(root, inner.spec);
-                    if (covered !== undefined) listed.add(covered);
-                }
-            }
-        }
-        if (listed.size === 0) continue;
-        const app = graph.appOf(file) ?? file;
-        const entry = listing.get(app);
-        if (entry === undefined) listing.set(app, { file, layers: listed });
-        else for (const layer of listed) entry.layers.add(layer);
-    }
-    for (const { file, layers: listed } of listing.values()) {
-        const reach = new Set(listed);
-        for (const layer of reach) for (const next of dependsOn.get(layer) ?? []) reach.add(next);
-        for (const layer of [...reach].sort()) {
-            if (listed.has(layer) || !withSystems.has(layer) || !listsAny(layer)) continue;
-            violate(file, 'app-misses-systems', `lists the systems of layers that depend on \`${layer}\` but not its own, which run what they read or write.`,
-                `Import \`systems\` from '${relativeSpec(relative(dirname(file), `${layer}/index.js`))}' and add it to the world, or, if this app leaves the layer out on purpose, stop listing the layers that need it.`);
-        }
+        violate(file, 'unlisted-system', `system \`${name}\` isn't in a plugin's \`systems\`, a composite, or passed to run or add, so nothing runs it.`,
+            `List ${name} in its layer's plugin's systems if the world runs it each tick; for a one-off, call world.run(${name}) where it's needed.`);
     }
 };
 
@@ -267,5 +145,155 @@ export const checkDerivations = ({ graph, violate }: Context): void => {
             violate(file, 'derive-beside-component', `\`Component.derive(${derived.name}, ...)\` derives a component declared in ${origin.file}, not this file.`,
                 `Move it into ${origin.file}, below \`export const ${origin.name} = Symbol()\` and its declare module entry: a derived component is defined where it's declared, so whoever imports it gets its derivations.`);
         });
+    }
+};
+
+/** The call, `new` or `await` a top-level expression statement runs as its module loads, or undefined for none. */
+const runsOnLoad = (expression: Node): Node | undefined => {
+    const inner = expression.type === 'UnaryExpression' && expression.operator === 'void' ? expression.argument : expression;
+    return inner.type === 'CallExpression' || inner.type === 'NewExpression' || inner.type === 'AwaitExpression' ? inner : undefined;
+};
+
+/**
+ * Only an entry, `entry.<name>.ts`, runs code as it loads: any other module's top-level statements declare. A
+ * derivation, `Component.derive(...)`, is a declaration: it registers as its component's module loads.
+ */
+export const checkSideEffects = ({ graph, violate }: Context): void => {
+    for (const file of graph.tsPaths) {
+        if (isEntry(file) && graph.exportsOf(file).length > 0) {
+            violate(file, 'entry-exports', `entry \`${basename(file)}\` exports ${graph.exportsOf(file).join(', ')}.`,
+                'An entry only starts things and exports nothing: move what it exports into its layer: public at the root, or private beside what uses it.');
+        }
+        if (isTest(file) || isEntry(file) || file.endsWith('.d.ts')) continue;
+        const module = graph.moduleOf(file);
+        for (const statement of module.program.body) {
+            if (statement.type !== 'ExpressionStatement') continue;
+            const run = runsOnLoad(statement.expression);
+            if (run === undefined) continue;
+            if (run.type === 'CallExpression' && isMember(run.callee) && run.callee.property.name === 'derive' && isEcs(module, run.callee.object, 'Component')) continue;
+            violate(file, 'runs-on-load', `\`${basename(file)}\` runs ${textOf(module, run).split('\n')[0]} as it loads.`,
+                'Only an entry, entry.<name>.ts in the layer it starts, runs code as it loads: move the call into a function the entry, a plugin\'s connect or a system calls.');
+        }
+    }
+};
+
+/** A layer has at most one plugin, `plugin.<feature>-<layer>.ts`, which lists the layer's systems. */
+export const checkPlugins = ({ graph, violate }: Context): void => {
+    for (const component of graph.components) {
+        if (graph.componentOf(component) !== undefined) continue;
+        const plugins = graph.rootFiles(component).filter(file => /^plugin\./.test(basename(file)));
+        // The source root, the root feature, is the app.
+        const feature = graph.featureOf(component);
+        const name = `${feature === '.' ? 'app' : basename(feature)}-${basename(component)}`;
+        for (const file of plugins) {
+            if (file === `${component}/plugin.${name}.ts`) continue;
+            violate(file, 'plugin-name', plugins.length > 1 ? `\`${component}\` has more than one plugin.` : `\`${basename(file)}\` isn't named for its feature and layer.`,
+                `A layer has one plugin, plugin.${name}.ts, exporting ${camel(name)}: its systems and its connect to what's outside the world.`);
+        }
+    }
+};
+
+/**
+ * `internal/` holds what several of a component's public declarations use, through their parts or other internal files
+ * as well: what only one uses is that declaration's part, in the folder named for it.
+ */
+export const checkInternal = ({ graph, violate }: Context): void => {
+    const importers = new Map<string, Set<string>>();
+    for (const file of graph.tsPaths) {
+        if (isTest(file)) continue;
+        for (const { spec } of graph.importsOf(file)) {
+            const target = spec.startsWith('.') ? graph.resolve(file, spec) : undefined;
+            if (target === undefined) continue;
+            let set = importers.get(target);
+            if (set === undefined) importers.set(target, set = new Set());
+            set.add(file);
+        }
+    }
+    /** The public declaration a file belongs to: itself at a component's root, or the one whose parts folder holds it. */
+    const declarationOf = (file: string): string | undefined => {
+        const component = graph.componentOf(file);
+        if (component === undefined) return undefined;
+        if (dirname(file) === component) return file;
+        for (let dir = dirname(file); dir !== component && dir !== '.'; dir = dirname(dir)) {
+            if (dirname(dir) === component && graph.files.has(`${dir}.ts`)) return `${dir}.ts`;
+        }
+        return undefined;
+    };
+    /** The public declarations using a file of internal/, through other internal files too. */
+    const usersOf = (file: string, seen = new Set<string>()): Set<string> => {
+        const users = new Set<string>();
+        if (seen.has(file)) return users;
+        seen.add(file);
+        for (const importer of importers.get(file) ?? []) {
+            if (basename(dirname(importer)) === 'internal') for (const user of usersOf(importer, seen)) users.add(user);
+            else {
+                const declaration = declarationOf(importer);
+                users.add(declaration ?? importer);
+            }
+        }
+        return users;
+    };
+    for (const file of graph.tsPaths) {
+        if (isTest(file) || basename(dirname(file)) !== 'internal' || graph.componentOf(file) === undefined) continue;
+        const users = [...usersOf(file)];
+        if (users.length > 1) continue;
+        violate(file, 'internal-single-use', users.length === 0 ? `\`${basename(file)}\` in internal/ is used by no declaration.` : `\`${basename(file)}\` in internal/ is used only by ${users[0]}.`,
+            'internal/ holds what several public declarations use. Make it a part of the one declaration using it: unexported in its file, or in the folder named for it (system.<name>/, function.<name>/) when a test reaches it or the file would grow too large.');
+    }
+};
+
+/**
+ * A declaration's parts folder, `<kind>.<name>/` beside `<kind>.<name>.ts`, is its own: only the declaration and its
+ * other parts import from it. What several declarations use is in `internal/`.
+ */
+export const checkParts = ({ graph, violate }: Context): void => {
+    /** The declaration whose parts folder holds a file, if any: the nearest folder named for a file beside it. */
+    const ownerOf = (file: string): string | undefined => {
+        for (let dir = dirname(file); dir !== '.' && graph.componentOf(`${dir}/x`) !== undefined; dir = dirname(dir)) {
+            if (graph.files.has(`${dir}.ts`)) return dir;
+        }
+        return undefined;
+    };
+    for (const file of graph.tsPaths) {
+        if (isTest(file)) continue;
+        for (const { spec } of graph.importsOf(file)) {
+            const target = spec.startsWith('.') ? graph.resolve(file, spec) : undefined;
+            const owner = target === undefined ? undefined : ownerOf(target);
+            if (owner === undefined || file === `${owner}.ts` || file.startsWith(`${owner}/`)) continue;
+            violate(file, 'parts-reach', `imports ${spec}, a part of \`${basename(owner)}.ts\`, which only it and its parts use.`,
+                `Import what ${basename(owner)}.ts exports instead; or, when several declarations need the part, move it into the component's internal/.`);
+        }
+    }
+};
+
+/** No source file outgrows one reading: past `maxLines`, its parts move into the folder named for its declaration. */
+export const checkLength = ({ graph, settings, violate }: Context): void => {
+    for (const file of graph.tsPaths) {
+        if (isTest(file) || file.endsWith('.d.ts')) continue;
+        const text = graph.textOf(file);
+        // A final newline ends the last line rather than starting another.
+        const lines = text.split('\n').length - (text.endsWith('\n') ? 1 : 0);
+        if (lines <= settings.maxLines) continue;
+        violate(file, 'file-too-long', `\`${basename(file)}\` is ${lines} lines, more than ${settings.maxLines}.`,
+            `Move its parts into files of their own, in the folder named for its declaration (${basename(file).slice(0, -3)}/), each about one of its ideas.`);
+    }
+};
+
+/**
+ * Tests export nothing, and a helper is no test of its own: what several tests share is a test feature, in `test/`,
+ * one declaration per file; what one test uses is in that test.
+ */
+export const checkTestFiles = ({ graph, violate }: Context): void => {
+    for (const file of graph.tsPaths) {
+        if (!isTest(file)) continue;
+        if (/[.-]test-helper\.ts$/.test(file)) {
+            violate(file, 'test-helper', `\`${basename(file)}\` is a test helper, which holds what tests share outside the standard's files.`,
+                'Move what several tests share into a test feature, src/test/<feature>/<layer>/, one declaration per file; what only one test uses goes in that test.');
+            continue;
+        }
+        const exported = graph.exportsOf(file);
+        if (exported.length === 0) continue;
+        violate(file, 'test-exports', `test \`${basename(file)}\` exports ${exported.join(', ')}.`,
+            'A test exports nothing: move what other tests use into a test feature, src/test/<feature>/<layer>/, one declaration per file.');
     }
 };

@@ -5,29 +5,25 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, expect, it } from "vitest";
-import { build, type Rollup } from "vite";
+import { build, type Manifest } from "vite";
 
 const packageRoot = fileURLToPath(new URL("..", import.meta.url));
 const outDir = realpathSync(mkdtempSync(join(tmpdir(), "ecs-sample-")));
 afterAll(() => rmSync(outDir, { recursive: true, force: true }));
 
 it("the transfers sample builds as an application, with the world's worker and the loader's", async () => {
-    const output = await build({
+    await build({
         configFile: join(packageRoot, "vite.config.ts"), root: join(packageRoot, "src"), logLevel: "silent",
-        build: { outDir, emptyOutDir: true },
+        build: { outDir, emptyOutDir: true, manifest: true },
     });
-    const items = (Array.isArray(output) ? output : [output]).flatMap((result: Rollup.RollupOutput | Rollup.RollupWatcher) => "output" in result ? result.output : []);
-    const files = items.map(item => item.fileName);
-    expect(files.some(file => file.includes("world"))).toBe(true);
-    expect(files.some(file => file.includes("loader"))).toBe(true);
-    // The page's urls for its workers name each worker's own entry, holding its code, not a kernel's chunk.
-    const main = items.find((item): item is Rollup.OutputChunk => item.type === "chunk" && item.isEntry && item.code.includes("transferControlToOffscreen"));
-    const urls = [...(main?.code ?? "").matchAll(/new Worker\(new URL\(\s*(?:\/\*[^*]*\*\/\s*)?["'`]([^"'`]+)["'`]/g)].map(match => match[1] ?? "");
-    const named = (name: string) => urls.filter(url => new RegExp(`/${name}-[\\w-]+\\.js$`).test(url));
-    expect(named("world")).toHaveLength(1);
-    expect(named("loader")).toHaveLength(1);
-    expect(urls.filter(url => url.includes("kernel-"))).toEqual([]);
-    const code = (url: string) => readFileSync(join(outDir, url.replace(/^\//, "")), "utf8");
-    expect(code(named("world")[0] ?? "")).toContain("ports");
-    expect(code(named("loader")[0] ?? "")).toContain("image/png");
+    // Vite writes the manifest as JSON keyed by source file.
+    const manifest = JSON.parse(readFileSync(join(outDir, ".vite", "manifest.json"), "utf8")) as Manifest;
+    const page = manifest["index.html"];
+    expect(page?.isEntry).toBe(true);
+    // The manifest lists a page's workers as its assets, not under their source files: each is known by what it does.
+    const workers = (page?.assets ?? []).map(file => readFileSync(join(outDir, file), "utf8"));
+    expect(workers).toHaveLength(2);
+    const loader = workers.filter(code => code.includes("image/png"));
+    expect(loader).toHaveLength(1);
+    expect(workers.find(code => !loader.includes(code))).toContain("ports");
 }, 30000);

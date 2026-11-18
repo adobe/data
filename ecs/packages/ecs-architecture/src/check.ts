@@ -5,7 +5,7 @@ import { createContext } from './implementation/check/context.js';
 import { checkExports } from './implementation/check/exports.js';
 import { checkImports } from './implementation/check/imports.js';
 import { checkComponents, checkFiles, checkFolders, checkRoot, checkTests } from './implementation/check/layout.js';
-import { checkApps, checkDerivations, checkSystems } from './implementation/check/systems.js';
+import { checkDerivations, checkInternal, checkLength, checkParts, checkPlugins, checkSideEffects, checkSystems, checkTestFiles } from './implementation/check/systems.js';
 import { analyze, settingsOf } from './implementation/graph.js';
 import type { Violation } from './violation.js';
 
@@ -24,7 +24,12 @@ export const check = async (files: Readonly<Record<string, string>>, config?: Co
     const imports = checkImports(context);
     checkSystems(context);
     checkDerivations(context);
-    checkApps(context, imports);
+    checkPlugins(context);
+    checkSideEffects(context);
+    checkInternal(context);
+    checkParts(context);
+    checkLength(context);
+    checkTestFiles(context);
     checkExports(context, imports);
     return violations;
 };

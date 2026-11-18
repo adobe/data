@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { VirtualList } from "../../virtual-list/elements/index.js";
+import { VirtualList } from "../../../elements/index.js";
 import type { TodoRow } from "./element.todo-row.js";
 
 /**

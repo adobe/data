@@ -15,7 +15,7 @@ filter, and generate 10 or 1,000 todos.
   entry, the editing state of a row, focus.
 - **Fixed elements**, those in `index.html`, are resources: each feature finds its own within the page's root when
   the app starts. Every DOM system that uses one declares it in `resources.is`, so it's skipped in a world without it.
-- **Repeated elements** are rows of a virtual list, `<virtual-list>` (`features/virtual-list`), which holds in the DOM
+- **Repeated elements** are rows of a virtual list, `<virtual-list>` (the root's `elements`), which holds in the DOM
   only the rows near the view: those in it and half a screen's height more above and below. It knows nothing of the
   ECS: it names the range of items it needs, dispatches `virtual-range` as scrolling or resizing changes it, and is
   given the keys of those items, here todos' entities.
@@ -34,7 +34,7 @@ filter, and generate 10 or 1,000 todos.
     `renderRows` renders only the todos it keeps.
   - *Removed* as their todos leave the range, and all of them once the plugin is disconnected.
 - **Fixed elements showing counts** are bound by a readonly system that runs only when an index's entries changed:
-  `bindCompletion` looks up `completion/byDone` with `changed: true`, so it writes the summary and the toggle-all box
+  `bindCompletion` looks up `todos/byDoneInOrder` with `changed: true`, so it writes the summary and the toggle-all box
   after a pass in which a todo was added, removed or toggled, and is skipped before its body otherwise.
 - **Events become runs** in each feature's plugin: its listeners on the page's root call `world.run(system, input)`
   and leave the promise; a rejected run goes unhandled, which the browser logs. An event from a row names its todo
@@ -48,29 +48,28 @@ filter, and generate 10 or 1,000 todos.
 ## Structure
 
 The sample follows the `@adobe/ecs` architecture standard (`@adobe/ecs-architecture`): its features are in
-`features/`, each split into layers, and [ARCHITECTURE.md](ARCHITECTURE.md) draws what uses what.
+the source root, each split into layers, and `main` puts them together.
 
 ```
 index.html                 the page: the fixed elements and their layout
-app/function.create-app.ts creates the world, holding the page's fixed elements, and starts the features' plugins
-app/main.ts                starts the app on the page
-features/<feature>/
-    model/                 components, resources, archetypes and indexes, and a system with input for each thing a
-                           user does: they change data and know no DOM
-    elements/              custom elements, importing only each other
-    view/                  the components and resources holding elements, the systems driving them, and the
-                           feature's plugin, which defines its elements and turns their events into runs
-features/page/view/        what every view uses of the page: attach, entityOf and entityOfElement, on, all, define
-features/virtual-list/elements/
-                           <virtual-list>, a list holding only the rows near the view, which <todo-list> extends
+view/                      the app's foundation, what every view uses of the DOM: root, the element the app is
+                           mounted in, and attach, entityOf, entityOfElement, on, all, define
+elements/                  the foundation's elements: <virtual-list>, a list holding only the rows near the view,
+                           which <todo-list> extends
+features/
+    main/view/             the app: entry.page.ts, which index.html loads, starts it on the page; createApp creates
+                           the world, holding the page's element as root, and starts the todos' plugin
+    todos/                 todos: model, elements and view, whose plugin composes its sub-features'
+        features/          filter/, completion/, generate/: what builds on todos, each with its own layers
+test/                      the app's test features: dom/elements, ticks/model, todos/model, which only tests import
 ```
 
-The features are `todos`, whose list is a `virtual-list`; `filter`, `completion` and `generate` build on it, and
-every view uses `page`. Each
-feature's view exports its `Plugin<"root">`, whose systems are the view's DOM systems and its model's, and whose
-`connect` defines its elements and listens for their events on the page's root; and a function finding its fixed
-elements within the root, as the resources its systems read them from. The app creates the world with those
-resources and starts the four plugins with `Plugin.start(world, plugins, { root })`. Registration happens as modules
+The features are `todos`, whose list is the foundation's `<virtual-list>`, and its sub-features `filter`, `completion` and `generate`,
+which build on it; every view builds on the root's `view`. Each feature's view exports its plugin,
+`plugin.<feature>-view.ts`: its systems, private in `plugin.<feature>-view/`, the first finding the view's elements
+within `root`, and its `connect`, which defines its elements and listens for their events on the root. `todosView`
+composes its sub-features' plugins, so the app creates the world with the page's element as `root` and starts the one
+plugin: `Plugin.start(world, [todosView], { [root]: element })`. Registration happens as modules
 load, so a feature's components, derivations and indexes exist wherever one of its modules is imported. Elements are
 defined by the plugins rather than as their modules load: the package's `sideEffects: false` lets a bundle drop a
 module imported only for that.
@@ -79,23 +78,22 @@ module imported only for that.
 
 - `*/model/index.test.ts`, in node: each feature's model systems against a world, read back through readonly systems.
 - `*/elements/index.browser.test.ts`: elements alone, with no world: properties set, the render checked, events recorded.
-- `features/page/view/index.browser.test.ts`: the entity an element was attached to, found from an event on it or
+- `view/index.browser.test.ts`: the entity an element was attached to, found from an event on it or
   within its open shadow root, and none for others.
-- `features/virtual-list/elements/index.browser.test.ts`: the range it asks for and when, rows placed at their
+- `elements/index.browser.test.ts`: the range it asks for and when, rows placed at their
   index, only rows given a new key bound and the rest untouched, and the focused row kept or its focus passed on.
 - `*/view/index.browser.test.ts`: a feature's DOM systems driving real elements: rows rendered in list order, written
   only where their todo changed, removed, moved by their place alone with focus kept; no rows without a list; only the
   range of many todos rendered, and rendered again as the list scrolls, reusing its rows; the todos the filter keeps,
   with focus moved off a row it leaves out.
-- `app/function.create-app.browser.test.ts`: the whole app on the page's markup, used through DOM events as a user
+- `features/main/view/function.create-app.browser.test.ts`: the whole app on the page's markup, used through DOM events as a user
   would, with no console errors; edits committed on blur; a row's events after its todo is deleted; a tick's system's
   and readonly system's failures reported; and each operation's DOM mutations, and how often the DOM systems write
   rows, the same with 100 todos as with 2,000: they follow what changed and the rows rendered.
-- `architecture.test.ts`: the architecture standard's check, and the diagrams and the repository's agent rules up to
-  date. `imports.test.ts`: the package imported only by its root, so worlds, the tests' and benchmarks' too, are made
+- `architecture.test.ts`: the architecture standard's check, and the repository's agent rules up to date. `imports.test.ts`: the package imported only by its root, so worlds, the tests' and benchmarks' too, are made
   through `World.create`, never through the implementation; the build plugin only in the configuration; and nothing
   importing the app. `build.test.ts`: the page builds.
-- `app/todo.perf-browser-test.ts` and `app/profile.perf-browser-test.ts`, with `pnpm test:perf`:
+- `todo.perf-browser-test.ts` and `profile.perf-browser-test.ts`, with `pnpm test:perf`:
   times, mutation counts and a profile, logged.
 
 ## Performance
@@ -123,7 +121,7 @@ Only toggling all and generating grow with the number of todos, through the mode
 follows the rows rendered. A todo out of the range costs no DOM work at all, so toggling or editing one is mostly the
 summary's count. Before the list was virtual, every todo had a row: at 10K, creating and placing them took 94–114 ms
 and laying them out 39, filtering half of them, laid out, 17 ms, and toggling all wrote every row.
-`app/profile.perf-browser-test.ts` has, back to back, a run that changes nothing at 0.6 µs in an empty world and
+`profile.perf-browser-test.ts` has, back to back, a run that changes nothing at 0.6 µs in an empty world and
 1.5–1.8 µs in the app, and toggling one at 4.4–5.1 µs with 1K, 10K and 100K todos.
 
 ## Findings

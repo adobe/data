@@ -46,7 +46,8 @@ const broken = (file: string, specifier: string): string | null => {
     if (from === null) return relative(packageRoot, target).startsWith("..") ? "configuration imports what's outside the package by its path" : null;
     const to = segmentsOf(target);
     if (to === null) return "imports what's outside the sample by its path";
-    if (to[0] === "app" && from[0] !== "app") return "imports the app";
+    // Tests may import the app; nothing else outside it may.
+    if (to[0] === "main" && from[0] !== "main" && !/[.-](test|perf-browser-test)\.ts$/.test(file)) return "imports the app";
     return null;
 };
 
@@ -69,17 +70,17 @@ describe("the todo sample's imports", () => {
         const at = (...path: string[]): string => join(sample, ...path);
         const imports = new Map<string, string>([
             [join(packageRoot, "vite.config.ts"), `import { Compiler } from "@adobe/ecs/compiler"; import { sources } from "../ecs/vitest.plugins.ts";`],
-            [at("features", "generate", "view", "constant.generate-plugin.ts"), `import { createApp } from "../../../app/function.create-app.js"; import { thing } from "@adobe/ecs/dist/implementation/world/create.js";`],
-            [at("app", "function.create-app.ts"), `import { Compiler } from "@adobe/ecs/compiler";`],
-            [at("app", "function.create-app.test.ts"), `import { create } from "../../../ecs/src/implementation/index.js"; import { isolation } from "../../isolation.ts";`],
+            [at("generate", "view", "plugin.generate-view.ts"), `import { main } from "../../main/view/index.js"; import { thing } from "@adobe/ecs/dist/implementation/world/create.js";`],
+            [at("main", "view", "shared", "function.create-app.ts"), `import { Compiler } from "@adobe/ecs/compiler";`],
+            [at("main", "view", "shared", "function.create-app.test.ts"), `import { create } from "../../../../../ecs/src/implementation/index.js"; import { isolation } from "../../../../isolation.ts";`],
         ]);
         expect(violations([...imports.keys()], file => imports.get(file) ?? "")).toEqual([
             "../vite.config.ts: ../ecs/vitest.plugins.ts: configuration imports what's outside the package by its path",
-            "features/generate/view/constant.generate-plugin.ts: ../../../app/function.create-app.js: imports the app",
-            "features/generate/view/constant.generate-plugin.ts: @adobe/ecs/dist/implementation/world/create.js: imports the package other than by its root",
-            "app/function.create-app.ts: @adobe/ecs/compiler: imports the build plugin outside the configuration",
-            "app/function.create-app.test.ts: ../../../ecs/src/implementation/index.js: imports what's outside the sample by its path",
-            "app/function.create-app.test.ts: ../../isolation.ts: imports what's outside the sample by its path",
+            "generate/view/plugin.generate-view.ts: ../../main/view/index.js: imports the app",
+            "generate/view/plugin.generate-view.ts: @adobe/ecs/dist/implementation/world/create.js: imports the package other than by its root",
+            "main/view/shared/function.create-app.ts: @adobe/ecs/compiler: imports the build plugin outside the configuration",
+            "main/view/shared/function.create-app.test.ts: ../../../../../ecs/src/implementation/index.js: imports what's outside the sample by its path",
+            "main/view/shared/function.create-app.test.ts: ../../../../isolation.ts: imports what's outside the sample by its path",
         ]);
     });
 });

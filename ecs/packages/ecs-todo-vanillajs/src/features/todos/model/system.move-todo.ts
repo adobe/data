@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { Entity, System } from "@adobe/ecs";
-import { order } from "./component.order.js";
-import { todo } from "./component.todo.js";
+import { order } from "./persistent.component.order.js";
+import { todo } from "./persistent.component.todo.js";
 import { ordered } from "./index.ordered.js";
 
 /**

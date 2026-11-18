@@ -1,6 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { dirname, join, normalize } from '../path.js';
 import { nameOf } from '../syntax.js';
+import { isEntry } from '../graph.js';
 import type { Context } from './context.js';
 import type { Imports } from './imports.js';
 
@@ -22,11 +23,28 @@ export const checkExports = ({ graph, violate }: Context, { uses }: Imports): vo
     };
     const usedOutside = (component: string, name: string): boolean => {
         if ((uses.get(component) ?? []).some(use => !use.importer.startsWith(`${component}/`) && (use.names.includes(name) || use.names.includes('*')))) return true;
-        const parent = graph.componentOf(component);
-        if (parent === undefined) return false;
-        for (const [exposed, from] of partExports(parent)) if (from.part === component && from.name === name && usedOutside(parent, exposed)) return true;
+        // A parent component passing on its part, or a parent feature's layer passing on its sub-feature's.
+        for (const outer of passersOn(component)) {
+            for (const [exposed, from] of partExports(outer)) if (from.part === component && from.name === name && usedOutside(outer, exposed)) return true;
+            if (passesAllOn(outer, component) && usedOutside(outer, name)) return true;
+        }
         return false;
     };
+    const reExported = (outer: string): string[] => graph.moduleOf(`${outer}/index.ts`).program.body
+        .flatMap(statement => (statement.type === 'ExportNamedDeclaration' || statement.type === 'ExportAllDeclaration') && statement.source !== null
+            ? [normalize(join(outer, dirname(statement.source.value)))] : []);
+    const passersOn = (component: string): string[] => graph.components.filter(outer => outer !== component && reExported(outer).includes(component));
+    const passesAllOn = (outer: string, component: string): boolean => graph.moduleOf(`${outer}/index.ts`).program.body
+        .some(statement => statement.type === 'ExportAllDeclaration' && statement.exported === null && normalize(join(outer, dirname(statement.source.value))) === component);
+    // What an entry imports straight from its own layer's root is used: the entry is that layer's consumer.
+    const enteredFiles = new Set<string>();
+    for (const file of graph.tsPaths) {
+        if (!isEntry(file)) continue;
+        for (const { spec } of graph.importsOf(file)) {
+            const target = spec.startsWith('.') ? graph.resolve(file, spec) : undefined;
+            if (target !== undefined) enteredFiles.add(target);
+        }
+    }
     for (const component of graph.components) {
         const declared: { readonly name: string; readonly file: string }[] = [];
         for (const statement of graph.moduleOf(`${component}/index.ts`).program.body) {
@@ -36,9 +54,9 @@ export const checkExports = ({ graph, violate }: Context, { uses }: Imports): vo
         }
         for (const name of partExports(component).keys()) declared.push({ name, file: `${component}/index.ts` });
         for (const { name, file } of declared) {
-            if (name === 'systems' || usedOutside(component, name) || graph.textOf(file).includes(keepUnused)) continue;
+            if (usedOutside(component, name) || enteredFiles.has(file) || graph.textOf(file).includes(keepUnused)) continue;
             violate(file, 'unused-export', `\`${name}\` is exported by \`${component}\` but nothing outside the component imports it.`,
-                `Move its declaration into a private folder of the component, a folder without an index.ts such as ${component}/shared/, and drop it from index.ts. If it must stay public (a type for outside implementers), write "// ${keepUnused} <reason>" in its file.`);
+                `Make it private and drop it from index.ts: move it into the folder of the one declaration using it, named for that declaration (system.<name>/), or into ${component}/internal/ when several use it. If it must stay public (a type for outside implementers), write "// ${keepUnused} <reason>" in its file.`);
         }
     }
 };

@@ -11,19 +11,17 @@ positions for drawing each frame, and `static` only draws; `?count=` sets how ma
 ## Files
 
 ```
-index.html             the page: a canvas and the overlay
-app/main.ts            starts the world on a device, attaches the canvas as a surface, spawns its view and the
-                       particles, and runs a frame per animation frame
-features/particles/    the particles: their data, spawning and moves (model), and drawing them into every view (view)
-features/falling/      a smaller simulation, falling particles moved by kernels, which falling.test.ts checks
+index.html            the page: a canvas and the overlay; it loads features/main/view/entry.page.ts
+features/main/        the app: starts the world on a device, attaches the canvas as a surface, spawns its view and
+                      the particles, and runs a frame per animation frame
+features/particles/   the particles: their data, spawning and moves (model), and drawing them into every view (view)
+features/falling/     a smaller simulation, falling particles moved by kernels, which its test checks
 ```
-
-`ARCHITECTURE.md` draws the features and what uses what.
 
 ## Tests
 
-- `falling.test.ts`, in node: the falling particles' frames match the same simulation in plain JavaScript.
+- `features/falling/model/index.test.ts`, in node: the falling particles' frames match the same simulation in plain JavaScript.
 - `build.test.ts`: the page builds as an application, with the world's worker and each kernel's `create` in a chunk
   of its own.
-- `architecture.test.ts`: the source follows the architecture standard, and its diagrams and the repository's agent
-  rules are up to date.
+- `architecture.test.ts`: the source follows the architecture standard, and the repository's agent rules are up to
+  date.

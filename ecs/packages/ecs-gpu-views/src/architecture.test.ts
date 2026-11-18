@@ -14,7 +14,6 @@ it("follows the architecture standard", () => {
     expect(run("check")).toMatch(/^architecture ok/);
 });
 
-it("has its diagrams and the repository's agent rules up to date", () => {
-    expect(run("diagrams", "--check")).toBe("diagrams ok\n");
+it("has the repository's agent rules up to date", () => {
     expect(run("agents", "--check")).toBe("agent rules ok\n");
 });

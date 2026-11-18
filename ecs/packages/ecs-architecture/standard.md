@@ -7,7 +7,8 @@ How an application on `@adobe/ecs` organizes its source. `ecs-architecture check
 
 ```
 src/                the root feature: the foundation every feature builds on, if any
-  index.ts          the package's public API, re-exported; importing it has no side effects
+  index.ts          the package's public API, re-exported; importing it has no side effects; an app with none
+                    has `export {};` or no index.ts
   <layer>/          the root's own layers, if the app has a foundation
   features/
     main/           the feature that puts the others together: its entries start the app
@@ -68,7 +69,13 @@ declarations; what a test also needs, such as a function starting the app within
 **An application's start is a feature, `features/main`,** like any other: its entries create the world and start the other
 features' plugins, in the layers they need, `features/main/view/entry.page.ts` for a page and, say,
 `features/main/ports/entry.loader-worker.ts` for a worker. A layer holding only entries and private code has an index
-of `export {};`. Nothing imports `main`: as it depends on every feature, a feature importing it closes a cycle. (check)
+of `export {};`. Everything that starts a program is in `main`: a page, a worker, a node script, and each of several
+apps one page offers, such as samples a viewer switches between, as a sub-feature of `main`.
+
+**`main` composes, so it may import any layer** of any feature, its own sub-features' too: a page starts views and
+ports both, which no other layer may import together. The modules a layer may not import, such as `@adobe/ecs-gpu` in a
+`model`, stay banned in `main`'s layers. Nothing outside `main` imports it: as it depends on every feature, a feature
+importing it closes a cycle. (check)
 
 **Test features** are features in a feature's `test/`: helpers its tests share, such as a world holding some todos or
 a promise of the next tick, or a fixture that is an idea of its own, one declaration per file like any other. Like any
@@ -86,7 +93,8 @@ feature, and of its sub-features, import them, and they add no systems to an app
 - **A root file's export is its first declaration and its only export.** After the imports come its doc comment and the
   one `export`, typed as its interface (`export const clearCompleted: System = System.create(...)`); what it needs comes
   beneath it. Only what the export's statement needs as the module loads, such as an `Index` its declaration names, may
-  sit above it. (check)
+  sit above it, with what fills it, such as a loop pushing into an array the export reads. A function declared beneath
+  and called as the module loads reads what is declared above it only, so what such a call needs sits above too. (check)
 - **A system is typed `System`**, with type arguments only for its input and result: `System<{ readonly amount: number }, Entity>`,
   `void` for no input. (check)
 - **Anything else is private, and lives with what uses it.** What only one declaration uses is its part: by default an
@@ -103,7 +111,10 @@ feature, and of its sub-features, import them, and they add no systems to an app
   and its folder is its implementation, each part a file named as at the root. (check)
 - **`internal/` holds only what several of a component's public declarations use,** directly, through their parts or
   through other files of `internal/`; what only one uses is its part, and a file there only one uses is a violation.
-  A large `internal/` usually means the layer is several features: split it, so each holds what it uses. (check)
+  An entry is a user like a declaration: what several entries of a layer share is in `internal/` too. A large
+  `internal/` usually means the layer is several features: split it, so each holds what it uses. (check)
+- **A component's folders are its parts, its `internal/`, or part components** (with an `index.ts` of their own); a
+  folder of any other name, such as `shared/` or `systems/`, is a violation. (check)
 - **Every file of a component that exports is a declaration file,** in a private folder as at its root: named
   `<kind>.<name>.ts`, exporting `name` alone, first. A function and the types it takes are files of their own:
   `function.parse-todo.ts` beside `type.parsed-todo.ts`. A private file exporting nothing may be named for what it
@@ -121,11 +132,13 @@ feature, and of its sub-features, import them, and they add no systems to an app
   parent passes on. Components import each other only through `index.ts`: never a deep path, never into a private
   folder, and a part never imports its parent. (check)
 - **A public export nothing outside its component uses is a violation:** move it to a private folder, unless its file
-  says `// component-check: unused-export-ok <reason>`. What `src/index.ts` re-exports, the package's public API, and
+  says `// component-check: unused-export-ok <reason>`, which also keeps a public system nothing runs yet, such as one
+  for a feature still to come. What `src/index.ts` re-exports, the package's public API, and
   what an entry imports are used; what only tests import isn't, so tests never widen an interface. (check)
 - **A test reaching past a component's interface imports the file by its path,** private ones included, which only tests
-  may do: `import { bindRows } from "../../todos/view/plugin.todos-view/system.bind-rows.js"`. Test features are the exception,
-  used through their index, as only tests use them. (check)
+  may do: `import { bindRows } from "../../todos/view/plugin.todos-view/system.bind-rows.js"`. A test feature, test code
+  too, may do the same, and neither's imports make a file of `internal/` shared. Test features are themselves used
+  through their index. (check)
 - **Each layer has a `README.md`:** `# <name>`, a concise summary paragraph, then only as much as understanding it
   needs. (check)
 
@@ -133,8 +146,12 @@ feature, and of its sub-features, import them, and they add no systems to an app
 
 - **A layer whose systems an app adds together, or that connects to the outside, exports one plugin,**
   `plugin.<feature>-<layer>.ts` exporting `<feature><Layer>`: `Plugin` from `@adobe/ecs`, its `systems` and an optional
-  `connect` to what's outside the world. Its `systems` lists the layer's systems: those only it reaches are its parts,
-  in `plugin.<feature>-<layer>/`, and those others run or order against are public at the root. (check)
+  `connect` to what's outside the world. Its `systems` lists the layer's own systems, those only it reaches its parts
+  in `plugin.<feature>-<layer>/` and those others run or order against public at the root, and spreads its
+  sub-features' plugins of the same layer; never another feature's or another layer's, so a ports plugin often only
+  connects, and whoever starts it starts its model's plugin beside it. As every plugin meets
+  the others in `main`, no two share a name: features of one name in different places are renamed for what sets them
+  apart. (check)
 - **A layer offering systems for the app to choose among,** alternatives such as a CPU and a GPU move, or frames an
   app runs itself, exports them as public systems and has no plugin; the app's entry composes the ones it picks. A
   layer of helpers alone, such as the root's `view` of DOM helpers, has neither.
@@ -143,8 +160,8 @@ feature, and of its sub-features, import them, and they add no systems to an app
   `plugin.app-<layer>.ts`.
 - **`main` starts the plugins** with `Plugin.start(world, plugins, config)`, which composes their systems into one, the
   config left out when no plugin asks for anything. An app splitting its world over threads may instead add a
-  plugin's `systems` on the thread that runs them. A view's plugin lists only its own systems; `main` starts the
-  models' plugins beside the views'.
+  plugin's `systems` on the thread that runs them. `main` starts the models' plugins beside the views' and the
+  ports'.
 - **A system nothing in the source reaches is a violation:** each is in a plugin's `systems`, a composite, or passed
   to `world.run` or `world.add`, and a test doing so doesn't count. A layer's root holds only the systems others add to
   a world, run by name or order against; the rest are the parts of their plugin or composite. (check)

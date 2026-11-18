@@ -49,6 +49,10 @@ export const configOf = (value: unknown): Config | string => {
                 config.banned = banned;
                 break;
             }
+            case 'apps':
+                return '"ecsArchitecture.apps" isn\'t a setting since 0.5: what an app\'s folder held starts the app in features/main, in its entries (README.md, "Upgrading to 0.5").';
+            case 'systems':
+                return '"ecsArchitecture.systems" isn\'t a setting since 0.5: a layer\'s systems are its plugin\'s, plugin.<feature>-<layer>.ts (README.md, "Upgrading to 0.5").';
             default:
                 return `"ecsArchitecture.${key}" isn't a setting: source, layers, kinds, maxLines, headless, banned or agents.`;
         }

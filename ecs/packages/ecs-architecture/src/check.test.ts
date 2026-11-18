@@ -577,16 +577,16 @@ describe('what the first version of the check let through', () => {
         expect(await rules(tick(': System<undefined>'))).toContain('system-typed');
     });
 
-    it('finds a system nobody runs in a private systems folder', async () => {
+    it('finds a system nobody runs in a parts folder', async () => {
         const dead = {
             ...valid(),
-            'features/thing/model/systems/system.dead.ts': "import { System } from '@adobe/ecs';\n\n/** Dead. */\nexport const dead: System = System.create({}, () => {});\n",
+            'features/thing/model/system.all/system.dead.ts': "import { System } from '@adobe/ecs';\n\n/** Dead. */\nexport const dead: System = System.create({}, () => {});\n",
         };
         expect(await rules(dead)).toContain('unlisted-system');
         const listed = {
             ...dead,
             'features/thing/model/index.ts': valid()['features/thing/model/index.ts'] + "export * from './system.all.js';\n",
-            'features/thing/model/system.all.ts': "import { System } from '@adobe/ecs';\nimport { dead } from './systems/system.dead.js';\n\n/** All. */\nexport const all: System = System.create([dead]);\n",
+            'features/thing/model/system.all.ts': "import { System } from '@adobe/ecs';\nimport { dead } from './system.all/system.dead.js';\n\n/** All. */\nexport const all: System = System.create([dead]);\n",
             ...start("import { all } from './features/thing/model/index.js';\nworld.run(all);\n"),
         };
         expect(await rules(listed)).toEqual([]);
@@ -838,5 +838,110 @@ describe('what the sixth review found', () => {
             ...start("import { System as RuntimeSystem } from '@adobe/ecs';\nimport { tick } from './features/thing/model/index.js';\nvoid RuntimeSystem.create([tick]);\n"),
         };
         expect(await rules(files)).toEqual([]);
+    });
+});
+
+describe('main, plugins and private folders', () => {
+    const layer = (path: string, file: string, source: string): Files => ({
+        [`${path}/README.md`]: readme(path.split('/').pop() ?? ''),
+        [`${path}/index.ts`]: `export * from './${file.replace(/\.ts$/, '.js')}';\n`,
+        [`${path}/${file}`]: source,
+    });
+    const port = layer('features/thing/ports', 'function.connect-thing.ts', "import { thing } from '../model/index.js';\n\n/** Connects a thing. */\nexport const connectThing = (): symbol => thing;\n");
+
+    it('lets main and its sub-features import any layer, their own sub-features too, and nothing outside main import it', async () => {
+        const page = "import { showThing } from '../../thing/view/index.js';\nimport { connectThing } from '../../thing/ports/index.js';\nimport { demo } from '../features/demo/view/index.js';\n\ndocument.body.append(String([showThing(), connectThing(), demo]));\n";
+        const demo = layer('features/main/features/demo/view', 'constant.demo.ts', "import { connectThing } from '../../../../thing/ports/index.js';\n\n/** A demo. */\nexport const demo = connectThing();\n");
+        const files: Files = { ...valid(), ...port, ...demo, 'features/main/view/entry.page.ts': page };
+        expect(await rules(files)).toEqual([]);
+        const outside: Files = { ...files, 'features/thing/view/function.show-thing.ts': "import { demo } from '../../main/features/demo/view/index.js';\n\n/** Shows a thing. */\nexport const showThing = (): unknown => demo;\n" };
+        expect(await rules(outside)).toContain('imports-main');
+        const viewImportsPort: Files = { ...valid(), ...port, 'features/thing/view/function.show-thing.ts': "import { connectThing } from '../ports/index.js';\n\n/** Shows a thing. */\nexport const showThing = (): unknown => connectThing();\n" };
+        expect(await rules(viewImportsPort)).toContain('layer-rank');
+    });
+
+    it('rejects two plugins of one name, as features of one name in different places have', async () => {
+        const plugin = (path: string, exported: string): Files => layer(path, `plugin.${path.split('/').slice(-2).join('-')}.ts`, `/** The plugin. */\nexport const ${exported} = { systems: [] };\n// component-check: unused-export-ok test\n`);
+        expect(await rules({ ...valid(), ...plugin('features/thing/features/filter/model', 'filterModel'), ...plugin('features/other/features/filter/model', 'filterModel'), ...layer('features/other/model', 'constant.other.ts', '/** Other. */\nexport const other = 1;\n// component-check: unused-export-ok test\n') })).toEqual(['plugin-name-clash']);
+    });
+
+    it('lets a system public for a caller still to come say so', async () => {
+        const system = (marked: boolean): Files => ({
+            ...valid(),
+            'features/thing/model/index.ts': valid()['features/thing/model/index.ts'] + "export * from './system.build.js';\n",
+            'features/thing/model/system.build.ts': `import { System } from '@adobe/ecs';\n\n/** Builds. */\nexport const build: System = System.create({}, () => {});\n${marked ? '// component-check: unused-export-ok the play feature will run it\n' : ''}`,
+        });
+        expect(await rules(system(false))).toEqual(['unlisted-system', 'unused-export']);
+        expect(await rules(system(true))).toEqual([]);
+    });
+
+    it('allows a statement above the export that fills what the export reads as it loads', async () => {
+        const filled = "/** The cells. */\nconst cells: number[] = [];\nfor (let i = 0; i < 3; i++) cells.push(i);\n\n/** How many. */\nexport const showThing = (): unknown => cells.length;\nexport const count = cells.length;\n";
+        expect(await rules({ ...valid(), 'features/thing/view/function.show-thing.ts': filled.replace('export const count = cells.length;\n', '') })).not.toContain('export-first');
+        const unrelated = "const other: number[] = [];\nfor (let i = 0; i < 3; i++) other.push(i);\n\n/** Shows a thing. */\nexport const showThing = (): unknown => 1;\n";
+        expect(await rules({ ...valid(), 'features/thing/view/function.show-thing.ts': unrelated })).toContain('export-first');
+    });
+
+    it('lets a test feature reach a private file by its path, which makes no file of internal/ shared', async () => {
+        const files: Files = {
+            ...valid(),
+            'features/thing/view/function.show-thing/constant.size.ts': '/** Its size. */\nexport const size = 1;\n',
+            'features/thing/view/function.show-thing.ts': "import { size } from './function.show-thing/constant.size.js';\n" + valid()['features/thing/view/function.show-thing.ts'].replace('thingCard()]', 'thingCard(), size]'),
+            ...layer('features/thing/test/sizes/view', 'function.size-of.ts', "import { size } from '../../../view/function.show-thing/constant.size.js';\n\n/** The size. */\nexport const sizeOf = (): number => size;\n"),
+            'features/thing/view/function.show-thing.test.ts': "import { sizeOf } from '../test/sizes/view/index.js';\nvoid sizeOf;\n",
+        };
+        expect(await rules(files)).toEqual([]);
+        // Its own internal/ is held to the rule as any component's.
+        const own: Files = {
+            ...files,
+            'features/thing/test/sizes/view/internal/constant.unit.ts': '/** A unit. */\nexport const unit = 1;\n',
+            'features/thing/test/sizes/view/function.size-of.ts': "import { size } from '../../../view/function.show-thing/constant.size.js';\nimport { unit } from './internal/constant.unit.js';\n\n/** The size. */\nexport const sizeOf = (): number => size * unit;\n",
+        };
+        expect(await rules(own)).toEqual(['internal-single-use']);
+    });
+
+    it('holds a folder inside a component to internal/, a part component, or the parts of a declaration beside it', async () => {
+        const moved = (folder: string): Files => ({
+            ...valid(),
+            [`features/thing/view/${folder}/constant.size.ts`]: '/** Its size. */\nexport const size = 1;\n',
+            'features/thing/view/function.show-thing.ts': `import { size } from './${folder}/constant.size.js';\n` + valid()['features/thing/view/function.show-thing.ts'].replace('thingCard()]', 'thingCard(), size]'),
+        });
+        expect(await rules(moved('function.show-thing'))).toEqual([]);
+        expect(await rules(moved('shared'))).toEqual(['private-folder']);
+    });
+
+    it('lets a plugin list its own layer\'s systems and spread its sub-features\' plugins of the same layer, and nothing else', async () => {
+        const system = (path: string, name: string): Files => ({ [`${path}/system.${name}.ts`]: `import { System } from '@adobe/ecs';\n\n/** ${name}. */\nexport const ${name}: System = System.create({}, () => {});\n` });
+        const plugin = (path: string, name: string, imports: string, systems: string): Files => ({ [`${path}/plugin.${name}.ts`]: `${imports}\n/** The plugin. */\nexport const ${name.replace(/-(.)/g, (_, c: string) => c.toUpperCase())} = { systems: [${systems}] };\n` });
+        const files = (thingSystems: string, imports: string): Files => ({
+            ...valid(),
+            ...system('features/thing/model/plugin.thing-model', 'grow'),
+            ...system('features/thing/features/part/model', 'split'),
+            ...plugin('features/thing/features/part/model', 'part-model', "import { split } from './system.split.js';\n", 'split'),
+            'features/thing/features/part/model/README.md': readme('model'),
+            'features/thing/features/part/model/index.ts': "export * from './plugin.part-model.js';\nexport * from './system.split.js';\n",
+            ...system('features/other/model', 'shrink'),
+            'features/other/model/README.md': readme('model'),
+            'features/other/model/index.ts': "export * from './system.shrink.js';\n",
+            ...plugin('features/thing/model', 'thing-model', `import { grow } from './plugin.thing-model/system.grow.js';\n${imports}`, thingSystems),
+            'features/thing/model/index.ts': valid()['features/thing/model/index.ts'] + "export * from './plugin.thing-model.js';\n",
+            ...start("import { thingModel } from './features/thing/model/index.js';\nimport { shrink } from './features/other/model/index.js';\nimport { split } from './features/thing/features/part/model/index.js';\nworld.add(thingModel);\nworld.run(shrink);\nworld.run(split);\n"),
+        });
+        expect(await rules(files('grow, ...partModel.systems', "import { partModel } from '../features/part/model/index.js';\n"))).toEqual([]);
+        expect(await rules(files('grow, shrink', "import { shrink } from '../../other/model/index.js';\n"))).toContain('plugin-foreign-systems');
+        expect(await rules(files('grow, split', "import { split } from '../features/part/model/index.js';\n"))).toContain('plugin-foreign-systems');
+    });
+
+    it('rejects a call as the module loads to a function that reads what is declared beneath the call', async () => {
+        const shown = (source: string): Files => ({ ...valid(), 'features/thing/view/function.show-thing.ts': source });
+        const late = "import { thing } from '../model/index.js';\n\n/** Shows a thing. */\nexport const showThing = (): unknown => [thing, cells];\n\nconst cells = cellsOf();\nconst size = 4;\n\nfunction cellsOf(): number[] {\n    return Array.from({ length: size }, (_, i) => i);\n}\n";
+        expect(await rules(shown(late))).toEqual(['used-before-declared']);
+        expect(await rules(shown(late.replace('const cells = cellsOf();\nconst size = 4;\n', 'const size = 4;\nconst cells = cellsOf();\n')))).toEqual([]);
+        const deferred = "import { thing } from '../model/index.js';\n\n/** Shows a thing. */\nexport const showThing = (): unknown => [thing, cellsOf()];\n\nconst size = 4;\n\nfunction cellsOf(): number[] {\n    return Array.from({ length: size }, (_, i) => i);\n}\n";
+        expect(await rules(shown(deferred))).toEqual([]);
+    });
+
+    it('lets an app with no public API say so in src/index.ts', async () => {
+        expect(await rules({ ...valid(), 'index.ts': 'export {};\n' })).toEqual([]);
     });
 });

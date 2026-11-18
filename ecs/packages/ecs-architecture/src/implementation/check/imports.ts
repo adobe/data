@@ -1,6 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { basename, dirname, relative } from '../path.js';
-import { isTest, isTestFeature, isWithin, testFeatureOwner } from '../graph.js';
+import { isInMain, isTest, isTestFeature, isWithin, mainFeature, testFeatureOwner } from '../graph.js';
 import { isLocal, namesOnly, topLevelNames, walk, type Module, type Node } from '../syntax.js';
 import { relativeSpec, type Context } from './context.js';
 
@@ -100,28 +100,35 @@ export const checkImports = ({ graph, settings, violate }: Context): Imports => 
                     'A part never imports its parent. Move what both need into a component of its own beside the part, and import that.');
                 continue;
             }
+            // A test feature reaches past an interface as a test does: by the file's path.
+            const reachesLikeATest = isTestFeature(file);
             if (target === `${to}/index.ts`) addUse(to, file, names);
-            else {
+            else if (!reachesLikeATest) {
                 const inside = relative(to, target);
                 violate(file, 'deep-import', `imports ${spec}, inside component \`${to}\`${inside.startsWith('internal/') ? ', in its private internal/' : ''}.`,
                     `Import from the component's index.ts (${relativeSpec(relative(dirname(file), `${to}/index.js`))}). If the name isn't exported there, either it should be public, declared in the component's root and its index.ts, or this file uses something it shouldn't.`);
             }
             const outer = graph.topOf(to);
-            if (to !== outer && !(from !== undefined && (from === outer || from.startsWith(`${outer}/`)))) {
+            if (to !== outer && !reachesLikeATest && !(from !== undefined && (from === outer || from.startsWith(`${outer}/`)))) {
                 violate(file, 'nested-import', `imports \`${to}\`, a part inside \`${outer}\`.`,
                     `Import \`${outer}\`'s index.ts. If it doesn't export what you need, re-export it there by name: export { name } from './<part>/index.js'.`);
             }
             if (from === undefined) continue;
             const fromFeature = graph.featureOf(from);
             const toFeature = graph.featureOf(to);
-            if (fromFeature !== toFeature && isWithin(toFeature, fromFeature) && owner === undefined && !(basename(file).startsWith('plugin.') && dirname(file) === from)) {
+            const composing = isInMain(fromFeature);
+            if (isInMain(toFeature) && !composing) {
+                violate(file, 'imports-main', `imports \`${to}\`, in \`${mainFeature}\`, which starts the app.`,
+                    `Nothing outside ${mainFeature} imports it: it depends on every feature, so importing it closes a cycle. Move what this file needs out of main into the lowest feature both build on.`);
+            }
+            if (fromFeature !== toFeature && isWithin(toFeature, fromFeature) && owner === undefined && !composing && !(basename(file).startsWith('plugin.') && dirname(file) === from)) {
                 violate(file, 'parent-imports-sub-feature', `imports \`${to}\`, a layer of \`${toFeature}\`, a sub-feature of this file's feature${fromFeature === '.' ? ', the source root' : ` \`${fromFeature}\``}.`,
                     'A parent uses its sub-features only to aggregate them, in its plugin (plugin.<feature>-<layer>.ts) or its index.ts. Move the logic into the sub-feature, or into the parent\'s layers for the sub-feature to import.');
             }
             const fromLayer = graph.layerOf(from);
             const toLayer = graph.layerOf(to);
             const allowed = fromLayer === undefined ? undefined : settings.layers[fromLayer];
-            if (fromLayer !== undefined && toLayer !== undefined && allowed !== undefined && !allowed.includes(toLayer)) {
+            if (fromLayer !== undefined && toLayer !== undefined && allowed !== undefined && !allowed.includes(toLayer) && !composing) {
                 violate(file, 'layer-rank', `${fromLayer} code imports ${toLayer} (\`${to}\`).`,
                     `A ${fromLayer} may import only ${allowed.join(', ')}. ${settings.headless.includes(fromLayer)
                         ? 'Reverse the dependency: the view or port calls the model, never the other way; if a model system must be ordered against a view system, put the before or after on the view system.'

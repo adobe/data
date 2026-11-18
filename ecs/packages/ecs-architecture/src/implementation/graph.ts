@@ -33,6 +33,12 @@ export const isTestFeature = (path: string): boolean => testFeatureOwner(path) !
 /** Whether `feature` is `ancestor` or a feature inside it, `.` being the source root. */
 export const isWithin = (feature: string, ancestor: string): boolean => ancestor === '.' || feature === ancestor || feature.startsWith(`${ancestor}/`);
 
+/** The feature that starts the app, which composes every other: it may import any layer, and nothing outside it imports it. */
+export const mainFeature = 'features/main';
+
+/** Whether a feature is `main` or one of its sub-features. */
+export const isInMain = (feature: string): boolean => feature !== '.' && isWithin(feature, mainFeature);
+
 export const settingsOf = (config: Config = {}): Settings => ({ ...defaults, ...config });
 
 /**

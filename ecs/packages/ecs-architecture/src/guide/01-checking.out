@@ -5,6 +5,6 @@ deep import: 2 violation(s)
 model reads the page: 1 violation(s)
   [model-is-headless] features/todos/model/system.add-todo.ts: The model runs headless: no DOM, network, timers or global object
 nothing runs a system: 1 violation(s)
-  [unlisted-system] features/todos/model/system.add-todo.ts: List addTodo in its layer's plugin's systems if the world runs it each tick; for a one-off, call world.run(addTodo) where it's needed.
+  [unlisted-system] features/todos/model/system.add-todo.ts: List addTodo in its layer's plugin's systems if the world runs it each tick; for a one-off, call world.run(addTodo) where it's needed
 an export nobody uses: 1 violation(s)
   [unused-export] features/todos/model/constant.limit.ts: Make it private and drop it from index.ts: move it into the folder of the one declaration using it, named for that declaration (system.<name>/), or into features/todos/model/internal/ when several use it

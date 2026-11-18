@@ -50,3 +50,25 @@ holds the standard's:
 `kinds` sets what a public declaration's file may be named by, after any modifiers of the app's own; `headless` the
 layers that run headless, and `banned` the modules a layer may not import. `agents` is the folder the agent rules go in, for an app in
 a repository copied into another.
+
+## Upgrading to 0.5
+
+0.5 nests features and replaces systems lists with plugins. For an app that followed 0.4:
+
+1. **Features move into `src/features/`.** Relative imports between them don't change. A folder that only grouped
+   features gets a layer of its own that passes on its sub-features' (its plugin, its index), or its sub-features move
+   up; a feature that builds on another nests in its `features/`.
+2. **What `"ecsArchitecture.apps"` named starts the app in `features/main`:** a page in an entry,
+   `features/main/view/entry.page.ts`, which the page's `<script type="module" src>` loads; a node script or worker in
+   an entry of its own; each of several apps a page switches between as a sub-feature of `main`. Remove `apps` from
+   `package.json`.
+3. **Each `constant.systems.ts` becomes the layer's plugin,** `plugin.<feature>-<layer>.ts` exporting
+   `<feature><Layer>: Plugin = { systems: [...] }`, merged with any plugin the layer had. A plugin lists only its own
+   layer's systems: a ports plugin that listed its model's starts beside the model's. A layer with no systems and no
+   `connect` has no plugin. Remove `systems` from `package.json`.
+4. **Private folders are `internal/`, or the parts of one declaration** in the folder named for it: move each file of
+   `shared/` and `systems/` into `internal/`, then each file `check` reports as `internal-single-use` into the folder
+   of the declaration it names.
+5. **What tests share is a test feature,** in the `test/` of the lowest feature whose tests share it.
+6. **Diagrams are gone:** delete each `ARCHITECTURE.md`, the `<!-- architecture:start -->` blocks of READMEs and any
+   `ecs-architecture diagrams` script, then run `ecs-architecture agents` again.

@@ -5,6 +5,10 @@ import { declarationOf, declaredBy, exportedVariables, firstLine, isExport, isRe
 import { camel, type Context } from './context.js';
 
 
+/** `export {}`: what the index of a layer holding only entries and private code says, and of an app with no public API. */
+const isEmptyExport = (statement: Node): boolean =>
+    statement.type === 'ExportNamedDeclaration' && statement.source === null && statement.declaration === null && statement.specifiers.length === 0;
+
 /** The files the source root may hold beside its folders. */
 const isRootFile = (path: string): boolean => path === 'index.ts' || path.endsWith('.md') || path.endsWith('.d.ts') || isTest(path);
 
@@ -18,7 +22,8 @@ export const checkRoot = ({ graph, violate }: Context): void => {
     if (!graph.files.has('index.ts')) return;
     const module = graph.moduleOf('index.ts');
     for (const statement of module.program.body) {
-        if (isReExport(statement)) continue;
+        // `export {}`: an app with no public API.
+        if (isReExport(statement) || isEmptyExport(statement)) continue;
         violate('index.ts', 'index-is-only-re-exports', `index.ts has a statement that isn't a re-export: ${firstLine(module, statement)}`,
             'The source root\'s index.ts re-exports the package\'s public API and nothing else; code that runs as the app starts belongs in an entry, entry.<name>.ts, in the layer it starts.');
     }
@@ -77,10 +82,6 @@ export const checkFolders = ({ graph, violate }: Context): void => {
     }
 };
 
-/** `export {}`: what the index of a layer holding only entries and private code says. */
-const isEmptyExport = (statement: Node): boolean =>
-    statement.type === 'ExportNamedDeclaration' && statement.source === null && statement.declaration === null && statement.specifiers.length === 0;
-
 /** Each component's README, index and root files. */
 export const checkComponents = ({ graph, settings, violate }: Context): void => {
     // A layer's index may pass on a sub-feature's layer: a parent aggregates its sub-features.
@@ -130,6 +131,19 @@ export const checkComponents = ({ graph, settings, violate }: Context): void => 
             violate(indexPath, 'index-exports-root-files', `index.ts re-exports './${name}.js', which isn't a declaration file in the component's root.`,
                 'Re-export only root files (export * from), or a part by name: export { name } from \'./part/index.js\';');
         }
+    }
+};
+
+/**
+ * A folder inside a component is a part component (it has an index.ts), `internal/`, or the parts of the declaration
+ * beside it, named for it: `system.draw-frame/` beside `system.draw-frame.ts`.
+ */
+export const checkPrivateFolders = ({ graph, violate }: Context): void => {
+    for (const dir of [...graph.dirs].sort()) {
+        const component = graph.componentOf(`${dir}/x`);
+        if (component === undefined || component === dir || basename(dir) === 'internal' || graph.files.has(`${dir}.ts`)) continue;
+        violate(`${dir}/`, 'private-folder', `\`${basename(dir)}/\` in \`${component}\` is neither internal/ nor named for a declaration beside it.`,
+            'Move each file into the folder of the one declaration using it, named for it (system.<name>/ beside system.<name>.ts), or into internal/ when several declarations use it.');
     }
 };
 
@@ -198,10 +212,28 @@ const checkDeclarationFile = ({ graph, settings, violate }: Context, file: strin
     const use = (statement: Node): void => walk(module, node => { if (node.type === 'Identifier') used.add(node.name); }, statement);
     use(exportStatement);
     const above = statements.slice(0, at);
-    for (const statement of [...above].reverse()) if (declaredBy(declarationOf(statement)).some(each => used.has(each))) use(statement);
+    // Needed: a declaration of a name the export uses, or a statement declaring nothing that reads or changes one
+    // (a loop filling an array the export reads), and, in turn, what those use.
+    const needed = new Set<(typeof above)[number]>();
+    const needs = (statement: (typeof above)[number]): boolean => {
+        const declared = declaredBy(declarationOf(statement));
+        if (declared.length > 0) return declared.some(each => used.has(each));
+        let reads = false;
+        walk(module, node => { if (node.type === 'Identifier' && used.has(node.name)) reads = true; }, statement);
+        return reads;
+    };
+    for (let grew = true; grew;) {
+        grew = false;
+        for (const statement of above) {
+            if (needed.has(statement) || !needs(statement)) continue;
+            needed.add(statement);
+            use(statement);
+            grew = true;
+        }
+    }
     for (const statement of above) {
         const declared = declaredBy(declarationOf(statement));
-        if (declared.some(each => used.has(each))) continue;
+        if (needed.has(statement)) continue;
         const what = declared[0] === undefined ? 'a statement' : `\`${declared[0]}\``;
         violate(file, 'export-first', `\`${base}.ts\` has ${what} above its export, which the export doesn't use.`,
             `Put \`export const ${exported}\`, with its doc comment, first after the imports, and private constants, types and functions beneath it, so a reader sees the whole public interface at the top. Only what the export's own statement needs as the module loads, such as an \`Index\` its declaration names, may sit above it.`);

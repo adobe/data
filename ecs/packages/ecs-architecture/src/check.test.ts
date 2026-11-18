@@ -932,13 +932,15 @@ describe('main, plugins and private folders', () => {
         expect(await rules(files('grow, split', "import { split } from '../features/part/model/index.js';\n"))).toContain('plugin-foreign-systems');
     });
 
-    it('rejects a call as the module loads to a function that reads what is declared beneath the call', async () => {
+    it('rejects a call as the module loads to a function that reads a const, let or class declared beneath the call, and allows what is hoisted', async () => {
         const shown = (source: string): Files => ({ ...valid(), 'features/thing/view/function.show-thing.ts': source });
         const late = "import { thing } from '../model/index.js';\n\n/** Shows a thing. */\nexport const showThing = (): unknown => [thing, cells];\n\nconst cells = cellsOf();\nconst size = 4;\n\nfunction cellsOf(): number[] {\n    return Array.from({ length: size }, (_, i) => i);\n}\n";
         expect(await rules(shown(late))).toEqual(['used-before-declared']);
         expect(await rules(shown(late.replace('const cells = cellsOf();\nconst size = 4;\n', 'const size = 4;\nconst cells = cellsOf();\n')))).toEqual([]);
         const deferred = "import { thing } from '../model/index.js';\n\n/** Shows a thing. */\nexport const showThing = (): unknown => [thing, cellsOf()];\n\nconst size = 4;\n\nfunction cellsOf(): number[] {\n    return Array.from({ length: size }, (_, i) => i);\n}\n";
         expect(await rules(shown(deferred))).toEqual([]);
+        const hoisted = "import { thing } from '../model/index.js';\n\n/** Shows a thing. */\nexport const showThing = (): unknown => [thing, cells];\n\nconst cells = cellsOf();\nvar size = 4;\n\nfunction cellsOf(): number[] {\n    return Array.from({ length: sizeOf() + size }, (_, i) => i);\n}\n\nfunction sizeOf(): number {\n    return 4;\n}\n";
+        expect(await rules(shown(hoisted))).toEqual([]);
     });
 
     it('lets an app with no public API say so in src/index.ts', async () => {

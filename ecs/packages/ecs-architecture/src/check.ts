@@ -4,8 +4,8 @@ import type { Config } from './config.js';
 import { createContext } from './implementation/check/context.js';
 import { checkExports } from './implementation/check/exports.js';
 import { checkImports } from './implementation/check/imports.js';
-import { checkComponents, checkFiles, checkFolders, checkRoot, checkTests } from './implementation/check/layout.js';
-import { checkDerivations, checkInternal, checkLength, checkParts, checkPlugins, checkSideEffects, checkSystems, checkTestFiles } from './implementation/check/systems.js';
+import { checkComponents, checkFiles, checkFolders, checkPrivateFolders, checkRoot, checkTests } from './implementation/check/layout.js';
+import { checkDerivations, checkInternal, checkLength, checkLoadOrder, checkParts, checkPlugins, checkPluginSystems, checkSideEffects, checkSystems, checkTestFiles } from './implementation/check/systems.js';
 import { analyze, settingsOf } from './implementation/graph.js';
 import type { Violation } from './violation.js';
 
@@ -20,11 +20,14 @@ export const check = async (files: Readonly<Record<string, string>>, config?: Co
     checkFolders(context);
     checkComponents(context);
     checkFiles(context);
+    checkPrivateFolders(context);
     checkTests(context);
     const imports = checkImports(context);
     checkSystems(context);
     checkDerivations(context);
     checkPlugins(context);
+    checkPluginSystems(context);
+    checkLoadOrder(context);
     checkSideEffects(context);
     checkInternal(context);
     checkParts(context);

@@ -1,9 +1,10 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { basename, dirname, relative } from '../path.js';
 import type { ESTree } from 'vite';
-import { isEntry, isTest, isTestFeature, type Graph } from '../graph.js';
-import { exportedVariables, isLocal, nameOf, textOf, topLevelNames, walk, type Module, type Node } from '../syntax.js';
+import { isEntry, isTest, isTestFeature, isWithin, type Graph } from '../graph.js';
+import { declarationOf, declaredBy, exportedVariables, isLocal, nameOf, namesOnly, textOf, topLevelNames, walk, type Module, type Node } from '../syntax.js';
 import { camel, relativeSpec, type Context } from './context.js';
+import { keepUnused } from './exports.js';
 import type { Imports } from './imports.js';
 
 
@@ -125,9 +126,9 @@ export const checkSystems = ({ graph, violate }: Context): void => {
         // A test feature's systems are run by the tests using it.
         if (component === undefined || isTestFeature(component) || !/^system\.[a-z0-9-]+\.ts$/.test(basename(file))) continue;
         const name = graph.exportsOf(file)[0];
-        if (name === undefined || reached.has(`${file}#${name}`)) continue;
+        if (name === undefined || reached.has(`${file}#${name}`) || graph.textOf(file).includes(keepUnused)) continue;
         violate(file, 'unlisted-system', `system \`${name}\` isn't in a plugin's \`systems\`, a composite, or passed to run or add, so nothing runs it.`,
-            `List ${name} in its layer's plugin's systems if the world runs it each tick; for a one-off, call world.run(${name}) where it's needed.`);
+            `List ${name} in its layer's plugin's systems if the world runs it each tick; for a one-off, call world.run(${name}) where it's needed. If it's public for a caller still to come, write "// ${keepUnused} <reason>" in its file.`);
     }
 };
 
@@ -177,8 +178,9 @@ export const checkSideEffects = ({ graph, violate }: Context): void => {
     }
 };
 
-/** A layer has at most one plugin, `plugin.<feature>-<layer>.ts`, which lists the layer's systems. */
+/** A layer has at most one plugin, `plugin.<feature>-<layer>.ts`, which lists the layer's systems; no two plugins share a name. */
 export const checkPlugins = ({ graph, violate }: Context): void => {
+    const named = new Map<string, string>();
     for (const component of graph.components) {
         if (graph.componentOf(component) !== undefined) continue;
         const plugins = graph.rootFiles(component).filter(file => /^plugin\./.test(basename(file)));
@@ -186,6 +188,13 @@ export const checkPlugins = ({ graph, violate }: Context): void => {
         const feature = graph.featureOf(component);
         const name = `${feature === '.' ? 'app' : basename(feature)}-${basename(component)}`;
         for (const file of plugins) {
+            if (isTestFeature(file)) continue;
+            const first = named.get(name);
+            if (first === undefined) named.set(name, file);
+            else {
+                violate(file, 'plugin-name-clash', `\`${basename(file)}\` exports ${camel(name)}, as ${first} does.`,
+                    `Every plugin meets the others in main, so each name is the app's own: rename this feature, or the other, for what sets it apart (${basename(feature)} is a feature's folder).`);
+            }
             if (file === `${component}/plugin.${name}.ts`) continue;
             violate(file, 'plugin-name', plugins.length > 1 ? `\`${component}\` has more than one plugin.` : `\`${basename(file)}\` isn't named for its feature and layer.`,
                 `A layer has one plugin, plugin.${name}.ts, exporting ${camel(name)}: its systems and its connect to what's outside the world.`);
@@ -203,7 +212,8 @@ export const checkInternal = ({ graph, violate }: Context): void => {
         if (isTest(file)) continue;
         for (const { spec } of graph.importsOf(file)) {
             const target = spec.startsWith('.') ? graph.resolve(file, spec) : undefined;
-            if (target === undefined) continue;
+            // A test feature reaches the app's files as a test does: its imports make none of them shared.
+            if (target === undefined || (isTestFeature(file) && !isTestFeature(target))) continue;
             let set = importers.get(target);
             if (set === undefined) importers.set(target, set = new Set());
             set.add(file);
@@ -258,6 +268,7 @@ export const checkParts = ({ graph, violate }: Context): void => {
         if (isTest(file)) continue;
         for (const { spec } of graph.importsOf(file)) {
             const target = spec.startsWith('.') ? graph.resolve(file, spec) : undefined;
+            if (target !== undefined && isTestFeature(file) && !isTestFeature(target)) continue;
             const owner = target === undefined ? undefined : ownerOf(target);
             if (owner === undefined || file === `${owner}.ts` || file.startsWith(`${owner}/`)) continue;
             violate(file, 'parts-reach', `imports ${spec}, a part of \`${basename(owner)}.ts\`, which only it and its parts use.`,
@@ -295,5 +306,92 @@ export const checkTestFiles = ({ graph, violate }: Context): void => {
         if (exported.length === 0) continue;
         violate(file, 'test-exports', `test \`${basename(file)}\` exports ${exported.join(', ')}.`,
             'A test exports nothing: move what other tests use into a test feature, src/test/<feature>/<layer>/, one declaration per file.');
+    }
+};
+
+/** A plugin lists its own layer's systems, and spreads only the plugins of its sub-features' same layer. */
+export const checkPluginSystems = ({ graph, violate }: Context): void => {
+    for (const component of graph.components) {
+        if (graph.componentOf(component) !== undefined || isTestFeature(component)) continue;
+        const feature = graph.featureOf(component);
+        for (const file of graph.rootFiles(component).filter(path => /^plugin\./.test(basename(path)))) {
+            const module = graph.moduleOf(file);
+            walk(module, node => {
+                if (node.type !== 'Property' || node.computed || node.key.type !== 'Identifier' || node.key.name !== 'systems' || node.value.type !== 'ArrayExpression') return;
+                for (const element of node.value.elements) {
+                    if (element === null) continue;
+                    const expression = element.type === 'SpreadElement' ? element.argument : element;
+                    const ofPlugin = isMember(expression) && expression.property.name === 'systems' && expression.object.type === 'Identifier';
+                    const name = ofPlugin && expression.object.type === 'Identifier' ? expression.object.name : expression.type === 'Identifier' ? expression.name : undefined;
+                    if (name === undefined || isLocal(module, expression, name)) continue;
+                    const origin = bindingOrigin(graph, file, name);
+                    const from = origin === undefined ? undefined : graph.componentOf(origin.file);
+                    if (origin === undefined || from === undefined || graph.topOf(from) === component) continue;
+                    const fromFeature = graph.featureOf(from);
+                    const subFeaturePlugin = ofPlugin && basename(graph.topOf(from)) === basename(component) && fromFeature !== feature
+                        && isWithin(fromFeature, feature) && /^plugin\./.test(basename(origin.file));
+                    if (subFeaturePlugin) continue;
+                    violate(file, 'plugin-foreign-systems', `\`${basename(file)}\` lists ${textOf(module, expression)}, systems of \`${graph.topOf(from)}\`.`,
+                        'A plugin lists its own layer\'s systems, and spreads its sub-features\' plugins of the same layer. Start the other plugin beside this one, where main starts the plugins.');
+                }
+            });
+        }
+    }
+};
+
+/** The nodes a statement runs as its module loads: all of it but the bodies of the functions and classes it declares. */
+const atLoad = (module: Module, node: Node, visit: (node: Node) => void): void => {
+    visit(node);
+    for (const child of module.children.get(node) ?? []) {
+        if (child.type === 'FunctionExpression' || child.type === 'ArrowFunctionExpression' || child.type === 'FunctionDeclaration'
+            || child.type === 'ClassBody' || child.type === 'TSModuleDeclaration') continue;
+        atLoad(module, child, visit);
+    }
+};
+
+/**
+ * A function a module calls as it loads reads only what is declared above the call: a `const`, `let` or `class`
+ * declared beneath it isn't initialized yet, which the compiler sees in the module's own statements but not through a
+ * function declared beneath and hoisted.
+ */
+export const checkLoadOrder = ({ graph, violate }: Context): void => {
+    for (const file of graph.tsPaths) {
+        if (isTest(file) || file.endsWith('.d.ts')) continue;
+        const module = graph.moduleOf(file);
+        const body = module.program.body;
+        const declaredAt = new Map<string, number>();
+        const functions = new Map<string, ESTree.Function>();
+        body.forEach((statement, at) => {
+            const declaration = declarationOf(statement);
+            if (declaration.type === 'FunctionDeclaration' && declaration.id !== null) functions.set(declaration.id.name, declaration);
+            else if ((declaration.type === 'VariableDeclaration' && declaration.kind !== 'var') || declaration.type === 'ClassDeclaration') {
+                for (const name of declaredBy(declaration)) declaredAt.set(name, at);
+            }
+        });
+        if (functions.size === 0) continue;
+        body.forEach((statement, at) => {
+            const reported = new Set<string>();
+            const called = new Set<string>();
+            /** What calling `name` as the module loads reads: its body, and the functions it calls in turn. */
+            const call = (name: string, through: string): void => {
+                const declaration = functions.get(name);
+                if (declaration === undefined || called.has(name) || declaration.body === null || declaration.body === undefined) return;
+                called.add(name);
+                atLoad(module, declaration.body, node => {
+                    if (node.type !== 'Identifier' || namesOnly(module, node) || isLocal(module, node, node.name)) return;
+                    const declared = declaredAt.get(node.name);
+                    if (declared !== undefined && declared > at && !reported.has(node.name)) {
+                        reported.add(node.name);
+                        violate(file, 'used-before-declared', `\`${basename(file)}\` calls ${through}() as it loads, which reads \`${node.name}\`, declared beneath the call: it isn't initialized yet.`,
+                            `Declare \`${node.name}\` above the statement calling ${through}(), or pass it to the function.`);
+                    }
+                    if (node.type === 'Identifier' && functions.has(node.name)) call(node.name, through);
+                });
+            };
+            if (declarationOf(statement).type === 'FunctionDeclaration') return;
+            atLoad(module, statement, node => {
+                if ((node.type === 'CallExpression' || node.type === 'NewExpression') && node.callee.type === 'Identifier' && !isLocal(module, node.callee, node.callee.name)) call(node.callee.name, node.callee.name);
+            });
+        });
     }
 };

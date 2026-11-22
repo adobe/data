@@ -39,10 +39,11 @@ const chapterOf = async (world: World, name: string): Promise<Read> => {
     return found;
 };
 
-/** A world with two chapters, as the guide starts them, its ticking systems run by hand. */
+/** A world with three chapters, as the guide starts them, its ticking systems run by hand. */
 const guide = async (): Promise<World> => {
     const world = World.create({ [workers]: 0 });
     await world.run(addChapters, { chapters: [
+        { number: 0, slug: "overview", title: "Overview", part: "", package: "first", prose: "" },
         { number: 0, slug: "setup", title: "Setup", part: "", package: "first", prose: "" },
         { number: 1, slug: "1-one", title: "One", part: "Basics", package: "first", prose: "<p>one</p>" },
     ] });
@@ -52,18 +53,18 @@ const guide = async (): Promise<World> => {
 };
 const tick = System.create([reviseShown, forgetHiddenRun, compileRevised]);
 
-it("shows the chapter an address names, or the first, and revises a chapter as it's shown", async () => {
+it("shows the chapter an address names, or the overview, and revises a chapter as it's shown", async () => {
     await using world = await guide();
     await world.run(showChapter, { slug: "1-one" });
     await world.run(tick);
     expect((await chaptersOf(world)).map(item => [item.slug, item.shown, item.revision, item.state])).toEqual([
-        ["setup", false, 0, "waiting"], ["1-one", true, 1, "compiling"],
+        ["overview", false, 0, "waiting"], ["setup", false, 0, "waiting"], ["1-one", true, 1, "compiling"],
     ]);
     await world.run(showChapter, { slug: "nowhere" });
     await world.run(tick);
     // A chapter without examples is revised, but has nothing to compile.
     expect((await chaptersOf(world)).map(item => [item.slug, item.shown, item.revision, item.state])).toEqual([
-        ["setup", true, 1, "waiting"], ["1-one", false, 1, "compiling"],
+        ["overview", true, 1, "waiting"], ["setup", false, 0, "waiting"], ["1-one", false, 1, "compiling"],
     ]);
 });
 

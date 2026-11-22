@@ -15,10 +15,10 @@ export const addChapters = System.create({}, ({ commands }, input: { readonly ch
     }
 });
 
-/** The chapter shown when an address names none: the first. */
-export const firstSlug = "setup";
+/** The chapter shown when an address names none or one that isn't a chapter. */
+export const firstSlug = "overview";
 
-/** Shows the chapter at an address, or the first for an address that names none. */
+/** Shows the chapter at an address, or the overview for an address that names none. */
 export const showChapter = System.create({
     components: { with: [chapter, slug], optional: [shown] },
     lookup: { bySlug: { index: bySlug } },

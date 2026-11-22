@@ -25,8 +25,8 @@ it.each(chapters.filter(chapter => chapter.files.length > 0).map(item => [item.s
     const { page, errors } = await open(browser, `${inject("guide")}#${slug}`);
     try {
         await page.waitForFunction(lines => document.querySelector("guide-console")?.logged.entries.length === lines, expected.split("\n").length - 1);
-        // An animation runs until its frame goes.
-        expect(await statusOf(page, /Finished|Running|Failed/)).toBe(animates ? "Running…" : "Finished");
+        // An animation runs until its frame goes; any other program finishes, which it says just after its last line.
+        expect(await statusOf(page, animates ? /Finished|Running|Failed/ : /Finished|Failed/)).toBe(animates ? "Running…" : "Finished");
         expect(unversioned(await consoleOf(page))).toBe(unversioned(expected));
         expect(await page.evaluate(() => document.querySelector("guide-tabs")?.selected)).toBe(drawn ? "output" : "console");
         expect(await page.locator("guide-problems li").count()).toBe(0);

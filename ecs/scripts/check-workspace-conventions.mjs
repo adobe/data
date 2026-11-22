@@ -88,6 +88,24 @@ for (const name of readdirSync(packagesDir)) {
   }
 }
 
+// 5. A page served from the workspace's packages builds them first: they're served from their `dist`, which a failed
+//    build leaves as it was, so a dev server started without building them serves code days behind its source, unseen.
+//    `dev` builds them unless the workspace's own `dev` built them already, and stops where a build fails.
+for (const name of readdirSync(packagesDir)) {
+  let pkg;
+  try {
+    pkg = JSON.parse(readFileSync(join(packagesDir, name, "package.json"), "utf8"));
+  } catch {
+    continue;
+  }
+  const dev = pkg.scripts?.dev;
+  const fromWorkspace = Object.values({ ...pkg.dependencies, ...pkg.devDependencies }).some((version) => String(version).startsWith("workspace:"));
+  if (typeof dev !== "string" || !/\bvite\b/.test(dev) || !fromWorkspace) continue;
+  if (!dev.startsWith('test -n "$ECS_DEPENDENCIES_BUILT" || pnpm --filter ') || !dev.includes(" run build && ")) {
+    errors.push(`${name}: "dev" builds the workspace packages it serves first: "test -n \\"$ECS_DEPENDENCIES_BUILT\\" || pnpm --filter \\"$npm_package_name^...\\" run build && vite"`);
+  }
+}
+
 if (errors.length > 0) {
   console.error("Workspace convention violations:\n  " + errors.join("\n  "));
   process.exit(1);

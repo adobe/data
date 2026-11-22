@@ -88,7 +88,7 @@ export const indexParameterCount = (lookup: WasmIndexLookup): number => lookup.k
 
 export type WasmKernel = {
     /** Compile asynchronously: browsers limit synchronous compiles on the main thread. */
-    readonly bytes: Uint8Array;
+    readonly bytes: Uint8Array<ArrayBuffer>;
     /** Which resource and args leaves the caller passes, after the column addresses. */
     readonly scalars: readonly WasmScalar[];
     /** The JS functions it imports, by name. */

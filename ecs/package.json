@@ -12,7 +12,7 @@
     "lint": "pnpm -r run lint",
     "typecheck": "pnpm -r run typecheck",
     "docs": "pnpm -r run docs",
-    "dev": "pnpm -r --parallel run dev",
+    "dev": "pnpm --filter \"@adobe/*\" run build && ECS_DEPENDENCIES_BUILT=1 pnpm -r --parallel run dev",
     "check:workspace": "node scripts/check-workspace-conventions.mjs && node --test 'scripts/*.test.mjs'",
     "publish": "sh -c 'for x in \"$@\"; do OTP=\"$x\"; done; export NPM_CONFIG_OTP=\"$OTP\"; pnpm -r run build && pnpm -r publish --no-git-checks --access public' sh"
   },

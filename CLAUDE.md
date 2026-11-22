@@ -63,6 +63,12 @@ explicitly — an absent `private` means "publishable" to npm, which we forbid s
 nothing ships by accident. `scripts/check-workspace-conventions.mjs` (run in CI
 via `pnpm run check:workspace`) enforces both rules.
 
+`ecs/` is also a workspace of its own, with its own lockfile. Every package it
+lists is listed in this `pnpm-workspace.yaml` too, the tools both build with are
+pinned alike in both files' `overrides`, and both lockfiles must resolve them to
+the same versions; the convention check enforces all three, and CI's `ecs` job
+builds and tests `ecs/` with its own lockfile.
+
 To make a package publishable, set `private: false`; to hold it back, set
 `private: true`. That one field is the single source of truth — there is no list
 to update anywhere else.

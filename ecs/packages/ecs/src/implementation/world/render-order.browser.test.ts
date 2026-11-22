@@ -169,13 +169,13 @@ describe("render systems with an order", () => {
         };
         await world.run(draw);
         expect([sizes, records]).toEqual([[], 0]);
-        // A new key writes its chunk of the column and the order, in elements; the record stays.
+        // A new key writes its chunk of the column and the order, in bytes; the record stays.
         const toBack = System.create({ components: { with: [code, depth] } }, row => {
             if (row[code] === 10) row[depth] = count + 5;
         });
         await world.run(toBack);
         await world.run(draw);
-        expect(sizes.slice(1)).toEqual([instances]);
+        expect(sizes.slice(1)).toEqual([instances * Int32Array.BYTES_PER_ELEMENT]);
         expect(records).toBe(0);
         sizes.length = 0;
         await world.run(draw);

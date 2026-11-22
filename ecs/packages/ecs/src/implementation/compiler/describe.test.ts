@@ -50,11 +50,12 @@ const canonical = async (bytes: Uint8Array): Promise<string> => {
         module.destroy();
     }
 };
-const assembled = async (wat: string): Promise<Uint8Array> => {
+const assembled = async (wat: string): Promise<Uint8Array<ArrayBuffer>> => {
     const wabt = await createWabt();
     const module = wabt.parseWat("described.wat", wat, features);
     try {
-        const { buffer } = module.toBinary({ write_debug_names: false });
+        // A copy in memory of its own, as WebAssembly compiles only that.
+        const buffer = new Uint8Array(module.toBinary({ write_debug_names: false }).buffer);
         // Node validates shared memory, which wabt's validator doesn't take.
         if (!WebAssembly.validate(buffer)) throw new Error("the WAT assembles to a module that isn't valid");
         return buffer;

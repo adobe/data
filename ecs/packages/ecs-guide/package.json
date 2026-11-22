@@ -7,7 +7,7 @@
   "private": true,
   "scripts": {
     "build": "tsc && vite build",
-    "dev": "vite",
+    "dev": "test -n \"$ECS_DEPENDENCIES_BUILT\" || pnpm --filter \"$npm_package_name^...\" run build && vite",
     "typecheck": "tsc",
     "test": "pnpm exec playwright install chromium && vitest --run"
   },

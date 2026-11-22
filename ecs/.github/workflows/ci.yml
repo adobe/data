@@ -42,14 +42,15 @@ jobs:
       - name: Type-check (every package, topological)
         run: pnpm -r run typecheck
 
+      # A plain recursive run fails where no package defines the script, as none here lints yet; any that does is checked.
       - name: Lint (every package that defines it)
-        run: pnpm -r run lint
+        run: pnpm -r --if-present run lint
 
       - name: Build (every package, topological)
         run: pnpm -r run build
 
       - name: API docs (every package that defines them; warnings fail)
-        run: pnpm -r run docs
+        run: pnpm -r --if-present run docs
 
       - name: Test (each package runs its own complete suite)
         run: pnpm -r run test

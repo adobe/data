@@ -88,6 +88,55 @@ for (const name of readdirSync(packagesDir)) {
   }
 }
 
+// 5. The ecs/ workspace, a workspace of its own, builds within this one too: every package it lists is listed here, so
+//    this CI builds and tests it; the tools both build with are pinned alike in both workspaces' overrides; and both
+//    lockfiles resolve those tools to the same versions. Otherwise one workspace can build with tools that break the
+//    other, unseen by whichever CI uses the other's lockfile.
+const ecsRoot = join(root, "ecs");
+const listedPackages = (workspaceFile) =>
+  [...readFileSync(workspaceFile, "utf8").matchAll(/^\s+-\s+'([^']+)'/gm)].map(([, path]) => path);
+const rootListed = new Set(listedPackages(join(root, "pnpm-workspace.yaml")));
+for (const path of listedPackages(join(ecsRoot, "pnpm-workspace.yaml"))) {
+  if (!rootListed.has(`ecs/${path}`)) errors.push(`pnpm-workspace.yaml: add 'ecs/${path}', which ecs/pnpm-workspace.yaml lists, so CI builds and tests it`);
+}
+/** The pinned tools' block of a workspace's overrides: the lines after its comment naming ecs/, to the first blank or unindented one. */
+const pinnedTools = (workspaceFile) => {
+  const lines = readFileSync(workspaceFile, "utf8").split("\n");
+  const start = lines.findIndex((line) => line.includes("pinned alike in both"));
+  if (start < 0) return null;
+  const pins = [];
+  for (const line of lines.slice(start + 1)) {
+    if (line.trim().startsWith("#")) continue;
+    if (!/^\s+\S/.test(line)) break;
+    pins.push(line.trim());
+  }
+  return pins;
+};
+const rootPins = pinnedTools(join(root, "pnpm-workspace.yaml"));
+const ecsPins = pinnedTools(join(ecsRoot, "pnpm-workspace.yaml"));
+if (rootPins === null || ecsPins === null) {
+  errors.push("pnpm-workspace.yaml and ecs/pnpm-workspace.yaml: each pins the tools both build with, in overrides, under a comment saying they're pinned alike in both");
+} else if (rootPins.join("\n") !== ecsPins.join("\n")) {
+  errors.push(`pnpm-workspace.yaml and ecs/pnpm-workspace.yaml pin different tools:\n    ${rootPins.join(", ")}\n    ${ecsPins.join(", ")}`);
+} else {
+  /** The versions a lockfile resolves a package to, as its `packages:` entries name them. */
+  const resolved = (lockfile, name) => {
+    const quoted = name.replace(/[.*+?^${}()|[\]\\\/]/g, "\\$&");
+    return new Set([...readFileSync(lockfile, "utf8").matchAll(new RegExp(`^  '?${quoted}@(\\d[^:'(]*)`, "gm"))].map(([, version]) => version));
+  };
+  for (const pin of rootPins) {
+    const [selector, version] = pin.split(/:\s+/);
+    const name = selector.replace(/^'|'$/g, "").replace(/(.)@.*$/, "$1");
+    const inRoot = [...resolved(join(root, "pnpm-lock.yaml"), name)];
+    const inEcs = [...resolved(join(ecsRoot, "pnpm-lock.yaml"), name)];
+    for (const [file, versions] of [["pnpm-lock.yaml", inRoot], ["ecs/pnpm-lock.yaml", inEcs]]) {
+      if (versions.length > 0 && !versions.includes(version)) {
+        errors.push(`${file} resolves ${name} to ${versions.join(", ")}, not the pinned ${version}: run pnpm install in its workspace`);
+      }
+    }
+  }
+}
+
 if (errors.length > 0) {
   console.error("Workspace convention violations:\n  " + errors.join("\n  "));
   process.exit(1);

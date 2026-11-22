@@ -53,3 +53,46 @@ jobs:
 
       - name: Test (each package runs its own complete suite)
         run: pnpm -r run test
+
+  ecs:
+    # ecs/ is also a workspace of its own, with its own lockfile, which is how it's developed and published. The job
+    # above builds its packages with this workspace's lockfile; this one builds them with ecs/'s, so a tool resolved
+    # differently there can't break its build unseen. The convention check above keeps the two lockfiles' tools alike.
+    name: ecs workspace · typecheck · lint · build · test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ecs
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: ecs/package.json
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: ecs/.nvmrc
+          cache: pnpm
+          cache-dependency-path: ecs/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Check workspace conventions
+        run: pnpm run check:workspace
+
+      - name: Type-check (every package, topological)
+        run: pnpm -r run typecheck
+
+      # A plain recursive run fails where no package defines the script, as none here lints yet; any that does is checked.
+      - name: Lint (every package that defines it)
+        run: pnpm -r --if-present run lint
+
+      - name: API docs (every package that defines them; warnings fail)
+        run: pnpm -r --if-present run docs
+
+      - name: Build (every package, topological)
+        run: pnpm -r run build
+
+      - name: Test (each package runs its own complete suite)
+        run: pnpm -r run test

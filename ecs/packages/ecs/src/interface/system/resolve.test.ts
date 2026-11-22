@@ -1,6 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, expect, it } from "vitest";
 import "../registry/declarations.js";
+import { create as createIndex } from "../indexes/create.js";
 import { commandListsOf, componentLists, lookupsLists, resourceUses, type Access } from "./resolve.js";
 
 const mass = Symbol("resolveTest/mass");
@@ -18,6 +19,10 @@ const access = (lookup: Access["lookup"]): Access => ({ components: null, resour
 describe("lookupsLists", () => {
     it("takes a lookup whose rows the build didn't follow as reading everything it requires", () => {
         expect(lookupsLists({ others: { with: [mass, position] } }, access({ others: null }))).toEqual({ others: { read: [mass, position] } });
+    });
+    it("takes an index lookup whose rows the build didn't follow as reading each component its index holds once, a key its `with` lists too", () => {
+        const byMass = createIndex({ key: [mass], components: { with: [mass, position] } });
+        expect(lookupsLists({ heavy: { index: byMass } }, access({ heavy: null }))).toEqual({ heavy: { index: byMass, read: [mass, position] } });
     });
     it("takes a lookup the body never used as reading nothing, and one it followed as reading what it read", () => {
         expect(lookupsLists({ others: { with: [mass, position] } }, access({}))).toEqual({ others: { has: [mass, position] } });

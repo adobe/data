@@ -606,7 +606,7 @@ describe("generateWasm integer operations", () => {
     const states = [[0, 0, 0, 0], [1, 2, 3, 4], [0xFFFFFFFF, 0x80000000, 0x7FFFFFFF, 1], [340383, 2654435769, 123456789, 987654321]];
     const word = (component: number): WasmColumn => ({ view: "u32", stride: 4, offset: 0, boolean: false, component });
 
-    const runXoshiro = (kernel: { readonly bytes: Uint8Array; readonly imports: readonly string[] }): number[][] => {
+    const runXoshiro = (kernel: { readonly bytes: Uint8Array<ArrayBuffer>; readonly imports: readonly string[] }): number[][] => {
         const memory = new WebAssembly.Memory({ initial: 1, maximum: 65536, shared: true });
         const words = Array.from({ length: 9 }, (_, k) => new Uint32Array(memory.buffer, 512 * k, states.length));
         states.forEach((state, row) => state.forEach((value, k) => { words[k][row] = value; }));

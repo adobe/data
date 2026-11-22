@@ -7,6 +7,7 @@ import { createRunner, releaseHoldings, removedRunner, stopHoldings, type Holdin
 import { isLeaf, reducedBy, scheduleOf, type Schedule } from '../../interface/registry/schedule.js';
 import { idOf, observe, unobserve, type Key, type State } from './state.js';
 import { orderKeysOf } from '../../interface/registry/index.js';
+import { declaredOf, declaresTrait } from '../../interface/registry/names.js';
 import { entityWatchesOf, indexWatchesOf, lookupComponentsOf, orderComponentsOf } from './lookup-keys.js';
 
 /** What a registration still has to do asynchronously: add resources, then load kernels; `rollback` undoes it if that fails. */
@@ -74,7 +75,12 @@ const keysOf = (leaf: Leaf): { readonly components: readonly Key[]; readonly res
     const { up } = leaf.declaration;
     if (up !== undefined) components.push(up.through, ...up.read ?? []);
     components.push(...orderComponentsOf(leaf.declaration));
-    return { components, resources: [...resources?.read ?? [], ...resources?.write ?? [], ...resources?.changed ?? [], ...resources?.is ?? [], ...resources?.not ?? [], ...reducedBy(leaf)] };
+    // Tables may read resources that don't place the system, as those of other threads, which aren't among its reads;
+    // and a trait filter watches the resources declaring its traits, which are in the world from then on, as read.
+    const tables = leaf.declaration.tables?.resources ?? [];
+    const { changed } = leaf.declaration;
+    const declaring = changed === undefined ? [] : [...declaredOf("resource").keys()].filter(key => declaresTrait(key, changed));
+    return { components, resources: [...resources?.read ?? [], ...resources?.write ?? [], ...resources?.changed ?? [], ...resources?.is ?? [], ...resources?.not ?? [], ...reducedBy(leaf), ...tables, ...declaring] };
 };
 
 /** For a filtered `up` leaf: its parent reference and what it reads of its parent, whose changes also pass a row. */

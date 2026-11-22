@@ -1,6 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
+import type { TablesDeclaration } from '../../interface/system/tables.js';
 import type { Leaf } from '../../interface/system/leaf.js';
 import { stampChanged, type Archetype } from './archetype.js';
+import { traitChanges } from './trait-changes.js';
 import { groupCovers, groupHeld, groupOnWorkers, groupScalars, joinGroup, runGroup, type FusedGroup, type FusionRole } from './fusion.js';
 import { kernelOf } from './attach-kernel.js';
 import { readCell } from './cells.js';
@@ -116,6 +118,8 @@ export type Runner = {
     readonly remote: RemoteSystem | null;
     /** For an observer system on a joined thread, which runs it there after sync points (`joined-observer.ts`); else null. */
     readonly joined: JoinedObserver | null;
+    /** What a readonly system's `tables` reads, whose objects joined threads hold are gathered before it runs; else null. */
+    readonly tables: TablesDeclaration | null;
     /** The tick it last ran at, which a runner placing it elsewhere starts from. */
     readonly lastRun: () => number;
     /**
@@ -236,7 +240,9 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
     /** The indexes whose entries changing passes every row, as a changed resource does: its lookups' with `changed: true`. */
     const indexFilters = indexLookups.filters;
     const indexFiltered = indexFilters.length > 0;
-    const filtered = addedIds.length + changedIds.length + resourceChanged.length + indexFilters.length > 0;
+    /** For a trait filter, whether something declaring its traits changed since a tick; else null. */
+    const traitsChanged = declaration.changed === undefined || declaration.changed.length === 0 ? null : traitChanges(state, declaration.changed);
+    const filtered = addedIds.length + changedIds.length + resourceChanged.length + indexFilters.length > 0 || traitsChanged !== null;
     /** Its `lastRun` while it runs, which its lookups' lists and rows compare with. */
     const lookupSince: Since = { value: since };
     let kernel: BoundKernel | null = null;
@@ -1277,7 +1283,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         chunks[0] = ownedChunks[0];
         try {
             // With points, resource and index filters pass an archetype's rows by its own point.
-            const resourcesChanged = !pointed && (indexesChanged || (resourceChanged.length > 0 && resourcesChangedSince(lastRun)));
+            const resourcesChanged = !pointed && (indexesChanged || (resourceChanged.length > 0 && resourcesChangedSince(lastRun)) || (traitsChanged !== null && traitsChanged(lastRun)));
             /** -1 passes every row. */
             const since = !filtered || resourcesChanged ? -1 : lastRun;
             ranSince = since;
@@ -1452,6 +1458,7 @@ export const createRunner = (state: State, leaf: Leaf, since = 0): Runner => {
         holdings,
         remote: null,
         joined: null,
+        tables: declaration.tables ?? null,
         lastRun: () => lastRun,
         takeResult: () => {
             const taken = result;
@@ -1490,6 +1497,7 @@ export const removedRunner: Runner = {
     holdings: { ...holdingNothing(), removed: true, released: true },
     remote: null,
     joined: null,
+    tables: null,
     lastRun: () => 0,
     takeResult: () => undefined,
     didRun: () => false,

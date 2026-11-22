@@ -4,6 +4,8 @@ import type { Index } from '../indexes/index-type.js';
 import type { Condition } from '../resource/condition.js';
 import { takeIdOfDeclaration } from '../registry/ids.js';
 import { nameOf } from '../registry/items.js';
+import { threadOfDeclaration } from '../registry/declarations.js';
+import { declarationOf } from '../registry/names.js';
 import { claimSystem } from '../registry/program.js';
 import type { Body, Context } from './body.js';
 import { checkComposite, checkLeaf, inputSchemaOf } from './check.js';
@@ -105,6 +107,11 @@ type Validate<D extends Declaration> =
     & (D extends { readonly tables: object }
         ? (D extends { readonly readonly: true } ? {} : { readonly tables?: { readonly "error: tables are read by a readonly system": true } })
         & (Property<D, "components"> extends undefined ? {} : { readonly tables?: { readonly "error: a system reading tables has no components": true } })
+        : {})
+    // A trait filter runs a readonly system without components once.
+    & (D extends { readonly changed: object }
+        ? (D extends { readonly readonly: true } ? {} : { readonly changed?: { readonly "error: a trait filter is a readonly system's": true } })
+        & (Property<D, "components"> extends undefined ? {} : { readonly changed?: { readonly "error: a system filtering on traits has no components": true } })
         : {})
     & (D extends { readonly target: string } ? Targeted : {})
     & (D extends { readonly target: string } ? Property<D, "components"> extends undefined ? { readonly target?: { readonly "error: a system on one entity runs on its row, so it needs components": true } } : {} : {})
@@ -208,8 +215,14 @@ const resolve = (what: string, declared: Declaration, access: ReturnType<typeof 
     const uses = resourceUses(what, access, resources?.is);
     const whereReads = whereReadsOf(what, components, access);
     const conditions: readonly symbol[] = resources?.is ?? [];
-    // What `where`'s predicates and `tables` read counts as the system's reads, for its order, conflicts and placement.
-    for (const key of [...whereReads, ...declared.tables?.resources ?? []]) if (!uses.read.includes(key) && !uses.write.includes(key) && !conditions.includes(key)) uses.read.push(key);
+    // What `where`'s predicates and `tables` read counts as the system's reads, for its order, conflicts and placement;
+    // but tables gather what another thread holds, so its objects don't place the system.
+    const tableReads = (declared.tables?.resources ?? []).filter(key => {
+        const found = declarationOf(key);
+        const thread = found === undefined ? null : threadOfDeclaration(found);
+        return thread === null || thread === "world";
+    });
+    for (const key of [...whereReads, ...tableReads]) if (!uses.read.includes(key) && !uses.write.includes(key) && !conditions.includes(key)) uses.read.push(key);
     const resolved: Resolved = {
         ...rest,
         ...components === undefined ? {} : { components: componentLists(components, components.whole === true ? null : access.components, reading, whereReads) },

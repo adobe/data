@@ -8,6 +8,7 @@ import {
 import {
     appendEntry, archetypeShift, entryWords, kindMask, logCapacityWord, logHeaderBytes, logLimitWord, logOffsetWord,
     logPublishedWord, logSyncWord, logVersionWord, logBoundWord, logBoundedWord, moveEntry, nullTag, ownTag, rangeEntry, setEntry, slotTags, startTag, swapEntry, syncEntry,
+    deliveredMask, deliveredTags, slotMask,
 } from './move-log.js';
 import { coveringBuffer, currentBuffer, pageBytes, pagesWord } from './memory.js';
 import { releaseValue } from './transfers.js';
@@ -78,6 +79,10 @@ export type Mirror = {
     /** The first staged slot not yet settled, by index into `staged`; the next slot's id. */
     head: number;
     nextSlot: number;
+    /** Values the world's thread gave this thread's objects, by number, until a replay or rebuild through their sync. */
+    readonly delivered: Map<number, { readonly value: unknown; readonly sync: number }>;
+    /** The number of the next value the world delivers. */
+    received: number;
     /** Times it rebuilt, for tests. */
     rebuilds: number;
     /** The archetype last found holding the resource entity, or -1. */
@@ -105,7 +110,7 @@ export const createMirror = (memory: WebAssembly.Memory, block: number, thread: 
         memory, thread, block, buffer: memory.buffer, words: new Uint32Array(0), signed: new Int32Array(0), header: new Int32Array(0),
         ring: new Uint32Array(0), ringEntities: new Float64Array(0), version: -1, mask: 0, position: 0, through: 0, tick: 0,
         keys: new Map(), starts: new Map(), archetypes: [], scratch: new Uint32Array(1024), scratchEntities: new Float64Array(0),
-        staged: [], head: 0, nextSlot: 0, rebuilds: 0, resourceArchetype: -1, stagedTransfers: 0, runStops: null,
+        staged: [], head: 0, nextSlot: 0, delivered: new Map(), received: 0, rebuilds: 0, resourceArchetype: -1, stagedTransfers: 0, runStops: null,
     };
     refresh(mirror);
     return mirror;
@@ -210,17 +215,45 @@ const fill = (archetype: Mirrored, row: number, entity: number): void => {
     if (row >= archetype.count) archetype.count = row + 1;
 };
 
+/** Where a staged slot is in `staged`, by its distance from the head's: slots are numbered in order, wrapping. */
+const stagedAt = (mirror: Mirror, slot: number): number => {
+    const first = mirror.staged[mirror.head]?.slot ?? slot;
+    return mirror.head + ((slot - first) & slotMask);
+};
+
 /** The value of a staged slot, taking it; the start where it was settled already. */
 const take = (mirror: Mirror, slot: number, start: unknown): unknown => {
-    const at = mirror.head + ((slot - (mirror.staged[mirror.head]?.slot ?? slot)) | 0);
+    const at = stagedAt(mirror, slot);
     const staged = mirror.staged[at];
     if (staged === undefined || staged.slot !== slot || !staged.live) return start;
     staged.live = false;
     return staged.value;
 };
 
-/** Settles staged slots whose sync applied without naming them: their commands dropped, so their values are released. */
+/** Whether the value the world delivers as `tag` arrived. */
+const isReceived = (mirror: Mirror, tag: number): boolean => (((tag - deliveredTags) - mirror.received) & deliveredMask) >= 0x40000000;
+
+/** Keeps values the world's thread delivered for sync `sync`, numbered from `first`, until a replay or rebuild takes them. */
+export const receive = (mirror: Mirror, sync: number, first: number, values: readonly unknown[]): void => {
+    for (let k = 0; k < values.length; k++) mirror.delivered.set((first + k) & deliveredMask, { value: values[k], sync: sync >>> 0 });
+    mirror.received = (first + values.length) & deliveredMask;
+};
+
+/** A delivered value by its tag, taken; the start where it's gone, taken by a rebuild that read a later tag. */
+const takeDelivered = (mirror: Mirror, tag: number, start: unknown): unknown => {
+    const number = (tag - deliveredTags) & deliveredMask;
+    const found = mirror.delivered.get(number);
+    if (found === undefined) return start;
+    mirror.delivered.delete(number);
+    return found.value === undefined ? start : found.value;
+};
+
+/**
+ * Settles staged slots whose sync applied without naming them: their commands dropped, so their values are released;
+ * and drops delivered values of syncs applied, which a rebuild past them never read.
+ */
 const settle = (mirror: Mirror): void => {
+    if (mirror.delivered.size > 0) for (const [number, { sync }] of mirror.delivered) if (((mirror.through - sync) | 0) >= 0) mirror.delivered.delete(number);
     const { staged } = mirror;
     let stagedTransfers = 0;
     for (let k = mirror.head; k < staged.length; k++) {
@@ -251,7 +284,7 @@ const settle = (mirror: Mirror): void => {
  */
 export const stage = (mirror: Mirror, entity: number, component: number, value: unknown, sync: number, transfer = false): number => {
     const slot = mirror.nextSlot;
-    mirror.nextSlot = (slot + 1) >>> 0;
+    mirror.nextSlot = (slot + 1) & slotMask;
     mirror.staged.push({ slot, entity, component, value, sync: sync >>> 0, transfer, live: true });
     if (transfer) mirror.stagedTransfers++;
     return slot;
@@ -325,7 +358,8 @@ const apply = (mirror: Mirror, count: number): number => {
                 const to = archetypes[archetype];
                 const column = to === null || to === undefined ? undefined : to.byComponent[scratch[at + 2]];
                 const tag = scratch[at + 3];
-                const value = tag === startTag ? column?.start : tag === nullTag ? null : take(mirror, (tag - slotTags) >>> 0, column?.start);
+                const value = tag === startTag ? column?.start : tag === nullTag ? null
+                    : tag >= deliveredTags ? takeDelivered(mirror, tag, column?.start) : take(mirror, (tag - slotTags) >>> 0, column?.start);
                 if (column !== undefined) column.values[scratch[at + 1]] = value;
                 break;
             }
@@ -366,6 +400,7 @@ const heldAt = (mirror: Mirror, count: number): number => {
         }
         if (archetypeOf(mirror, first >>> archetypeShift) === undefined) return syncStart;
         if (kind === moveEntry && archetypeOf(mirror, scratch[e * entryWords + 2]) === undefined) return syncStart;
+        if (kind === setEntry && scratch[e * entryWords + 3] >= deliveredTags && !isReceived(mirror, scratch[e * entryWords + 3])) return syncStart;
     }
     return count;
 };
@@ -510,8 +545,9 @@ export const rebuild = (mirror: Mirror): Rebuilt => {
         return previousValue(old, entity, component, start);
     })) return "held";
     const archetypes: (Mirrored | null)[] = [];
-    /** Staged slots the rebuild takes, settled only once it's complete. */
+    /** Staged slots and delivered values the rebuild takes, settled only once it's complete. */
     const taken: number[] = [];
+    const takenDelivered: number[] = [];
     const tables = Atomics.load(words, tableLengthWord);
     for (let id = 0; id < tables; id++) {
         const record = recordOf(mirror, id);
@@ -538,6 +574,23 @@ export const rebuild = (mirror: Mirror): Rebuilt => {
                 if (tag === startTag) continue;
                 const entity = archetype.entities[row];
                 if (tag === nullTag) column.values[row] = null;
+                else if (tag >= deliveredTags) {
+                    if (!isReceived(mirror, tag)) return "held";
+                    const number = (tag - deliveredTags) & deliveredMask;
+                    const found = mirror.delivered.get(number);
+                    if (found !== undefined) {
+                        column.values[row] = found.value === undefined ? column.start : found.value;
+                        takenDelivered.push(number);
+                    }
+                    else {
+                        // Taken by a replay before: the row holds it still.
+                        if (!indexed) {
+                            indexPrevious(old, entityLength);
+                            indexed = true;
+                        }
+                        column.values[row] = previousValue(old, entity, column.component, column.start);
+                    }
+                }
                 else {
                     // A value this thread's systems wrote is kept by entity, as one whose slot settled.
                     const slot = (tag - slotTags) >>> 0;
@@ -564,6 +617,7 @@ export const rebuild = (mirror: Mirror): Rebuilt => {
         const staged = stagedOf(mirror, slot);
         if (staged !== undefined) staged.live = false;
     }
+    for (const number of takenDelivered) mirror.delivered.delete(number);
     mirror.archetypes = archetypes;
     mirror.version = version;
     mirror.position = published;
@@ -616,11 +670,17 @@ export const stagedValue = (mirror: Mirror, slot: number, settled: unknown): unk
     return staged === undefined ? settled : staged.value;
 };
 
+/** A delivered value by its tag while no sync applied it, else `settled`. */
+export const deliveredValue = (mirror: Mirror, tag: number, settled: unknown): unknown => {
+    const found = mirror.delivered.get((tag - deliveredTags) & deliveredMask);
+    return found === undefined ? settled : found.value;
+};
+
 /** A live staged slot by its id. */
 const stagedOf = (mirror: Mirror, slot: number): Staged | undefined => {
     const { staged, head } = mirror;
     if (head >= staged.length) return undefined;
-    const at = head + ((slot - staged[head].slot) | 0);
+    const at = stagedAt(mirror, slot);
     const entry = staged[at];
     return entry !== undefined && entry.slot === slot && entry.live ? entry : undefined;
 };

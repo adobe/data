@@ -300,6 +300,11 @@ export type State = {
     readonly claims: Map<string, MoveLog>;
     readonly logs: MoveLog[];
     claimed: boolean;
+    /**
+     * While readonly systems run after a sync point, what joined threads hold of the objects their tables read: each
+     * component's values by entity, and each resource's value, by id.
+     */
+    gathered: { readonly components: Map<number, Map<number, unknown>>; readonly resources: Map<number, unknown>; readonly errors: Map<number, string> } | null;
     /** The system without components whose body's value the run in progress resolves to; null for none, as in a tick. */
     wanted: Leaf | null;
     /** While a sync system's failure is reported out of band, the sync systems each sync point ran, which then recover. */
@@ -433,6 +438,7 @@ export const createState = (shared?: boolean, wasm = true, simd = true, gpu = fa
         claims: new Map(),
         logs: [],
         claimed: false,
+        gathered: null,
         wanted: null,
         syncSystemsRan: null,
         ran: { systems: 0, main: false, gpu: false, joined: new Set() },

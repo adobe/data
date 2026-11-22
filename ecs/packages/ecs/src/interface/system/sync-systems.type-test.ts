@@ -144,3 +144,12 @@ System.changes({ watch: [source], before: [tick] }, () => {});
 System.create({ after: [other] }, () => {});
 // @ts-expect-error nor a composite with a changes system
 System.create({ systems: [tick], before: [unnamedChanges] });
+
+// A readonly system without components may run only once something declaring a trait of your own changed.
+System.create({ readonly: true, changed: [inDocument] }, () => {});
+// @ts-expect-error only traits of your own: a key isn't one
+System.create({ readonly: true, changed: [kept] }, () => {});
+// @ts-expect-error a trait filter is a readonly system's
+System.create({ changed: [inDocument] }, () => {});
+// @ts-expect-error a trait filter runs a system without components once
+System.create({ readonly: true, changed: [inDocument], components: { with: [kept] } }, () => {});

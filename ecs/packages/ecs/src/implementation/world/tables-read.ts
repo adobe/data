@@ -10,21 +10,35 @@ import { holdsValuesOf } from './where.js';
 
 // Reading tables, apart from spawning them: rows' contexts import it, and what spawning imports would make a cycle.
 
+/** Why a table can't read a joined thread's object `id`: it gave no values, or said why. */
+const ungathered = (state: State, key: Key, id: number): Error =>
+    new Error(`Tables can't read "${labelOf(key)}": a joined thread fills its objects${state.gathered?.errors.has(id) === true ? `, and gave none: ${state.gathered.errors.get(id)}` : ", and gave none"}.`);
+
 /** What an archetype's storage of a component gives a table: a copy of its rows `0` to `count`. */
-const columnOf = (key: Key, storage: Storage, count: number): Table.Column => {
+const columnOf = (state: State, key: Key, id: number, archetype: Archetype, storage: Storage, count: number): Table.Column => {
     const { layout } = storage;
     switch (layout.kind) {
         case "linear": return { kind: "bytes", bytes: storage.views.u8.slice(0, count * layout.stride), stride: layout.stride };
         case "constant": return { kind: "value", value: layout.value };
         case "object":
-            if (storage.remote !== null) throw new Error(`Tables can't read "${labelOf(key)}": a joined thread fills its objects.`);
-            return { kind: "values", values: storage.values.slice(0, count) };
+            if (storage.remote === null) return { kind: "values", values: storage.values.slice(0, count) };
+            return { kind: "values", values: gatheredColumn(state, key, id, archetype.entities, count) };
         case "string": {
             const values: unknown[] = new Array(count);
             for (let row = 0; row < count; row++) values[row] = readCell(storage, row);
             return { kind: "values", values };
         }
     }
+};
+
+/** A joined thread's values of its object `id` for each of `entities`, as it gave them; its start for one it didn't. */
+const gatheredColumn = (state: State, key: Key, id: number, entities: Float64Array, count: number): unknown[] => {
+    const byEntity = state.gathered?.components.get(id);
+    if (byEntity === undefined) throw ungathered(state, key, id);
+    const start = state.starts[id];
+    const values: unknown[] = new Array(count);
+    for (let row = 0; row < count; row++) values[row] = byEntity.has(entities[row]) ? byEntity.get(entities[row]) : start;
+    return values;
 };
 
 /**
@@ -56,7 +70,7 @@ const readTables = (state: State, declaration: TablesDeclaration, requiring: rea
         for (const { key, id } of asked) {
             const storage = storageById[id];
             if (storage === undefined) continue;
-            columns[key] = columnOf(key, storage, count);
+            columns[key] = columnOf(state, key, id, archetype, storage, count);
             held = true;
         }
         if (held) archetypes.push({ count, entities: archetype.entities.slice(0, count), columns });
@@ -64,7 +78,10 @@ const readTables = (state: State, declaration: TablesDeclaration, requiring: rea
     const resources: { [key: symbol]: unknown } = {};
     for (const key of declaration.resources ?? []) {
         const cell = resourceCell(state, key);
-        resources[key] = readCell(cell.storage, cell.row);
+        const id = cell.storage.component;
+        if (cell.storage.remote === null) resources[key] = readCell(cell.storage, cell.row);
+        else if (state.gathered?.resources.has(id) === true) resources[key] = state.gathered.resources.get(id);
+        else throw ungathered(state, key, id);
     }
     return { archetypes, resources };
 };

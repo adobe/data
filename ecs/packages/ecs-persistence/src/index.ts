@@ -9,3 +9,4 @@ export { encode } from "./encode.js";
 export type { Failure } from "./failure.js";
 export { snapshot, type Snapshot } from "./snapshot.js";
 export { spawn, type Spawned } from "./spawn.js";
+export { watch } from "./watch.js";

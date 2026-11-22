@@ -256,21 +256,42 @@ const checkExisting = (state: State, existing: ReadonlyMap<number, number>): voi
     }
 };
 
+/** `resources`' values, each entity in them replaced by `remap`'s: the object given when none may hold one. */
+const remapResources = (resources: object, remap: Remap | null): object => {
+    const keys = Object.getOwnPropertySymbols(resources);
+    if (remap === null || !keys.some(key => holdsEntityOf(key))) return resources;
+    const remapped: { [key: symbol]: unknown } = {};
+    for (const key of keys) {
+        const schema = declarationOf(key)?.type;
+        const value: unknown = Reflect.get(resources, key);
+        remapped[key] = schema !== undefined && holdsEntity(schema) ? remapValue(schema, value, remap) : value;
+    }
+    return remapped;
+};
+
+/** Whether a key's values may hold an entity. */
+const holdsEntityOf = (key: Key): boolean => {
+    const schema = declarationOf(key)?.type;
+    return schema !== undefined && holdsEntity(schema);
+};
+
 /**
  * Spawns an entity for each row of `tables` into the batches of their components, as references would leave them had
  * the entities outside the tables despawned: a row owned, directly or through others, by an entity outside them isn't
  * spawned; a weak reference to one is removed; and any other entity value naming one is `Entity.none`. Every entity
  * value naming an entity spawned names the one spawned for it. A row whose entity `existing` maps isn't spawned: the
- * entity it maps to stands for it, as it does for an entity outside the tables that `existing` maps.
+ * entity it maps to stands for it, as it does for an entity outside the tables that `existing` maps. `resources`, their
+ * entity values rewritten the same way, go to `set`.
  */
-export const spawnTables = (state: State, tables: readonly Table[], existing: ReadonlyMap<number, number> = new Map(), updates: CommandBuffer | null = null): Table.Spawned => {
+export const spawnTables = (
+    state: State, tables: readonly Table[], existing: ReadonlyMap<number, number> = new Map(), updates: CommandBuffer | null = null,
+    resources: object | null = null, set: (resources: object) => void = () => {},
+): Table.Spawned => {
     const plans = tables.map(table => planOf(state, table));
     checkExisting(state, existing);
-    // Entities are mapped only where a value of the tables may hold one, or a row is one that exists.
-    const remapping = existing.size > 0 || plans.some(({ keys }) => keys.some(key => {
-        const schema = declarationOf(key)?.type;
-        return schema !== undefined && holdsEntity(schema);
-    }));
+    // Entities are mapped only where a value of the tables or resources may hold one, or a row is one that exists.
+    const remapping = existing.size > 0 || plans.some(({ keys }) => keys.some(holdsEntityOf))
+        || (resources !== null && Object.getOwnPropertySymbols(resources).some(holdsEntityOf));
     const none: ReadonlySet<Key> = new Set();
     if (!remapping) {
         const entities = plans.map(({ table }) => {
@@ -279,6 +300,7 @@ export const spawnTables = (state: State, tables: readonly Table[], existing: Re
             return spawned;
         });
         plans.forEach((plan, t) => spawnRows(state, plan, null, none, entities[t], null));
+        if (resources !== null) set(resources);
         return { entities, dropped: 0 };
     }
     const places = placesOf(plans);
@@ -409,5 +431,6 @@ export const spawnTables = (state: State, tables: readonly Table[], existing: Re
         }
         for (const { removed, rows } of groups.values()) spawnRows(state, plan, rows, removed, Float64Array.from(rows, row => entities[t][row]), remap);
     });
+    if (resources !== null) set(remapResources(resources, remap));
     return { entities, dropped: droppedCount };
 };

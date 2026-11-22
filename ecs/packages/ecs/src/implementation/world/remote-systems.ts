@@ -611,6 +611,7 @@ export const createRemoteRunner = (state: State, leaf: Leaf, channel: TaskChanne
         holdings: { ...holdingNothing({ unplace: () => channel.unplace(index) }), indexes: lookups.holding },
         remote,
         joined: null,
+        tables: null,
         lastRun: () => remote.lastRun,
         takeResult: () => {
             const { value } = remote.result;

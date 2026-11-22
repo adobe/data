@@ -5,6 +5,7 @@ import type { ComponentAccess, ComponentLists, ResourceAccess, ResourceLists, Sy
 import type { Shader } from './render.js';
 import type { System } from './system.js';
 import type { TablesDeclaration } from './tables.js';
+import type { OwnTrait } from './sync-system-declaration.js';
 
 /**
  * A system never declares its thread: it runs on the one its object components and resources live on, those it
@@ -73,9 +74,17 @@ export type Declaration = {
     readonly readonly?: true;
     /**
      * For a readonly system without components: gives its context `tables`, copies of whole archetypes' columns, as
-     * `TablesDeclaration` says, read on the world's thread. Its components and resources count as what it reads.
+     * `TablesDeclaration` says, read on the world's thread, with copies of the values joined threads hold of their
+     * objects, which each gives as of its last replayed sync point; one that isn't data fails the system. Its components
+     * and resources count as what it reads, but objects of other threads, which don't place it.
      */
     readonly tables?: TablesDeclaration;
+    /**
+     * For a readonly system without components: runs only once a component or resource declaring one of these traits
+     * of your own changed since it last ran, on any thread: written, added to or removed from an entity, or held by an
+     * entity spawned or despawned. It doesn't place the system.
+     */
+    readonly changed?: readonly OwnTrait[];
 };
 
 /** A declaration as the world takes it: the build's inferred reads, writes and reductions joined with what it declares. */

@@ -52,13 +52,18 @@ export const swapEntry = 5;
 export const setEntry = 6;
 
 /**
- * Tags: the component's start, `null`, a value the thread's systems wrote, which it keeps by entity, or a staged slot's
- * value, by the slot's id plus `slotTags`.
+ * Tags: the component's start, `null`, a value the thread's systems wrote, which it keeps by entity, a staged slot's
+ * value, by the slot's id plus `slotTags`, or a value the world's thread gave, delivered to the thread by message, by its
+ * number plus `deliveredTags`.
  */
 export const startTag = 0;
 export const nullTag = 1;
 export const ownTag = 2;
 export const slotTags = 3;
+export const deliveredTags = 0x80000000;
+/** Staged slots' ids wrap below `deliveredTags - slotTags`; delivered values' numbers wrap at 2^31. */
+export const slotMask = 0x3fffffff;
+export const deliveredMask = 0x7fffffff;
 
 /** Entries a log holds at least. */
 export const minimumEntries = 4096;
@@ -102,7 +107,22 @@ export type MoveLog = {
     readonly minimum: number;
     /** Tells the thread a component it fills, once the world met it. */
     readonly announce: (component: number) => void;
+    /** Values the current sync gives the thread's objects from the world's thread, the first numbered `delivered`. */
+    readonly delivering: unknown[];
+    delivered: number;
+    /** Posts the thread the values a sync gives its objects, numbered from `first`, before the sync is published. */
+    readonly deliver: (sync: number, first: number, values: readonly unknown[]) => void;
+    /** Asks the thread for the values it holds of its objects `components` and `resources`, copies (`Gathered`). */
+    readonly gather: (components: readonly number[], resources: readonly number[]) => Promise<Gathered>;
 };
+
+/**
+ * What a joined thread holds of its objects, copied: of each component, every entity holding it and its value, and
+ * each resource's value; or why it couldn't give them.
+ */
+export type Gathered =
+    | { readonly components: readonly (readonly [number, Float64Array, readonly unknown[]])[]; readonly resources: readonly (readonly [number, unknown])[]; readonly error?: undefined }
+    | { readonly error: string };
 
 const powerOfTwo = (entries: number): number => 2 ** Math.ceil(Math.log2(Math.max(entries, 1)));
 
@@ -119,12 +139,16 @@ const placeRing = (log: MoveLog, capacity: number): void => {
 };
 
 /** A log in shared memory for joined thread `thread`, its ring holding `minimum` entries at least. */
-export const createMoveLog = (memory: Memory, thread: number, starts: readonly unknown[], announce: (component: number) => void, minimum = minimumEntries): MoveLog => {
+export const createMoveLog = (
+    memory: Memory, thread: number, starts: readonly unknown[], announce: (component: number) => void,
+    deliver: MoveLog["deliver"], gather: MoveLog["gather"], minimum = minimumEntries,
+): MoveLog => {
     const block = memory.allocate(logHeaderBytes);
     const header = new Int32Array(memory.memory.buffer, block, logHeaderBytes / 4).fill(0);
     const log: MoveLog = {
         thread, memory, header, block, ring: new Uint32Array(0), ringEntities: new Float64Array(0), mask: 0, position: 0, limit: 0,
         tick: -1, headed: false, starts, archetypes: [], minimum: powerOfTwo(minimum), announce,
+        delivering: [], delivered: 0, deliver, gather,
     };
     placeRing(log, log.minimum);
     return log;
@@ -201,9 +225,27 @@ export const logSwap = (log: MoveLog, archetype: number, last: number, row: numb
 export const logSet = (log: MoveLog, archetype: number, row: number, component: number, tag: number, added: boolean): void =>
     entry(log, setEntry | (added ? addedFlag : 0) | (archetype << archetypeShift), row, component, tag);
 
-/** At the end of a sync point: its entries, then the sync, published, each by a store the thread loads. */
+/**
+ * The tag of a value the world's thread gives the thread's object, delivered to it by message before its sync is
+ * published.
+ */
+export const deliveredTag = (log: MoveLog, value: unknown): number => {
+    const number = (log.delivered + log.delivering.length) & deliveredMask;
+    log.delivering.push(value);
+    return (deliveredTags + number) >>> 0;
+};
+
+/**
+ * At the end of a sync point: the values it delivers, posted, then its entries and the sync, published, each by a
+ * store the thread loads.
+ */
 export const publishLog = (log: MoveLog): void => {
     if (log.tick < 0) return;
+    if (log.delivering.length > 0) {
+        const values = log.delivering.splice(0);
+        log.deliver(log.tick >>> 0, log.delivered, values);
+        log.delivered = (log.delivered + values.length) & deliveredMask;
+    }
     if (log.headed) Atomics.store(log.header, logPublishedWord, log.position);
     Atomics.store(log.header, logSyncWord, log.tick >>> 0);
     log.tick = -1;

@@ -1,5 +1,6 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { World } from '../../interface/world/world.js';
+import type { Gathered } from './move-log.js';
 import type { WorkerError } from './protocol.js';
 import type { Schema } from '../../interface/schema/schema.js';
 import { layoutOf, viewsOf, type Layout, type Views } from '../../interface/registry/layout.js';
@@ -123,6 +124,8 @@ export type ToWorld = { readonly protocol: typeof protocolName } & (
     | { readonly kind: "observer dropped"; readonly indexes: readonly number[] }
     /** A post it claimed and couldn't run yet, owed to a run: the world posts it again between runs. */
     | { readonly kind: "observer again" }
+    /** What it holds of the objects gather `id` asked for, or why it couldn't give them. */
+    | ({ readonly kind: "gathered"; readonly id: number } & Gathered)
 );
 
 /** From the world's thread to a joined one. */
@@ -173,6 +176,10 @@ export type ToJoined = { readonly protocol: typeof protocolName } & (
     | { readonly kind: "release"; readonly from: number; readonly sequence: number }
     /** A component whose objects the thread fills, by the world's number, with its id: null for one without. */
     | { readonly kind: "component"; readonly component: number; readonly id: string | null }
+    /** Values the world's thread gives the thread's objects at sync `sync`, numbered from `first`, as its move log's tags name them. */
+    | { readonly kind: "values"; readonly sync: number; readonly first: number; readonly values: readonly unknown[] }
+    /** Asks for the values it holds of its objects `components` and `resources`, by the world's numbers, as of a published sync. */
+    | { readonly kind: "gather"; readonly id: number; readonly components: readonly number[]; readonly resources: readonly number[] }
     | { readonly kind: "refused"; readonly message: string }
     /** The name of the Web Lock the world's thread holds while it lives (`threadLock`), posted as it's shared and as it's asked to join. */
     | { readonly kind: "thread lock"; readonly lock: string }

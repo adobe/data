@@ -5,8 +5,8 @@ import { objectLayout, viewsOf, type Layout } from '../../interface/registry/lay
 import { writeOf } from './archetype.js';
 import { emptyViews } from './arrays.js';
 import { readCell } from './cells.js';
-import { logRanThroughWord, logStopsWord, nullTag, ownTag, slotTags, startTag } from './move-log.js';
-import { resourceValueOf, stagedValue, type Mirror, type Previously } from './mirror.js';
+import { deliveredTags, logRanThroughWord, logStopsWord, nullTag, ownTag, slotTags, startTag } from './move-log.js';
+import { deliveredValue, resourceValueOf, stagedValue, type Mirror, type Previously } from './mirror.js';
 import type { WorkerError } from './protocol.js';
 import { rowBinderOf, type Row, type RowArchetype, type RowHost, type RowStorage } from './rows.js';
 import {
@@ -249,7 +249,8 @@ export const createThreadRemovedSystems = <A extends StopArchetype>(host: Thread
             return column === undefined ? start : column.values[row];
         }
         const previous = old(entity, component, start);
-        return tag === ownTag ? previous : stagedValue(mirror, (tag - slotTags) >>> 0, previous);
+        if (tag === ownTag) return previous;
+        return tag >= deliveredTags ? deliveredValue(mirror, tag, previous) : stagedValue(mirror, (tag - slotTags) >>> 0, previous);
     };
 
     /** Whether every removed system a block names was set up here, as null for one this thread never imported. */

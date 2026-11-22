@@ -5,7 +5,7 @@ import { readCell } from "./cells.js";
 import { createCommands } from "./commands.js";
 import { asEntity, indexOf, locate as locateHere } from "./entities.js";
 import { recordCount, structureWord, tableOffsetWord } from "./layout-directory.js";
-import { applying, cellOf, createMirror, nameComponent, rebuild, replay, stage, waitStructure, type Mirror } from "./mirror.js";
+import { applying, cellOf, createMirror, nameComponent, rebuild, receive, replay, stage, waitStructure, type Mirror } from "./mirror.js";
 import { createMoveLog, logSyncWord, ownTag, slotValue, type MoveLog } from "./move-log.js";
 import { claimThreads } from "./remote.js";
 import { createState, defaultOf, idOf, startTicking, type State } from "./state.js";
@@ -58,18 +58,29 @@ const random = (seed: number) => {
     };
 };
 
-/** A world whose "moveLogTest" objects a mirror on this thread fills, its log holding at least `minimum` entries. */
-const threaded = (minimum: number): { readonly state: State; readonly mirror: Mirror; readonly log: MoveLog } => {
+/** Values the world's thread delivered, posted as messages are, which `arrive` hands the mirror. */
+type Delivery = { readonly sync: number; readonly first: number; readonly values: readonly unknown[] };
+
+/**
+ * A world whose "moveLogTest" objects a mirror on this thread fills, its log holding at least `minimum` entries; the
+ * values it delivers wait in `deliveries` until `arrive`.
+ */
+const threaded = (minimum: number) => {
     const state = createState(true);
     let mirror: Mirror | null = null;
-    const log = createMoveLog(state.memory, 1, state.starts, component => {
+    const deliveries: Delivery[] = [];
+    const log: MoveLog = createMoveLog(state.memory, 1, state.starts, component => {
         const key = state.keys[component];
         if (mirror !== null && typeof key === "symbol") nameComponent(mirror, component, key, defaultOf);
-    }, minimum);
-    mirror = createMirror(state.memory.memory, log.block, 1);
+    }, (sync, first, values) => { deliveries.push({ sync, first, values: structuredClone(values) }); }, () => Promise.resolve({ error: "no thread" }), minimum);
+    const made = createMirror(state.memory.memory, log.block, 1);
+    mirror = made;
     for (const key of [uid, amount, flag, own, ...remoteKeys]) idOf(state, key);
     claimThreads(state, log, ["moveLogTest"]);
-    return { state, mirror, log };
+    const arrive = (): void => {
+        for (const { sync, first, values } of deliveries.splice(0)) receive(made, sync, first, values);
+    };
+    return { state, mirror: made, log, deliveries, arrive };
 };
 
 const inline = (): State => {
@@ -131,13 +142,13 @@ const worldCommands = (state: State) => {
 
 /**
  * Random spawns, despawns, adds and removes, single and list forms, from the world's thread, which give the thread's
- * objects only their start or null; then the thread's own values for its objects, staged by the mirror, and world
+ * labels, data, values of their own, delivered, and its notes only their start or null; then the thread's own values for its objects, staged by the mirror, and world
  * commands after those, all applied as one sync point in both worlds.
  */
 const property = (seed: number, minimum: number, steps: number): { readonly compared: number; readonly rebuilds: number } => {
     const next = random(seed);
     const pick = <T>(list: readonly T[]): T => list[Math.floor(next() * list.length)];
-    const { state: world, mirror } = threaded(minimum);
+    const { state: world, mirror, deliveries, arrive } = threaded(minimum);
     const reference = inline();
     let nextUid = 1;
     let compared = 0;
@@ -164,8 +175,9 @@ const property = (seed: number, minimum: number, steps: number): { readonly comp
                 nextUid++;
                 const form = Math.floor(next() * 4);
                 const value = next() < 0.5 ? undefined : null;
+                const given = next() < 0.5 ? value : { text: `w${step}.${o}` };
                 both(commands => {
-                    if (form === 0) commands.spawn([uid, label])({ [uid]: id, [label]: value });
+                    if (form === 0) commands.spawn([uid, label])({ [uid]: id, [label]: given });
                     else if (form === 1) commands.spawn([uid, amount, label, note])({ [uid]: id, [amount]: 1, [note]: value });
                     else if (form === 2) commands.spawn([uid, flag])({ [uid]: id });
                     else commands.spawn([uid, note, own])({ [uid]: id, [own]: "o" });
@@ -178,8 +190,9 @@ const property = (seed: number, minimum: number, steps: number): { readonly comp
             else if (choice < 0.55) {
                 const entity = someone();
                 const form = Math.floor(next() * 4);
+                const given = next() < 0.5 ? none : { text: `a${step}.${o}` };
                 both(commands => {
-                    if (form === 0) commands.add(entity, label, none);
+                    if (form === 0) commands.add(entity, label, given);
                     else if (form === 1) commands.add(entity, note, null);
                     else if (form === 2) commands.add(entity, [amount, label], { [amount]: 2 });
                     else commands.add(entity, [flag, note, label], { [label]: null });
@@ -219,10 +232,17 @@ const property = (seed: number, minimum: number, steps: number): { readonly comp
             synchronize(state);
         }
         dead = [...dead, ...live.filter(entity => locateHere(reference.entities, entity) < 0)].slice(-20);
+        // Now and then the values delivered arrive after the thread tried to replay: it holds before their sync.
+        if (deliveries.length > 0 && next() < 0.3) {
+            const replayed = replay(mirror);
+            if (replayed !== "lapped") expect(replayed).toBe("held");
+        }
+        arrive();
         follow(mirror);
         compared += compare(reference, world, mirror);
-        // Every staged slot is settled once its sync point applied.
+        // Every staged slot and delivered value is settled once its sync point applied.
         expect(mirror.staged.slice(mirror.head).filter(entry => entry.live)).toEqual([]);
+        expect(mirror.delivered.size).toBe(0);
     }
     return { compared, rebuilds: mirror.rebuilds };
 };

@@ -12,7 +12,7 @@ import { refreshDirectories } from './directories.js';
 import { createArrivals, logArrival } from './arrivals.js';
 import { noteEdge, noteEmptied, noteResourceLeft, reclaimEmptied } from './reclaim.js';
 import { beginStructure, countChanged, endStructure, flushDirectory } from './layout-directory.js';
-import { beginLog, logAppend, logMove, logSet, logSwap, publishLog, startTag, tagOf } from './move-log.js';
+import { beginLog, deliveredTag, logAppend, logMove, logSet, logSwap, publishLog, startTag, tagOf } from './move-log.js';
 import { record } from './journal.js';
 import { indexOf, kill, locate, materialize, recycle, release, reserved, unreserve, type Reserved } from './entities.js';
 import { activate } from './activate.js';
@@ -715,7 +715,8 @@ const copyBytes = (storage: Storage, row: number, bytes: Views, offset: number):
 /** A joined thread's object: its tag here, its value given there. */
 const writeRemote = (storage: Storage, log: MoveLog, value: unknown, to: Archetype, toRow: number, from: Archetype | null, fresh: readonly number[] | undefined): void => {
     const id = storage.component;
-    const tag = tagOf(value, log.starts[id]);
+    const given = tagOf(value, log.starts[id]);
+    const tag = given >= 0 ? given : deliveredTag(log, value);
     storage.tags[toRow] = tag;
     logSet(log, to.id, toRow, id, tag, from === null || from.storageById[id] === undefined || (fresh !== undefined && fresh.includes(id)));
 };

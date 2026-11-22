@@ -42,7 +42,7 @@ const joinedWorld = (count: number): { readonly state: State; readonly mirror: M
     const log = createMoveLog(state.memory, 1, state.starts, component => {
         const key = state.keys[component];
         if (mirror !== null && typeof key === "symbol") nameComponent(mirror, component, key, defaultOf);
-    });
+    }, () => {}, () => Promise.resolve({ error: "no thread" }));
     mirror = createMirror(state.memory.memory, log.block, 1);
     for (const key of [serial, label, moved]) idOf(state, key);
     claimThreads(state, log, ["logBenchmark"]);

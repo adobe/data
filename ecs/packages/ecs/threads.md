@@ -129,9 +129,11 @@ All derived from declarations and, for terminal systems, the plugin's analysis o
   one on another thread than the world's, which a joined thread may fill, has no `commands` in its context, writes no
   resources and declares no `lookup`, and `System.changes` watches and reads only the world's thread's values, in
   types and at creation; `before`/`after` across threads is an error at creation.
-- **Values for another thread's objects:** a command issued on one thread may give an object component of another
-  thread only its start or `null`, as tags the owning thread resolves, and a command issued on a joined thread gives a
-  string only its start. Any other value fails the command: a spawn's when
+- **Values for another thread's objects:** a command issued on the world's thread may give an object of another
+  thread data, a value of a type with a schema, not declared `transfer`, which is delivered (see Delivered values); a
+  command issued on a joined thread may give another thread's object only its start or `null`, as tags the owning
+  thread resolves, and a string only its start; and no command gives one that isn't data anything else. Any other
+  value fails the command: a spawn's when
   it's issued, an add's when its system's commands are queued on the world's thread, or when it's issued on a joined
   one, where it drops and its system fails, so the issuing paths check nothing while no joined thread fills objects.
   A `transfer` value reaches its own thread through a run's input instead (see Transfers).
@@ -425,6 +427,29 @@ rows from each archetype's record, its `entities` and count, and values by each 
 array while it's there, else, and for a value its systems wrote, the thread's own, kept from its old rows by entity.
 Tags make it exact: a start or `null` given after a slot or a write wins, as it did. A thread keeps an entity column
 per archetype it holds objects of (8 bytes a row, updated by replay).
+
+### Delivered values
+
+Data the world's thread gives a joined thread's object, by a command, a spawn or `commands.spawnTables`, its resources
+included, goes there by message (`move-log.ts`, `mirror.ts`). As apply writes it, the log numbers it and its row's tag
+is the number plus `deliveredTags`, above every staged slot's, whose ids wrap below them; the log's `set` entry carries
+that tag. Before it publishes the sync, the world posts the sync's values in one `values` message, numbered from the
+first. The thread keeps them by number: replay holds before a sync whose `set` names one that hasn't arrived, as it
+holds for a key not yet named, and the message, once it arrives, runs what waited; a rebuild reading such a tag holds
+too. Replay and rebuild take each value as they apply it, and drop those of syncs applied that a rebuild past them
+never read. A value a message can't carry, though its type said it could, goes as undefined, and its object takes its
+start. The world never waits for delivery.
+
+### Gathered tables
+
+A readonly system's `tables` on the world's thread reads the objects joined threads hold by asking them
+(`observer.ts`, `tables-read.ts`, `join.ts`): before a pass's systems run, the world posts each thread holding objects
+its systems' tables read a `gather` of those components and resources, and runs the pass once every thread answered.
+A thread answers once its mirror is current, holding as replay does, with every entity holding each component and
+its value, and each resource's value, structured-cloned; the world merges them by entity, a row the thread didn't give
+taking its start. Each thread's values are as of the newest sync it replayed, not one moment across threads. An
+object that isn't data isn't asked for, and a thread that's gone or whose values can't be posted gives none: a table
+reading either fails its system, naming why. Objects of other threads don't place a system reading tables.
 
 ### Systems on other threads
 

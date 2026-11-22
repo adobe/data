@@ -23,6 +23,8 @@ own. That includes:
 
 When work seems to need a change here, first find a way to keep it out:
 
+- Build it outside the core, in a library or the application, on the public API, unless the core alone can do it or
+  does it significantly faster (`../../CLAUDE.md`, "The core is minimal and fast").
 - Infer the type the implementation needs (`Parameters<…>`, `ReturnType<…>`, indexed access) instead of exporting a
   name for it.
 - Keep protocol state, progress and bookkeeping in the implementation's own storage, not in components or resources

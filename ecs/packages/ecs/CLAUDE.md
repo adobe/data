@@ -1,5 +1,13 @@
 # ecs
 
+## The core is minimal and fast
+
+`@adobe/ecs` is a deliberately minimal core whose first requirement is performance. Add to it only what can't be built
+on its public API, by a library or the application, or what the core does significantly faster, shown by a benchmark.
+Everything else, such as policies, conveniences, scheduling choices like debouncing and saving, and integrations, goes
+in a library (`ecs-persistence`, `ecs-gpu`) or the application. When a feature seems to need the core, first find the
+smallest primitive that lets it live outside, and propose that.
+
 ## Interface and implementation are separate
 
 The ECS has two parts:

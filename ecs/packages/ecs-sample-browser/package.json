@@ -10,7 +10,7 @@
   ],
   "scripts": {
     "build": "tsc && vite build",
-    "dev": "vite",
+    "dev": "test -n \"$ECS_DEPENDENCIES_BUILT\" || pnpm --filter \"@adobe/*\" run build && vite",
     "typecheck": "tsc",
     "test": "pnpm exec playwright install chromium && vitest --run"
   },

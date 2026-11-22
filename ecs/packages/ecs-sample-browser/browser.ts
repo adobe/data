@@ -2,7 +2,8 @@
 
 // The sample browser: a tab per sample package, the one the URL's hash names shown in the frame, the first when it
 // names none. Each package's page is its `src`, served beside this one. What follows the package in the hash, after a
-// `/`, is the sample's own: `#ecs-guide/1-resources` opens the guide at its chapter. A sample that posts
+// `/`, is the sample's own: `#ecs-guide/1-resources` opens the guide at its chapter, and as the sample's own hash
+// changes, this page's address follows it, so it can be shared. A sample that posts
 // `{ kind: "ecs-sample-leaves" }` to this page is sent `{ kind: "ecs-sample-leave" }` before another is shown, which
 // waits for its `{ kind: "ecs-sample-left" }`, a second at most.
 
@@ -67,6 +68,25 @@ const show = async (): Promise<void> => {
     await leave();
     if (count === chosenCount) frame.setAttribute("src", page);
 };
+
+/**
+ * Keeps this page's address naming the sample's own hash as the sample changes it, while the frame shows the sample
+ * the address names.
+ */
+const followSample = (): void => {
+    const shown = frame?.contentWindow?.location;
+    const [name = ""] = location.hash.slice(1).split("/");
+    const chosen = tabs.find(tab => tab.hash === `#${name}`) ?? tabs[0];
+    if (shown === undefined || chosen === undefined || !shown.pathname.endsWith(`/${chosen.hash.slice(1)}/src/`)) return;
+    const address = shown.hash.length > 1 ? `${chosen.hash}/${shown.hash.slice(1)}` : chosen.hash;
+    if (location.hash === address) return;
+    history.replaceState(history.state, "", address);
+    if (alone !== null) alone.href = `../${chosen.hash.slice(1)}/src/${shown.hash}`;
+};
+frame?.addEventListener("load", () => {
+    followSample();
+    frame.contentWindow?.addEventListener("hashchange", followSample);
+});
 
 addEventListener("hashchange", () => void show());
 void show();

@@ -5,6 +5,13 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
+  typescript: 5.9.3
+  '@webgpu/types': 0.1.74
+  '@types/node@^25': 25.9.9
+  vitest@^5: 5.1.0
+  '@vitest/browser-playwright@^5': 5.1.0
+  vite@^8: 8.3.8
+  playwright: 1.65.1
   '@oxc-parser/binding-wasm32-wasip1>@napi-rs/wasm-runtime': 1.2.5
   '@oxc-transform/binding-wasm32-wasip1>@napi-rs/wasm-runtime': 1.2.5
 
@@ -13,7 +20,7 @@ importers:
   .:
     devDependencies:
       '@types/node':
-        specifier: ^25.6.0
+        specifier: 25.9.9
         version: 25.9.9
       marked:
         specifier: ^18.1.1
@@ -31,34 +38,34 @@ importers:
         specifier: ^1.0.9
         version: 1.0.10
       '@types/node':
-        specifier: ^25.6.0
+        specifier: 25.9.9
         version: 25.9.9
       '@vitest/browser-playwright':
-        specifier: ^5.0.5
+        specifier: 5.1.0
         version: 5.1.0(playwright@1.65.1)(vite@8.3.8(@types/node@25.9.9)(yaml@2.9.1))(vitest@5.1.0)
       '@vitest/coverage-v8':
         specifier: ^5.0.5
         version: 5.1.0(@vitest/browser@5.1.0)(vitest@5.1.0)
       '@webgpu/types':
-        specifier: ^0.1.61
+        specifier: 0.1.74
         version: 0.1.74
       ecs-guide-checks:
         specifier: workspace:*
         version: link:../ecs-guide-checks
       playwright:
-        specifier: ^1.64.1
+        specifier: 1.65.1
         version: 1.65.1
       typedoc:
         specifier: ^0.28.9
         version: 0.28.20(typescript@5.9.3)
       typescript:
-        specifier: ^5.8.3
+        specifier: 5.9.3
         version: 5.9.3
       vite:
-        specifier: ^8.3.4
+        specifier: 8.3.8
         version: 8.3.8(@types/node@25.9.9)(yaml@2.9.1)
       vitest:
-        specifier: ^5.0.5
+        specifier: 5.1.0
         version: 5.1.0(@types/node@25.9.9)(@vitest/browser-playwright@5.1.0)(@vitest/coverage-v8@5.1.0)(@vitest/ui@5.1.0)(vite@8.3.8(@types/node@25.9.9)(yaml@2.9.1))
       wabt:
         specifier: 1.0.39
@@ -73,19 +80,19 @@ importers:
         specifier: 0.155.0
         version: 0.155.0
       '@types/node':
-        specifier: ^25.6.0
+        specifier: 25.9.9
         version: 25.9.9
       ecs-guide-checks:
         specifier: workspace:*
         version: link:../ecs-guide-checks
       typescript:
-        specifier: ^5.8.3
+        specifier: 5.9.3
         version: 5.9.3
       vite:
-        specifier: ^8.3.4
+        specifier: 8.3.8
         version: 8.3.8(@types/node@25.9.9)(yaml@2.9.1)
       vitest:
-        specifier: ^5.0.5
+        specifier: 5.1.0
         version: 5.1.0(@types/node@25.9.9)(@vitest/browser-playwright@5.1.0)(@vitest/coverage-v8@5.1.0)(@vitest/ui@5.1.0)(vite@8.3.8(@types/node@25.9.9)(yaml@2.9.1))
 
   packages/ecs-benchmark:
@@ -98,22 +105,22 @@ importers:
         specifier: workspace:*
         version: link:../ecs-architecture
       '@types/node':
-        specifier: ^25.6.0
+        specifier: 25.9.9
         version: 25.9.9
       '@webgpu/types':
-        specifier: ^0.1.61
+        specifier: 0.1.74
         version: 0.1.74
       playwright:
-        specifier: ^1.64.1
+        specifier: 1.65.1
         version: 1.65.1
       typescript:
-        specifier: ^5.8.3
+        specifier: 5.9.3
         version: 5.9.3
       vite:
-        specifier: ^8.3.4
+        specifier: 8.3.8
         version: 8.3.8(@types/node@25.9.9)(yaml@2.9.1)
       vitest:
-        specifier: ^5.0.5
+        specifier: 5.1.0
         version: 5.1.0(@types/node@25.9.9)(@vitest/browser-playwright@5.1.0)(@vitest/coverage-v8@5.1.0)(@vitest/ui@5.1.0)(vite@8.3.8(@types/node@25.9.9)(yaml@2.9.1))
 
   packages/ecs-gpu:
@@ -123,28 +130,28 @@ importers:
         version: link:../ecs
     devDependencies:
       '@types/node':
-        specifier: ^25.6.0
+        specifier: 25.9.9
         version: 25.9.9
       '@vitest/browser-playwright':
-        specifier: ^5.0.5
+        specifier: 5.1.0
         version: 5.1.0(playwright@1.65.1)(vite@8.3.8(@types/node@25.9.9)(yaml@2.9.1))(vitest@5.1.0)
       '@webgpu/types':
-        specifier: ^0.1.61
+        specifier: 0.1.74
         version: 0.1.74
       ecs-guide-checks:
         specifier: workspace:*
         version: link:../ecs-guide-checks
       playwright:
-        specifier: ^1.64.1
+        specifier: 1.65.1
         version: 1.65.1
       typescript:
-        specifier: ^5.8.3
+        specifier: 5.9.3
         version: 5.9.3
       vite:
-        specifier: ^8.3.4
+        specifier: 8.3.8
         version: 8.3.8(@types/node@25.9.9)(yaml@2.9.1)
       vitest:
-        specifier: ^5.0.5
+        specifier: 5.1.0
         version: 5.1.0(@types/node@25.9.9)(@vitest/browser-playwright@5.1.0)(@vitest/coverage-v8@5.1.0)(@vitest/ui@5.1.0)(vite@8.3.8(@types/node@25.9.9)(yaml@2.9.1))
 
   packages/ecs-gpu-views:
@@ -160,19 +167,19 @@ importers:
         specifier: workspace:*
         version: link:../ecs-architecture
       '@types/node':
-        specifier: ^25.6.0
+        specifier: 25.9.9
         version: 25.9.9
       '@webgpu/types':
-        specifier: ^0.1.61
+        specifier: 0.1.74
         version: 0.1.74
       typescript:
-        specifier: ^5.8.3
+        specifier: 5.9.3
         version: 5.9.3
       vite:
-        specifier: ^8.3.4
+        specifier: 8.3.8
         version: 8.3.8(@types/node@25.9.9)(yaml@2.9.1)
       vitest:
-        specifier: ^5.0.5
+        specifier: 5.1.0
         version: 5.1.0(@types/node@25.9.9)(@vitest/browser-playwright@5.1.0)(@vitest/coverage-v8@5.1.0)(@vitest/ui@5.1.0)(vite@8.3.8(@types/node@25.9.9)(yaml@2.9.1))
 
   packages/ecs-guide:
@@ -244,36 +251,36 @@ importers:
         specifier: ^18.1.1
         version: 18.2.0
       typescript:
-        specifier: ^5.8.3
+        specifier: 5.9.3
         version: 5.9.3
     devDependencies:
       '@types/node':
-        specifier: ^25.6.0
+        specifier: 25.9.9
         version: 25.9.9
       '@webgpu/types':
-        specifier: ^0.1.61
+        specifier: 0.1.74
         version: 0.1.74
       playwright:
-        specifier: ^1.64.1
+        specifier: 1.65.1
         version: 1.65.1
       vite:
-        specifier: ^8.3.4
+        specifier: 8.3.8
         version: 8.3.8(@types/node@25.9.9)(yaml@2.9.1)
       vitest:
-        specifier: ^5.0.5
+        specifier: 5.1.0
         version: 5.1.0(@types/node@25.9.9)(@vitest/browser-playwright@5.1.0)(@vitest/coverage-v8@5.1.0)(@vitest/ui@5.1.0)(vite@8.3.8(@types/node@25.9.9)(yaml@2.9.1))
 
   packages/ecs-guide-checks:
     dependencies:
       typescript:
-        specifier: ^5.8.3
+        specifier: 5.9.3
         version: 5.9.3
       vitest:
-        specifier: ^5.0.5
+        specifier: 5.1.0
         version: 5.1.0(@types/node@25.9.9)(@vitest/browser-playwright@5.1.0)(@vitest/coverage-v8@5.1.0)(@vitest/ui@5.1.0)(vite@8.3.8(@types/node@25.9.9)(yaml@2.9.1))
     devDependencies:
       '@types/node':
-        specifier: ^25.6.0
+        specifier: 25.9.9
         version: 25.9.9
 
   packages/ecs-particles-webgpu:
@@ -289,19 +296,19 @@ importers:
         specifier: workspace:*
         version: link:../ecs-architecture
       '@types/node':
-        specifier: ^25.6.0
+        specifier: 25.9.9
         version: 25.9.9
       '@webgpu/types':
-        specifier: ^0.1.61
+        specifier: 0.1.74
         version: 0.1.74
       typescript:
-        specifier: ^5.8.3
+        specifier: 5.9.3
         version: 5.9.3
       vite:
-        specifier: ^8.3.4
+        specifier: 8.3.8
         version: 8.3.8(@types/node@25.9.9)(yaml@2.9.1)
       vitest:
-        specifier: ^5.0.5
+        specifier: 5.1.0
         version: 5.1.0(@types/node@25.9.9)(@vitest/browser-playwright@5.1.0)(@vitest/coverage-v8@5.1.0)(@vitest/ui@5.1.0)(vite@8.3.8(@types/node@25.9.9)(yaml@2.9.1))
 
   packages/ecs-persistence:
@@ -311,19 +318,19 @@ importers:
         version: link:../ecs
     devDependencies:
       '@types/node':
-        specifier: ^25.6.0
+        specifier: 25.9.9
         version: 25.9.9
       ecs-guide-checks:
         specifier: workspace:*
         version: link:../ecs-guide-checks
       typescript:
-        specifier: ^5.8.3
+        specifier: 5.9.3
         version: 5.9.3
       vite:
-        specifier: ^8.3.4
+        specifier: 8.3.8
         version: 8.3.8(@types/node@25.9.9)(yaml@2.9.1)
       vitest:
-        specifier: ^5.0.5
+        specifier: 5.1.0
         version: 5.1.0(@types/node@25.9.9)(@vitest/browser-playwright@5.1.0)(@vitest/coverage-v8@5.1.0)(@vitest/ui@5.1.0)(vite@8.3.8(@types/node@25.9.9)(yaml@2.9.1))
 
   packages/ecs-sample-browser:
@@ -336,22 +343,22 @@ importers:
         version: 1.12.6
     devDependencies:
       '@types/node':
-        specifier: ^25.6.0
+        specifier: 25.9.9
         version: 25.9.9
       '@webgpu/types':
-        specifier: ^0.1.61
+        specifier: 0.1.74
         version: 0.1.74
       playwright:
-        specifier: ^1.64.1
+        specifier: 1.65.1
         version: 1.65.1
       typescript:
-        specifier: ^5.8.3
+        specifier: 5.9.3
         version: 5.9.3
       vite:
-        specifier: ^8.3.4
+        specifier: 8.3.8
         version: 8.3.8(@types/node@25.9.9)(yaml@2.9.1)
       vitest:
-        specifier: ^5.0.5
+        specifier: 5.1.0
         version: 5.1.0(@types/node@25.9.9)(@vitest/browser-playwright@5.1.0)(@vitest/coverage-v8@5.1.0)(@vitest/ui@5.1.0)(vite@8.3.8(@types/node@25.9.9)(yaml@2.9.1))
 
   packages/ecs-todo-vanillajs:
@@ -364,25 +371,25 @@ importers:
         specifier: workspace:*
         version: link:../ecs-architecture
       '@types/node':
-        specifier: ^25.6.0
+        specifier: 25.9.9
         version: 25.9.9
       '@vitest/browser-playwright':
-        specifier: ^5.0.5
+        specifier: 5.1.0
         version: 5.1.0(playwright@1.65.1)(vite@8.3.8(@types/node@25.9.9)(yaml@2.9.1))(vitest@5.1.0)
       '@webgpu/types':
-        specifier: ^0.1.61
+        specifier: 0.1.74
         version: 0.1.74
       playwright:
-        specifier: ^1.64.1
+        specifier: 1.65.1
         version: 1.65.1
       typescript:
-        specifier: ^5.8.3
+        specifier: 5.9.3
         version: 5.9.3
       vite:
-        specifier: ^8.3.4
+        specifier: 8.3.8
         version: 8.3.8(@types/node@25.9.9)(yaml@2.9.1)
       vitest:
-        specifier: ^5.0.5
+        specifier: 5.1.0
         version: 5.1.0(@types/node@25.9.9)(@vitest/browser-playwright@5.1.0)(@vitest/coverage-v8@5.1.0)(@vitest/ui@5.1.0)(vite@8.3.8(@types/node@25.9.9)(yaml@2.9.1))
 
   packages/ecs-transfers-canvas:
@@ -395,19 +402,62 @@ importers:
         specifier: workspace:*
         version: link:../ecs-architecture
       '@types/node':
-        specifier: ^25.6.0
+        specifier: 25.9.9
         version: 25.9.9
       '@webgpu/types':
-        specifier: ^0.1.61
+        specifier: 0.1.74
         version: 0.1.74
       typescript:
-        specifier: ^5.8.3
+        specifier: 5.9.3
         version: 5.9.3
       vite:
-        specifier: ^8.3.4
+        specifier: 8.3.8
         version: 8.3.8(@types/node@25.9.9)(yaml@2.9.1)
       vitest:
-        specifier: ^5.0.5
+        specifier: 5.1.0
+        version: 5.1.0(@types/node@25.9.9)(@vitest/browser-playwright@5.1.0)(@vitest/coverage-v8@5.1.0)(@vitest/ui@5.1.0)(vite@8.3.8(@types/node@25.9.9)(yaml@2.9.1))
+
+  packages/ecs-voxel-editor:
+    dependencies:
+      '@adobe/ecs':
+        specifier: workspace:*
+        version: link:../ecs
+      '@adobe/ecs-gpu':
+        specifier: workspace:*
+        version: link:../ecs-gpu
+      '@spectrum-web-components/action-button':
+        specifier: ^1.12.5
+        version: 1.12.6
+      '@spectrum-web-components/action-group':
+        specifier: ^1.12.5
+        version: 1.12.6
+      '@spectrum-web-components/theme':
+        specifier: ^1.12.5
+        version: 1.12.6
+    devDependencies:
+      '@adobe/ecs-architecture':
+        specifier: workspace:*
+        version: link:../ecs-architecture
+      '@types/node':
+        specifier: 25.9.9
+        version: 25.9.9
+      '@vitest/browser-playwright':
+        specifier: 5.1.0
+        version: 5.1.0(playwright@1.65.1)(vite@8.3.8(@types/node@25.9.9)(yaml@2.9.1))(vitest@5.1.0)
+      '@webgpu/types':
+        specifier: 0.1.74
+        version: 0.1.74
+      playwright:
+        specifier: 1.65.1
+        version: 1.65.1
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+      vite:
+        specifier: 8.3.8
+        version: 8.3.8(@types/node@25.9.9)(yaml@2.9.1)
+      vitest:
+        specifier: 5.1.0
         version: 5.1.0(@types/node@25.9.9)(@vitest/browser-playwright@5.1.0)(@vitest/coverage-v8@5.1.0)(@vitest/ui@5.1.0)(vite@8.3.8(@types/node@25.9.9)(yaml@2.9.1))
 
 packages:
@@ -662,6 +712,9 @@ packages:
   '@spectrum-web-components/action-button@1.12.6':
     resolution: {integrity: sha512-GW0MPcXYbCPm/cJxUdAENy7SJbgJQHqdEFGUDVnGVCFkCEDUmBhJP6UCQfZs6aTWbVsk/k8FR9BcYSB+C2uzUA==}
 
+  '@spectrum-web-components/action-group@1.12.6':
+    resolution: {integrity: sha512-gx6JWfKOyfFvU+jaEgKGv8RdlH2eH/60djebxwfwI1gyTyqvS1FKSzLAXbNvtZ9sMoNUygRemPLZRNKYJT31JQ==}
+
   '@spectrum-web-components/badge@1.12.6':
     resolution: {integrity: sha512-gwMGF/cIHfelww2b9tfRIVBHCNnTOObfr53D9LYzjcm5N3HUpZPnq7cDaAggtLOK4i7UytN4UrokuWTHUNojDg==}
 
@@ -682,6 +735,9 @@ packages:
 
   '@spectrum-web-components/icons-ui@1.12.6':
     resolution: {integrity: sha512-vFL5wU9W+qWAUL/uZ/mu6uK/YHeghIS7sgBSfbZzP3lfn2e7b7ijZWIVigWdMt5ApQNCUCgAZX5vRt3e/9RsTg==}
+
+  '@spectrum-web-components/icons-workflow@1.12.6':
+    resolution: {integrity: sha512-UYIImx8iDvGXTK6gTNm2b2cHtxOzkzxWP5353OCJ3QoizIPfsiSE4ivt/tiMMYV4a7iU5AKHz/3QyQ2xmGSGLA==}
 
   '@spectrum-web-components/iconset@1.12.6':
     resolution: {integrity: sha512-SLnlERujgUKOJd3nlN1ENM91WrMoKdIZZ+Tf5rQYZg0bQzf4rmMmOXYa+2mU1Bo29PXGRM7l3QUEP1NVq+Icww==}
@@ -740,7 +796,7 @@ packages:
   '@vitest/browser-playwright@5.1.0':
     resolution: {integrity: sha512-3PbVvX/KNeUEzUeTTXw5bQDyfJS+WqU/UJ8RNWIojHb0mE6d/IBjuLmt+i7OpJ00tjNWv0O6XBm5ler/tEf3eg==}
     peerDependencies:
-      playwright: '*'
+      playwright: 1.65.1
       vitest: 5.1.0
 
   '@vitest/browser@5.1.0':
@@ -769,7 +825,7 @@ packages:
     resolution: {integrity: sha512-5umB9/jlWcqVS6fsrFmv5Gdnpu6wAUio/lEOwAmvB7v+lFo/IW2B9FhAD0p19GCULTgMzLCdUmuCDCnAzWgppQ==}
     peerDependencies:
       msw: ^2.4.9 || ^3.0.0
-      vite: ^6.0.0 || ^7.0.0 || ^8.0.0
+      vite: 8.3.8
     peerDependenciesMeta:
       msw:
         optional: true
@@ -1071,7 +1127,7 @@ packages:
     engines: {node: '>= 18', pnpm: '>= 10'}
     hasBin: true
     peerDependencies:
-      typescript: 5.0.x || 5.1.x || 5.2.x || 5.3.x || 5.4.x || 5.5.x || 5.6.x || 5.7.x || 5.8.x || 5.9.x || 6.0.x
+      typescript: 5.9.3
 
   typescript@5.9.3:
     resolution: {integrity: sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw==}
@@ -1089,7 +1145,7 @@ packages:
     engines: {node: ^20.19.0 || >=22.12.0}
     hasBin: true
     peerDependencies:
-      '@types/node': ^20.19.0 || >=22.12.0
+      '@types/node': 25.9.9
       '@vitejs/devtools': ^0.7.1 || ^0.8.0
       esbuild: ^0.27.0 || ^0.28.0
       jiti: '>=1.21.0'
@@ -1134,7 +1190,7 @@ packages:
     peerDependencies:
       '@edge-runtime/vm': '*'
       '@opentelemetry/api': ^1.9.0
-      '@types/node': ^22.0.0 || >=24.0.0
+      '@types/node': 25.9.9
       '@vitest/browser-playwright': 5.1.0
       '@vitest/browser-preview': 5.1.0
       '@vitest/browser-webdriverio': ^5.0.0-beta.5 || >=5.0.0
@@ -1143,7 +1199,7 @@ packages:
       '@vitest/ui': 5.1.0
       happy-dom: '*'
       jsdom: '*'
-      vite: ^6.4.0 || ^7.0.0 || ^8.0.0
+      vite: 8.3.8
     peerDependenciesMeta:
       '@edge-runtime/vm':
         optional: true
@@ -1449,6 +1505,14 @@ snapshots:
       '@spectrum-web-components/icons-ui': 1.12.6
       '@spectrum-web-components/shared': 1.12.6
 
+  '@spectrum-web-components/action-group@1.12.6':
+    dependencies:
+      '@lit-labs/observers': 2.0.2
+      '@spectrum-web-components/action-button': 1.12.6
+      '@spectrum-web-components/base': 1.12.6
+      '@spectrum-web-components/icons-workflow': 1.12.6
+      '@spectrum-web-components/reactive-controllers': 1.12.6
+
   '@spectrum-web-components/badge@1.12.6':
     dependencies:
       '@spectrum-web-components/base': 1.12.6
@@ -1488,6 +1552,11 @@ snapshots:
       '@spectrum-web-components/base': 1.12.6
       '@spectrum-web-components/icon': 1.12.6
       '@spectrum-web-components/iconset': 1.12.6
+
+  '@spectrum-web-components/icons-workflow@1.12.6':
+    dependencies:
+      '@spectrum-web-components/base': 1.12.6
+      '@spectrum-web-components/icon': 1.12.6
 
   '@spectrum-web-components/iconset@1.12.6':
     dependencies:

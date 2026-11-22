@@ -201,6 +201,17 @@ it("runs the guide at a chapter named in the hash, its threads chapter's program
     }
 }, 90000);
 
+it("names the guide's chapter in its address as the guide changes it, so the address shared opens it", async () => {
+    const { page, frame, errors } = await sample("#ecs-guide");
+    try {
+        await frame.evaluate(() => { location.hash = "#3-systems"; });
+        await page.waitForFunction(() => location.hash === "#ecs-guide/3-systems", null, { timeout: 10000 });
+        expect(errors).toEqual([]);
+    } finally {
+        await page.close();
+    }
+}, 90000);
+
 it("isolates the sample browser again after a hard reload, which loads past its service worker", async () => {
     const { page, errors } = await sample("#ecs-guide/19-threads");
     try {

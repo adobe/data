@@ -1,0 +1,34 @@
+{
+  "name": "ecs-voxel-editor",
+  "version": "0.0.0",
+  "description": "A voxel editor on the ECS: a WebGPU canvas and Spectrum and vanilla custom elements, driven by systems",
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "tsc && vite build",
+    "dev": "test -n \"$ECS_DEPENDENCIES_BUILT\" || pnpm --filter \"$npm_package_name^...\" run build && vite",
+    "typecheck": "tsc",
+    "test": "pnpm exec playwright install chromium && vitest --run"
+  },
+  "dependencies": {
+    "@adobe/ecs": "workspace:*",
+    "@adobe/ecs-gpu": "workspace:*",
+    "@spectrum-web-components/action-button": "^1.12.5",
+    "@spectrum-web-components/action-group": "^1.12.5",
+    "@spectrum-web-components/theme": "^1.12.5"
+  },
+  "devDependencies": {
+    "@adobe/ecs-architecture": "workspace:*",
+    "@types/node": "^25.6.0",
+    "@vitest/browser-playwright": "^5.0.5",
+    "@webgpu/types": "^0.1.61",
+    "playwright": "^1.64.1",
+    "typescript": "^5.8.3",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.5"
+  },
+  "ecsArchitecture": {
+    "agents": "../.."
+  }
+}

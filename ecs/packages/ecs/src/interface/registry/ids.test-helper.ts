@@ -27,7 +27,7 @@ export const recordDeclaration = (key: symbol, kind: "component" | "resource" | 
  * Gives a declaration, or the body of a system declaring nothing, what its body uses, as the plugin does where it sees
  * the constructor's call: for calls it doesn't see. Each list names keys; what isn't given is used by nothing.
  */
-export const giveAccess = <T extends object>(made: T, uses: {
+export const giveAccess = <const T extends object>(made: T, uses: {
     readonly read?: readonly symbol[];
     readonly write?: readonly symbol[];
     readonly resources?: { readonly read?: readonly symbol[]; readonly write?: readonly symbol[]; readonly reduce?: readonly symbol[] };

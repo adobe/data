@@ -60,7 +60,10 @@ circular-await chain and the bundled graph deadlocks silently, while native ESM 
 
 The root and CI never name individual packages. They invoke uniform recursive scripts (`pnpm -r run <script>`), which
 pnpm runs in dependency order and skips for packages that don't define the script. Each package owns *how* it does each
-step, so a new package needs no edit to any central list but `pnpm-workspace.yaml`, which lists packages explicitly.
+step, so a new package needs no edit to any central list but `pnpm-workspace.yaml`, which lists packages explicitly:
+both this workspace's and the repository root's, whose CI builds and tests it with the root's lockfile as well as this
+one's. The tools both workspaces build with are pinned alike in both files' `overrides`; the root's
+`scripts/check-workspace-conventions.mjs` checks the lists, the pins and both lockfiles agree.
 
 Standard script names a package may define:
 
@@ -69,7 +72,10 @@ Standard script names a package may define:
 - **`test`**: run the package's *complete* suite, self-contained and runnable in CI. A package that needs a browser
   installs and drives it itself. Keep long or optional lanes under suffixed names (`test:perf`) that CI doesn't call.
 - **`lint`**: lint the package.
-- **`dev`**: local dev or watch.
+- **`dev`**: local dev or watch. A page served from the workspace's packages builds them first, as they're served
+  from their `dist`, which a failed build leaves stale: `test -n "$ECS_DEPENDENCIES_BUILT" || pnpm --filter
+  "$npm_package_name^..." run build && vite`, so a build error stops it. The workspace's `dev` builds them once and
+  sets `ECS_DEPENDENCIES_BUILT`; `scripts/check-workspace-conventions.mjs` checks every such `dev`.
 - **`docs`**: generate the package's documentation (typedoc). What a package publishes to the GitHub Pages site is
   its `pages` field: a list of `{ "from", "to" }`, a folder of the package and its path on the site (`"."` for the
   root). The docs workflow runs `pnpm -r run build` and `pnpm -r run docs`, then `scripts/collect-pages.mjs` copies

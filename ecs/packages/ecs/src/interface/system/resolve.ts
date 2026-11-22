@@ -131,7 +131,8 @@ export const componentLists = (components: ComponentAccess, used: Used | null, r
 export const lookupLists = (lookup: SystemLookup | Lookup, reads: readonly Key[] | null): SystemLookupLists => {
     if (lookup.index !== undefined) {
         const index = indexDefinitionOf(lookup.index)?.declaration;
-        const read = reads ?? [...index?.key ?? [], ...index?.components?.has ?? []];
+        // A key may be listed in `with` too; each is read once.
+        const read = reads ?? [...new Set([...index?.key ?? [], ...index?.components?.has ?? []])];
         const { changed } = lookup;
         return changed === true ? { index: lookup.index, read, changed } : compact({ index: lookup.index, read, changed });
     }

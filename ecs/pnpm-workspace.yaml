@@ -6,6 +6,7 @@ packages:
   - 'packages/ecs-gpu-views'
   - 'packages/ecs-particles-webgpu'
   - 'packages/ecs-todo-vanillajs'
+  - 'packages/ecs-voxel-editor'
   - 'packages/ecs-transfers-canvas'
   - 'packages/ecs-sample-browser'
   - 'packages/ecs-guide'
@@ -14,5 +15,16 @@ packages:
 allowBuilds:
   esbuild: false
 overrides:
+  # The tools both this workspace and the repository root's build with, pinned alike in both, so each builds and tests
+  # with what the other does; the root's scripts/check-workspace-conventions.mjs checks they agree, and that both
+  # lockfiles resolve them alike.
+  typescript: 5.9.3
+  '@webgpu/types': 0.1.74
+  '@types/node@^25': 25.9.9
+  'vitest@^5': 5.1.0
+  '@vitest/browser-playwright@^5': 5.1.0
+  'vite@^8': 8.3.8
+  playwright: 1.65.1
+
   '@oxc-parser/binding-wasm32-wasip1>@napi-rs/wasm-runtime': 1.2.5
   '@oxc-transform/binding-wasm32-wasip1>@napi-rs/wasm-runtime': 1.2.5

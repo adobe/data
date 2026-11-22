@@ -221,7 +221,9 @@ export const createGpu = (device: GPUDevice, outOfBand: OutOfBand): GpuEngine =>
         const { widened, storage } = resident;
         if (widened === null) {
             const start = low * resident.stride;
-            device.queue.writeBuffer(heap, resident.offset + start, storage.views.u8, start, (high - low) * resident.stride);
+            // The storage's view is over shared memory, which the queue takes whole, with a byte offset into it.
+            const { u8 } = storage.views;
+            device.queue.writeBuffer(heap, resident.offset + start, u8.buffer, u8.byteOffset + start, (high - low) * resident.stride);
             return;
         }
         const words = resident.gpuStride / 4;
@@ -282,7 +284,8 @@ export const createGpu = (device: GPUDevice, outOfBand: OutOfBand): GpuEngine =>
         if (write && count > 0) {
             // A queue write lands before work recorded but not yet submitted, which may read the old lists.
             submit();
-            device.queue.writeBuffer(heap, block.offset, array, 0, count);
+            // The queue takes a buffer of shared memory whole, with a byte offset into it.
+            device.queue.writeBuffer(heap, block.offset, array.buffer, array.byteOffset, count * array.BYTES_PER_ELEMENT);
         }
         return block.offset / 4;
     };

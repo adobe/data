@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Voxel Editor</title>
+    <link rel="icon" href="data:,">
+    <style>
+        :root { --editor-accent: #3b82f6; --editor-hover: rgb(255 255 255 / 0.08); --editor-line: #2c2f36; color-scheme: dark; }
+        html, body { height: 100%; margin: 0; }
+        body { background: #1c1e23; color: #e5e7eb; font: 13px/1.4 system-ui, sans-serif; overflow: hidden; }
+        /* The scene's track takes the space left, at least none: a canvas's size in pixels, which follows its laid-out
+           size, mustn't size the track it's laid out in, or each feeds the other. */
+        sp-theme { display: grid; grid-template: "bar bar" auto "path path" auto "side scene" minmax(0, 1fr) / 240px minmax(0, 1fr); height: 100%; background: none; }
+        edit-path { grid-area: path; padding: 4px 12px; border-bottom: 1px solid var(--editor-line); }
+        header { grid-area: bar; display: flex; align-items: center; gap: 16px; padding: 6px 12px; border-bottom: 1px solid var(--editor-line); flex-wrap: wrap; }
+        library-bar { margin-left: auto; }
+        palette-panel { height: 42vh; min-height: 240px; }
+        header h1 { margin: 0; font-size: 14px; font-weight: 600; }
+        aside { grid-area: side; display: flex; flex-direction: column; gap: 8px; padding: 10px; border-right: 1px solid var(--editor-line);
+            overflow: auto; }
+        /* Each section opens and closes on its own, by its title. */
+        .section { display: flex; flex-direction: column; border-bottom: 1px solid var(--editor-line); padding-bottom: 8px; }
+        .section > summary { display: flex; align-items: center; gap: 6px; cursor: pointer; list-style: none; user-select: none; padding: 2px 0 6px;
+            font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: #9ca3af; }
+        .section > summary::-webkit-details-marker { display: none; }
+        .section > summary::before { content: "▸"; font-size: 10px; transition: transform 0.1s; }
+        .section[open] > summary::before { transform: rotate(90deg); }
+        .section > summary:hover { color: #e5e7eb; }
+        .hint { margin: 0; font-size: 11px; color: #9ca3af; }
+        .hint kbd { font: inherit; padding: 0 3px; border: 1px solid #4b5563; border-radius: 3px; }
+        .no-gpu { grid-area: scene; place-self: center; color: #9ca3af; }
+        canvas.scene { grid-area: scene; display: block; width: 100%; height: 100%; min-width: 0; min-height: 0; touch-action: none; outline: none; }
+        /* The mode shows everywhere it matters: the switch, the edit buttons' labels, a badge on the view, and in paint mode a frame around it. */
+        .painting { display: none; }
+        body[data-layer="paint"] .painting { display: inline; }
+        body[data-layer="paint"] .building { display: none; }
+        .layer-frame { grid-area: scene; pointer-events: none; display: none; box-shadow: inset 0 0 0 3px #f59e0b; }
+        body[data-layer="paint"] .layer-frame { display: block; }
+        .layer-badge { grid-area: scene; align-self: start; justify-self: center; margin-top: 10px; padding: 4px 12px; border: 0; border-radius: 999px; cursor: pointer;
+            font: inherit; font-size: 12px; font-weight: 600; background: rgb(59 130 246 / 0.85); color: #fff; box-shadow: 0 2px 8px rgb(0 0 0 / 0.4); }
+        .layer-badge kbd { font: inherit; padding: 0 4px; border: 1px solid rgb(255 255 255 / 0.6); border-radius: 3px; }
+        .layer-badge:hover { filter: brightness(1.12); }
+        .layer-badge:focus:not(:focus-visible) { outline: none; }
+        body[data-layer="paint"] .layer-badge { background: #d97706; }
+    </style>
+</head>
+<body>
+    <sp-theme system="spectrum" color="dark" scale="medium">
+        <header>
+            <h1>Voxel Editor</h1>
+            <menu-button class="file"></menu-button>
+            <sp-action-group compact>
+                <sp-action-button data-history="undo" title="Undo (Ctrl+Z, ⌘Z)" disabled>Undo</sp-action-button>
+                <sp-action-button data-history="redo" title="Redo (Ctrl+Shift+Z, ⌘⇧Z)" disabled>Redo</sp-action-button>
+            </sp-action-group>
+            <sp-action-group compact>
+                <sp-action-button data-edit="extrude" title="Extrude the selection, or in paint mode paint it (+)"><span class="building">Extrude +</span><span class="painting">Paint +</span></sp-action-button>
+                <sp-action-button data-edit="delete" title="Delete under the selection, or in paint mode take its paint off (−)"><span class="building">Delete −</span><span class="painting">Unpaint −</span></sp-action-button>
+                <sp-action-button data-edit="clear" title="Deselect all (Esc, Alt+A)">Deselect</sp-action-button>
+            </sp-action-group>
+            <library-bar></library-bar>
+        </header>
+        <edit-path></edit-path>
+        <aside>
+            <details class="section" open><summary>Palette</summary><palette-panel></palette-panel></details>
+            <details class="section" open><summary>Material</summary><material-details></material-details></details>
+            <details class="section" open><summary>Model size</summary><model-size></model-size></details>
+            <details class="section" open><summary>Saved selections</summary><selection-names></selection-names></details>
+            <details class="section"><summary>Help</summary><p class="hint">
+                Click or drag to select faces; hold <kbd>Shift</kbd> for a line, <kbd>Ctrl</kbd> for a rectangle, double-click for
+                connected faces. <kbd>+</kbd> extrudes with the picked material or model, <kbd>−</kbd> deletes;
+                <kbd>P</kbd> switches to paint mode, where <kbd>+</kbd> paints and <kbd>−</kbd> takes paint off.
+                <kbd>Ctrl</kbd> <kbd>Z</kbd> undoes. <kbd>Tab</kbd> enters the instance under the pointer to edit its model,
+                <kbd>Shift</kbd> <kbd>Tab</kbd> leaves; <kbd>Delete</kbd> removes it.<br><br>
+                Middle drag or <kbd>Alt</kbd> drag orbits, with <kbd>Shift</kbd> pans, with <kbd>Ctrl</kbd> zooms; two fingers orbit too, and pinching zooms.
+                <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> turn the view; numpad <kbd>1</kbd> <kbd>3</kbd> <kbd>7</kbd> for views, <kbd>N</kbd> for the starting view, <kbd>Home</kbd> to frame.
+            </p></details>
+        </aside>
+        <canvas class="scene" tabindex="0"></canvas>
+        <div class="layer-frame" aria-hidden="true"></div>
+        <button type="button" class="layer-badge" data-edit="switch-layer" title="Switch between building and painting (P)"><span class="building">Material mode</span><span class="painting">Paint mode</span> · <kbd>P</kbd> switches</button>
+        <p class="no-gpu" hidden>This browser has no WebGPU, so the scene can't be drawn.</p>
+    </sp-theme>
+    <form-dialog></form-dialog>
+    <script type="module" src="./features/main/view/entry.page.ts"></script>
+</body>
+</html>

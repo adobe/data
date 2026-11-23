@@ -37,7 +37,7 @@ export const createImmediateConcurrency = (): ConcurrencyStrategyFactory =>
             const k = key(id, userId);
             const prior = pending.get(k);
             if (prior) {
-                execute(t => applyOperations(t, prior.undo), { intermediate: true, userId: undefined });
+                execute(t => applyOperations(t, prior.undo, { rewind: true }), { intermediate: true, userId: undefined });
                 pending.delete(k);
             }
         };

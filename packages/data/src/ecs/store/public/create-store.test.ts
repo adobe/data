@@ -1446,4 +1446,42 @@ describe("createStore", () => {
         });
     });
 
+    describe("entity generations", () => {
+        const makeStore = () => createStore({
+            components: { position: positionSchema },
+            resources: {},
+            archetypes: { Node: ["position"], Ephemeral: ["position", "nonPersistent"] },
+        });
+
+        it("a stale entity no longer reads once its slot is reused, and survives a snapshot", () => {
+            const store = makeStore();
+
+            const entityA = store.archetypes.Node.insert({ position: { x: 1, y: 2, z: 3 } });
+            store.delete(entityA);
+            const entityB = store.archetypes.Node.insert({ position: { x: 4, y: 5, z: 6 } });
+
+            expect(entityB).not.toBe(entityA);
+            expect(store.read(entityA)).toBeNull();
+            expect(store.read(entityB)).toEqual({ position: { x: 4, y: 5, z: 6 } });
+
+            const restored = makeStore();
+            restored.fromData(store.toData({ copy: true }));
+            const entityC = restored.archetypes.Node.insert({ position: { x: 7, y: 8, z: 9 } });
+            expect(restored.read(entityA)).toBeNull();
+            expect(restored.read(entityB)).toEqual({ position: { x: 4, y: 5, z: 6 } });
+            expect(restored.read(entityC)).toEqual({ position: { x: 7, y: 8, z: 9 } });
+        });
+
+        it("applies to non-persistent entities too", () => {
+            const store = makeStore();
+            const entityA = store.archetypes.Ephemeral.insert({ position: { x: 1, y: 2, z: 3 }, nonPersistent: true });
+            store.delete(entityA);
+            const entityB = store.archetypes.Ephemeral.insert({ position: { x: 4, y: 5, z: 6 }, nonPersistent: true });
+
+            expect(entityB).not.toBe(entityA);
+            expect(store.read(entityA)).toBeNull();
+            expect(store.read(entityB)).toEqual({ position: { x: 4, y: 5, z: 6 }, nonPersistent: true });
+        });
+    });
+
 }); 

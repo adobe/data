@@ -11,10 +11,15 @@ import type { PersistOp } from "./transport.js";
 const entityLocationFile = (quadrant: number): string => `entity-location-${quadrant}.bin`;
 const JOURNAL_FILE = "journal.bin";
 const META_FILE = "meta.json";
-// Packed entity-location entry: u32 (archetypeId + 1, so 0 = empty) + u32
-// rowIndex. 8 bytes per persistent entity. An unwritten slot reads as the zero
-// (empty) entry; deletions write a zero entry.
+// Packed entity-location entry: u32 + u32 rowIndex, 8 bytes per slot. The first
+// word holds the slot's generation in its top 8 bits and (archetypeId + 1) in its
+// low 24 bits, so a zero archetype field = empty. An unwritten slot reads as the
+// zero (empty, generation 0) entry; a deletion writes an empty entry carrying the
+// generation the slot's next occupant gets. Entries written before generations
+// existed have generation 0.
 const ELT_STRIDE = 8;
+const ARCHETYPE_FIELD_MASK = 0xffffff;
+const GENERATION_SHIFT = 24;
 
 const columnPath = (archetypeId: number, component: string): string =>
     `archetypes/${archetypeId}/${component}.bin`;
@@ -72,7 +77,10 @@ export const createPersistRouter = (backend: PersistenceBackend): PersistRouter 
                 // Store archetypeId biased by +1 so a zero-filled (never-written)
                 // slot reads as "empty" rather than a valid archetype 0 (the
                 // backend zero-fills any gap left before the first write).
-                view.setUint32(0, op.archetypeId + 1, true);
+                if (op.archetypeId + 1 > ARCHETYPE_FIELD_MASK) {
+                    throw new Error(`writeEntityLocation: archetype id ${op.archetypeId} exceeds the entity-location format`);
+                }
+                view.setUint32(0, ((Entity.generationOf(op.entity) << GENERATION_SHIFT) | (op.archetypeId + 1)) >>> 0, true);
                 view.setUint32(4, op.rowIndex, true);
                 await file.writeAt(Entity.toLocalIndex(op.entity) * ELT_STRIDE, new Uint8Array(entry));
                 return undefined;
@@ -82,8 +90,10 @@ export const createPersistRouter = (backend: PersistenceBackend): PersistRouter 
                     throw new Error(`deleteEntityLocation: non-persistent entity not persistable (entity=${op.entity})`);
                 }
                 const file = await openCached(entityLocationFile(Entity.quadrantOf(op.entity)));
-                // Zero entry = empty slot (biased archetype 0 means "absent").
+                // Empty entry (biased archetype 0 means "absent") carrying the slot's next generation.
                 const tombstone = new Uint8Array(ELT_STRIDE);
+                const nextGeneration = (Entity.generationOf(op.entity) + 1) & 0xff;
+                new DataView(tombstone.buffer).setUint32(0, (nextGeneration << GENERATION_SHIFT) >>> 0, true);
                 await file.writeAt(Entity.toLocalIndex(op.entity) * ELT_STRIDE, tombstone);
                 return undefined;
             }

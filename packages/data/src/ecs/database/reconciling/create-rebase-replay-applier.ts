@@ -41,7 +41,7 @@ export function createRebaseReplayApplier(
 
     const rollbackEntryResult = (entry: ReconcilingEntry) => {
         if (entry.result) {
-            execute(t => applyOperations(t, entry.result!.undo), { intermediate: true, userId: undefined });
+            execute(t => applyOperations(t, entry.result!.undo, { rewind: true }), { intermediate: true, userId: undefined });
             entry.result = undefined;
         }
     };

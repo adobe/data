@@ -23,6 +23,7 @@ import {
 } from "../../database/index-registry/index.js";
 import { PartitionKeysOf } from "../partition.js";
 import { DefaultFactoryKeys } from "../../default-factory-keys.js";
+import { attachRewindDelete, getRewindDelete, RESTORE_ENTITY } from "../../entity-location-table/internal-ops.js";
 import { IndexDeclarations } from "../index-types.js";
 import { MemoryAllocator } from "../../../cache/memory-allocator.js";
 
@@ -270,6 +271,15 @@ export function createStore<
             indexRegistry.applyInsert(entity, archetype);
             return entity;
         };
+        if (RESTORE_ENTITY in archetype) {
+            const rawRestore = archetype[RESTORE_ENTITY].bind(archetype);
+            archetype[RESTORE_ENTITY] = (targetEntity: Entity, values: any): Entity => {
+                indexRegistry.checkUniqueAvailableForInsert(archetype, values);
+                const entity = rawRestore(targetEntity, values);
+                indexRegistry.applyInsert(entity, archetype);
+                return entity;
+            };
+        }
     };
 
     const updateEntity = (entity: Entity, values: any): Entity | undefined => {
@@ -286,6 +296,14 @@ export function createStore<
     const deleteEntity = (entity: Entity): Entity | undefined => {
         const archetype = core.locate(entity)?.archetype ?? null;
         const swapped = core.delete(entity);
+        indexRegistry.applyDelete(entity, archetype);
+        return swapped;
+    };
+
+    const rewindDeleteEntity = (entity: Entity): Entity | undefined => {
+        const archetype = core.locate(entity)?.archetype ?? null;
+        const rewind = getRewindDelete(core);
+        const swapped = rewind ? rewind(entity) : core.delete(entity);
         indexRegistry.applyDelete(entity, archetype);
         return swapped;
     };
@@ -480,5 +498,6 @@ export function createStore<
         },
     };
 
+    attachRewindDelete(store, rewindDeleteEntity);
     return store.extend(normalizedSchema) as any;
 }

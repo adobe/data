@@ -15,7 +15,7 @@ import {
 import { createObserverTarget, droppedObserver, endTarget, joinedRun, ranThere, type ObserverTarget } from './joined-observer.js';
 import type { Leaf } from '../../interface/system/leaf.js';
 import { Index } from '../../interface/indexes/index-type.js';
-import { createMoveLog, freeMoveLog, type MoveLog } from './move-log.js';
+import { createMoveLog, freeMoveLog, type Gathered, type MoveLog } from './move-log.js';
 import { lineWords } from './protocol.js';
 import { claimThreads, releaseThreads } from './remote.js';
 import { createTaskChannel, type TaskChannel } from './remote-systems.js';
@@ -95,6 +95,8 @@ type Joined = {
     readonly proxies: Map<number, Leaf>;
     /** Settles what `share` returned: once it has joined, or failed to; null once settled. */
     settle: { readonly resolve: () => void; readonly reject: (error: Error) => void } | null;
+    /** Gathers asked of it and not yet answered, by their ids. */
+    readonly gathers: Map<number, (gathered: Gathered) => void>;
 };
 
 const hasWaitAsync = (): boolean => typeof Atomics.waitAsync === "function";
@@ -319,6 +321,38 @@ export const createSharing = (host: SharingHost) => {
     };
 
     /**
+     * Posts a thread the values a sync gives its objects from the world's thread. One a message can't carry, which its
+     * type said it could, is posted as undefined, so the object takes its start.
+     */
+    const deliver = (thread: Joined, sync: number, first: number, values: readonly unknown[]): void => {
+        try {
+            post(thread, { protocol: protocolName, kind: "values", sync, first, values });
+        }
+        catch {
+            const carried = values.map(value => {
+                try {
+                    return structuredClone(value);
+                }
+                catch {
+                    return undefined;
+                }
+            });
+            post(thread, { protocol: protocolName, kind: "values", sync, first, values: carried });
+        }
+    };
+
+    let gathers = 0;
+    /** Asks a thread for the values it holds of its objects, answered once it replayed the last published sync. */
+    const gather = (thread: Joined, components: readonly number[], resources: readonly number[]): Promise<Gathered> => {
+        if (thread.status === "gone") return Promise.resolve({ error: "the thread is gone" });
+        const id = ++gathers;
+        return new Promise(resolve => {
+            thread.gathers.set(id, resolve);
+            post(thread, { protocol: protocolName, kind: "gather", id, components, resources });
+        });
+    };
+
+    /**
      * Its claims checked against those already made, and against systems and sync systems on them; its control words
      * placed, and its status `"joined"`; or refused. With claims, its objects become its own between runs, then it's
      * told.
@@ -379,7 +413,7 @@ export const createSharing = (host: SharingHost) => {
             // Systems registered since it asked to join are checked too.
             const crossing = host.crossing(threads, thread.imported);
             if (crossing !== null) return refuse(thread, crossing);
-            const log = createMoveLog(memory, thread.number, state.starts, component => announce(thread, component));
+            const log = createMoveLog(memory, thread.number, state.starts, component => announce(thread, component), (sync, first, values) => deliver(thread, sync, first, values), (components, resources) => gather(thread, components, resources));
             thread.log = log;
             claimThreads(state, log, threads);
             const tasks = createTaskChannel(state, log, message => post(thread, message), () => wake(thread), threads.join(`" and "`), number => {
@@ -418,6 +452,8 @@ export const createSharing = (host: SharingHost) => {
         if (thread.status === "gone") return;
         const { control, log, tasks } = thread;
         thread.status = "gone";
+        for (const answer of thread.gathers.values()) answer({ error: `the thread is gone` });
+        thread.gathers.clear();
         thread.settle?.reject(new Error(closed ? "The world is disposed." : "The thread was gone before it joined."));
         thread.settle = null;
         threads.delete(thread);
@@ -510,6 +546,11 @@ export const createSharing = (host: SharingHost) => {
                 }
                 return;
             }
+            case "gathered": {
+                const answer = thread.gathers.get(message.id);
+                thread.gathers.delete(message.id);
+                return answer?.(message);
+            }
             case "observer ran": {
                 for (const [index, value, error] of message.results) {
                     const placed = thread.observer?.placed[index];
@@ -540,7 +581,7 @@ export const createSharing = (host: SharingHost) => {
         const thread: Joined = {
             channel: threadChannel<ToJoined, ToWorld>(port), status: "joining", claims: [], control: null, views: [], waits: true,
             names: new Map(), next: 1, completed: 0, finished: new Set(), inputs: new Map(), moved: new Map(), peers: new Set(), woken: false,
-            abort: new AbortController(), log: null, number: ++numbered, imported: new Set(), tasks: null, observer: null, proxies: new Map(),
+            abort: new AbortController(), log: null, number: ++numbered, imported: new Set(), tasks: null, observer: null, proxies: new Map(), gathers: new Map(),
             settle,
         };
         threads.add(thread);

@@ -191,6 +191,16 @@ const checkTables = (leaf: Leaf): void => {
     if (tables.where !== undefined) checkWhereValues(`System "${name}"`, "tables' where", "tables", tables.where, false);
 };
 
+/** Throws for `changed` on a system that isn't readonly or has components, or naming what isn't a registered trait. */
+const checkTraitFilter = (leaf: Leaf): void => {
+    const { name, declaration } = leaf;
+    const { changed } = declaration;
+    if (changed === undefined) return;
+    if (declaration.readonly !== true) throw new Error(`System "${name}" filters on traits' changes, which only a readonly system does.`);
+    if (declaration.components !== undefined) throw new Error(`System "${name}" filters on traits' changes, so it has no components.`);
+    for (const key of changed) if (kindOf(key) !== "trait") throw new Error(`System "${name}" filters on the changes of "${labelOf(key)}", which isn't a registered trait: ${whyUnregistered(key)}.`);
+};
+
 /**
  * Throws for a leaf that names a component or resource that isn't registered as one, lists a key in both `read` and
  * `write`, writes a reference, has a lookup reading a component it writes, uses object components and resources of different threads, declares what a readonly system can't, or whose
@@ -218,6 +228,7 @@ export const checkLeaf = (leaf: Leaf): void => {
     }
     checkTarget(leaf);
     checkTables(leaf);
+    checkTraitFilter(leaf);
     threadOf(declaration, "System", name);
     requireRegistered("System", name, "component", components?.has);
     requireRegistered("System", name, "component", components?.not);

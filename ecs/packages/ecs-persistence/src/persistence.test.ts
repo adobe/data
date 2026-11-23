@@ -5,6 +5,7 @@ import { decode } from "./decode.js";
 import { encode } from "./encode.js";
 import { snapshot, type Snapshot } from "./snapshot.js";
 import { spawn } from "./spawn.js";
+import { watch } from "./watch.js";
 
 /** Saved in a document, under its name. */
 const document = Symbol();
@@ -35,7 +36,12 @@ const unsaved = Symbol();
 const tool = Symbol();
 const zoom = Symbol();
 const glow = Symbol();
+const filter = Symbol();
+const focused = Symbol();
 declare module "@adobe/ecs" {
+    interface Threads {
+        persistenceTestPage: true;
+    }
     interface Traits<N> {
         readonly [document]: string;
         readonly [settings]: string;
@@ -68,6 +74,9 @@ declare module "@adobe/ecs" {
         // The user's own, never in a document; the zoom also in the document, under another name.
         [tool]: { type: string; default: "select"; [settings]: "tool" };
         [zoom]: { type: number; default: 1; [settings]: "zoom"; [document]: "view zoom" };
+        // Held by the page's thread, which views read it on; data, so it's saved wherever it is.
+        [filter]: { type: ReadonlyMap<string, Entity> | null; default: null; thread: "persistenceTestPage"; [settings]: "filter" };
+        [focused]: { type: Entity; [settings]: "focused" };
     }
 }
 
@@ -131,7 +140,66 @@ const decoded = (bytes: Uint8Array): Snapshot => {
     return result;
 };
 
+/** A world on this thread, with the page's thread joined to it through a channel. */
+const withPage = async (): Promise<{ readonly world: World; readonly page: World }> => {
+    const world = inline();
+    const channel = new MessageChannel();
+    const shared = world.share(channel.port1);
+    const page = await World.join(channel.port2, { threads: ["persistenceTestPage"] });
+    await shared;
+    return { world, page };
+};
+
+const filterGiven: { value: ReadonlyMap<string, Entity> } = { value: new Map() };
+const setFilter = System.create(({ commands }) => { commands.spawnTables([], { resources: { [filter]: filterGiven.value } }); });
+const readFilter = System.create({ readonly: true }, ({ resources }) => resources[filter]);
+const retool = System.create({}, ({ resources }) => { resources[tool] = `${resources[tool]}!`; });
+const addName = System.create(({ commands }) => { commands.spawn([name])({ [name]: "watched" }); });
+const idle = System.create({}, () => {});
+
 describe("persistence", () => {
+    it("saves and loads a value the page's thread holds, and watches it change", async () => {
+        const { world, page } = await withPage();
+        const changes: string[] = [];
+        const stop = watch({ world, by: settings }, () => changes.push("changed"));
+        if (typeof stop !== "function") throw new Error(stop.failure);
+        await world.run(idle);
+        changes.length = 0;
+        await world.run(idle);
+        expect(changes).toEqual([]);
+        filterGiven.value = new Map([["kept", Entity.none]]);
+        await world.run(setFilter);
+        expect(changes).toEqual(["changed"]);
+        const saved = await taken({ world, by: settings });
+        const bytes = encode(saved);
+        await page.dispose();
+        await world.dispose();
+
+        const opened = await withPage();
+        const read = decode(bytes, { by: settings });
+        if ("failure" in read) throw new Error(read.failure);
+        const spawned = await spawn({ world: opened.world, snapshot: read });
+        expect(spawned.failure).toBeUndefined();
+        expect(await opened.page.run(readFilter)).toEqual(new Map([["kept", Entity.none]]));
+        await opened.page.dispose();
+        await opened.world.dispose();
+    });
+    it("watches what a trait covers, calling once per sync point that changed it, until stopped", async () => {
+        await using world = inline();
+        const changes: number[] = [];
+        const stop = watch({ world, by: document }, () => changes.push(changes.length));
+        if (typeof stop !== "function") throw new Error(stop.failure);
+        await world.run(idle);
+        changes.length = 0;
+        await world.run(retool);
+        expect(changes).toEqual([]);
+        await world.run(addName);
+        expect(changes).toEqual([0]);
+        stop();
+        await world.run(addName);
+        expect(changes).toEqual([0]);
+        expect(watch({ world, by: clashing }, () => {})).toEqual({ failure: `The trait names two components "vitals".` });
+    });
     it("saves and loads every kind of value and the resources its trait covers, each entity value naming the entity loaded for it, cycles and self references included", async () => {
         await using from = World.create({ [workers]: 0, [score]: 12, [motto]: "onward", [unsaved]: 3 });
         await from.run(scene);

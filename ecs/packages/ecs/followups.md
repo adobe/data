@@ -5,6 +5,9 @@ correctness, then optimization. Remove an item once it's decided or done.
 
 ## API changes
 
+- **Trait filters on joined threads:** a readonly system's `changed: [trait]` runs only on the world's thread, which sees
+  every thread's stamps; a joined thread's own refuses it. Possible: the thread declares the trait's id with its
+  observer, and the world's posting check tests the trait as the world's own runner does.
 - **Instrumentation:** a later `World.create` options parameter may take instrumentation: timing, failure logs,
   debugging, and what no failure says, a tier that waited for a joined thread and commands that did nothing, which the
   implementation gathers only for its tests (`recorderOf`). Nothing until it's designed.

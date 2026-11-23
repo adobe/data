@@ -17,6 +17,9 @@ const widget = Symbol("remoteTest/widget");
 const kept = Symbol("remoteTest/kept");
 const guarded = Symbol("remoteTest/guarded");
 const handle = Symbol("remoteTest/handle");
+const filter = Symbol("remoteTest/filter");
+const owner = Symbol("remoteTest/owner");
+const painter = Symbol("remoteTest/painter");
 declare module "@adobe/ecs" {
     export interface Threads {
         remoteTest: true;
@@ -29,6 +32,11 @@ declare module "@adobe/ecs" {
         [kept]: { type: string };
         [guarded]: { type: Widget | null; thread: "remoteTestRemoved" };
         [handle]: { type: Widget | number | null; thread: "remoteTest" };
+    }
+    export interface Resources {
+        [filter]: { type: { readonly text: string; readonly owner: Entity } | null; thread: "remoteTest"; default: null };
+        [owner]: { type: Entity };
+        [painter]: { type: Widget | null; thread: "remoteTest"; default: null };
     }
 }
 /** A value that isn't data. */
@@ -55,6 +63,9 @@ const dropCaptions = System.create({ components: { with: [caption] } }, (row, { 
 const giveCaption = System.create({ components: { with: [point] } }, (row, { commands }) => {
     commands.add(row.entity, caption, { text: "a caption only the thread gives" });
 });
+const giveWidget = System.create({ components: { with: [point] } }, (row, { commands }) => {
+    commands.add(row.entity, widget, { draw: () => "drawn" });
+});
 const spawnCaptioned = System.create({}, ({ commands }) => {
     commands.spawn([point, caption])({ [point]: 1, [caption]: { text: "a caption only the thread gives" } });
 });
@@ -73,6 +84,17 @@ const idle = System.create({}, () => {});
 const after = System.create({}, () => {});
 /** Declared without a binding, so the build gives it no id. */
 const [guard] = [System.removed({ components: { with: [guarded] } }, row => { void row[guarded]; })];
+
+const spawnTablesGiven: { resources: { readonly [key: symbol]: unknown } } = { resources: {} };
+const setResources = System.create(({ commands }) => { commands.spawnTables([], { resources: spawnTablesGiven.resources }); });
+/** Spawns one entity by a table, setting resources naming it. */
+const spawnNamed = System.create(({ commands }) => {
+    const { entities } = commands.spawnTables([{ count: 1, entities: new Float64Array([7]), columns: { [point]: { kind: "bytes", bytes: new Uint8Array(new Float64Array([9]).buffer), stride: 8 } } }], { resources: spawnTablesGiven.resources });
+    return entities[0][0];
+});
+
+const captionTables = System.create({ readonly: true, tables: { components: [caption, point], resources: [filter] } }, ({ tables }) => tables);
+const widgetTables = System.create({ readonly: true, tables: { components: [widget] } }, ({ tables }) => tables);
 
 /** A world shared with a thread on this one, which claims `threads`. */
 const joined = async (): Promise<{ readonly world: CreatedWorld; readonly remote: World }> => {
@@ -108,15 +130,57 @@ const spawnOne = async (world: World, x: number): Promise<Entity> => {
 
 describe("objects a joined thread fills", () => {
     // The cases of observers reading them are in `observe-joined-cases.test.ts`.
-    it("take from the world's thread only their start or null, in commands and spawns", async () => {
+    it("take data from the world's thread's commands and spawns, delivered at the sync point, and values that aren't only their start or null", async () => {
         const { world, remote } = await joined();
-        await spawnOne(world, 2);
-        const message = '"remoteTest/caption" lives on thread "remoteTest", which a joined thread fills, so a command here gives it only its start or null.';
-        expect((await runReported(world, giveCaption)).failures.map(failure => failure.message)).toEqual([message]);
-        expect((await runReported(world, spawnCaptioned)).failures.map(failure => failure.message)).toEqual([message]);
-        expect(await Observe.toPromise(Observe.count(world, { required: [caption] }))).toBe(1);
+        const entity = await spawnOne(world, 2);
+        expect((await runReported(world, giveCaption)).failures).toEqual([]);
+        const listed = Observe.entity(remote, entity, { required: [caption] });
+        expect(await until(listed, value => value?.[caption]?.text === "a caption only the thread gives")).toEqual({ [caption]: { text: "a caption only the thread gives" } });
+        expect((await runReported(world, spawnCaptioned)).failures).toEqual([]);
+        expect(await Observe.toPromise(Observe.count(world, { required: [caption] }))).toBe(2);
+        const message = '"remoteTest/widget" lives on thread "remoteTest", which a joined thread fills, and isn\'t data, so a command here gives it only its start or null.';
+        expect((await runReported(world, giveWidget)).failures.map(failure => failure.message)).toEqual([message]);
+        expect(await Observe.toPromise(Observe.entity(remote, entity, { required: [widget] }))).toEqual({ [widget]: null });
         await remote.dispose();
         await world.dispose();
+    });
+    it("take resources a joined thread fills from commands.spawnTables, delivered with their entities rewritten, and not those that aren't data", async () => {
+        const { world, remote } = await joined();
+        spawnTablesGiven.resources = { [filter]: { text: "found", owner: 7 }, [owner]: 7 };
+        const entity = await world.run(spawnNamed);
+        expect(entity).not.toBe(7);
+        expect(await until(Observe.resource(remote, filter), value => value !== null)).toEqual({ text: "found", owner: entity });
+        expect(await Observe.toPromise(Observe.resource(world, owner))).toBe(entity);
+        spawnTablesGiven.resources = { [painter]: { draw: () => "drawn" } };
+        await expect(world.run(setResources)).rejects.toThrow('commands.spawnTables: "remoteTest/painter" lives on thread "remoteTest", which a joined thread fills, and isn\'t data.');
+        await remote.dispose();
+        await world.dispose();
+    });
+    it("give tables their values on the thread, gathered by entity, and fail those that aren't data", async () => {
+        const { world, remote } = await joined();
+        const first = await spawnOne(world, 1);
+        const second = await spawnOne(world, 2);
+        await world.run(giveCaption);
+        spawnTablesGiven.resources = { [filter]: { text: "gathered", owner: 0 } };
+        await world.run(setResources);
+        const { archetypes, resources } = await world.run(captionTables);
+        const byEntity = new Map<number, unknown>();
+        for (const table of archetypes) {
+            const column = table.columns[caption];
+            table.entities.forEach((entity, row) => byEntity.set(entity, column?.kind === "values" ? column.values[row] : undefined));
+        }
+        expect(byEntity.get(first)).toEqual({ text: "a caption only the thread gives" });
+        expect(byEntity.get(second)).toEqual({ text: "a caption only the thread gives" });
+        expect(resources[filter]).toEqual({ text: "gathered", owner: 0 });
+        await expect(world.run(widgetTables)).rejects.toThrow(/Tables can't read "remoteTest\/widget": a joined thread fills its objects, and gave none: it isn't data, which a copy carries/);
+        await remote.dispose();
+        await world.dispose();
+    });
+    it("take resources of another thread from commands.spawnTables while no joined thread fills it", async () => {
+        await using world = createWorld({ [workers]: 0 });
+        spawnTablesGiven.resources = { [filter]: { text: "here", owner: 0 } };
+        await world.run(setResources);
+        expect(await Observe.toPromise(Observe.resource(world, filter))).toEqual({ text: "here", owner: 0 });
     });
     it("take from a kernel only their start or null, its command giving another dropping and its system failing", async () => {
         const { world, remote } = await joined();
@@ -126,7 +190,7 @@ describe("objects a joined thread fills", () => {
         expect((await runReported(world, nullCaptionsKernel)).failures).toEqual([]);
         expect(await until(listed, value => value?.[caption] === null)).toEqual({ [caption]: null, [widget]: null });
         const report = await runReported(world, numberHandlesKernel);
-        expect(report.failures.map(failure => [failure.name, failure.message])).toEqual([["numberHandlesKernel", '"remoteTest/handle" lives on thread "remoteTest", which a joined thread fills, so a command here gives it only its start or null.']]);
+        expect(report.failures.map(failure => [failure.name, failure.message])).toEqual([["numberHandlesKernel", '"remoteTest/handle" lives on thread "remoteTest", which a joined thread fills, and isn\'t data, so a command here gives it only its start or null.']]);
         expect(report.dropped).toBe(1);
         await remote.dispose();
         await world.dispose();

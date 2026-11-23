@@ -80,6 +80,24 @@ const spawned = await spawn({ world: other, snapshot: loaded });
   components left as they are. So an entity the application makes at startup, such as a camera, keeps a component that
   is a saved setting: `spawn({ world, snapshot: settings, match: [byCamera], update: true })`.
 
+## Values on other threads
+
+A trait covers data wherever it lives: a resource or component declared `thread: "main"`, which views read beside
+their elements, is saved as the world's own are. `snapshot` asks each joined thread for the values it holds, each as of
+its own latest sync point, and `spawn` sets them on the thread that holds them, their entity values rewritten as the
+rest are.
+
+## Saving as it changes
+
+```ts
+const stop = watch({ world, by: session }, () => { due = true; });
+```
+
+`watch({ world, by }, onChange)` calls `onChange` after each sync point at which something the trait covers changed,
+on whichever thread holds it, and once after the first; it returns the function that stops it. It runs on the world's
+thread. An application saving its session marks it due there, and saves when it chooses, so a burst of changes is one
+save.
+
 Each reports why it didn't happen as `{ failure }`, rather than throwing, and `result.failure !== undefined` tells
 which. A snapshot is opaque: only these functions read it.
 

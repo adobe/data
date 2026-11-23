@@ -16,7 +16,7 @@ import {
 } from './joining.js';
 import { currentBuffer, sharedMemoryAvailable } from './memory.js';
 import { logRunWord } from './move-log.js';
-import { createMirror, nameComponent, rebuild, replay, type Mirror } from './mirror.js';
+import { createMirror, nameComponent, rebuild, receive, replay, resourceValueOf, waitStructure, type Mirror } from './mirror.js';
 import { defaultOf } from './state.js';
 import { createThreadSystems, type SystemSetup } from './thread-systems.js';
 import { taskBlockWords } from './thread-tasks.js';
@@ -25,6 +25,9 @@ import { createThreadObserver, settledFor, type Local } from './thread-observer.
 import type { Leaf } from '../../interface/system/leaf.js';
 import { isObserver, scheduleOf } from '../../interface/registry/schedule.js';
 import { releaseInput, transferablesOf } from './transfers.js';
+
+/** A gather the world asked for: the objects it wants by the world's numbers. */
+type GatherAsked = { readonly id: number; readonly components: readonly number[]; readonly resources: readonly number[] };
 
 /** The last of the numbers of runs of several observer systems. */
 const nothing = (): undefined => undefined;
@@ -325,6 +328,51 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
         nameComponent(mirror, component, key, defaultOf);
     };
 
+    /** Gathers the world asked for, answered once the mirror replayed the last published sync. */
+    const gathers: GatherAsked[] = [];
+    /** Answers the gathers asked for, once the mirror is current; those left wait for a key, values or the structure epoch. */
+    const answerGathers = (): void => {
+        if (gathers.length === 0) return;
+        const replayed = mirror;
+        if (replayed !== null) {
+            const state = replay(replayed);
+            if (state === "held") return;
+            if (state === "lapped") {
+                const rebuilt = rebuild(replayed);
+                if (rebuilt === "held") return;
+                if (rebuilt === "moved") {
+                    void waitStructure(replayed).then(answerGathers);
+                    return;
+                }
+            }
+        }
+        for (const asked of gathers.splice(0)) answerGather(replayed, asked);
+    };
+    /** What the mirror holds of the objects a gather asked for, posted to the world, or why it can't be. */
+    const answerGather = (replayed: Mirror | null, { id, components, resources }: GatherAsked): void => {
+        const columns = components.map(component => {
+            const entities: number[] = [];
+            const values: unknown[] = [];
+            for (const archetype of replayed?.archetypes ?? []) {
+                const column = archetype?.byComponent[component];
+                if (archetype === null || archetype === undefined || column === undefined) continue;
+                for (let row = 0; row < archetype.count; row++) {
+                    entities.push(archetype.entities[row]);
+                    values.push(column.values[row]);
+                }
+            }
+            const gathered: readonly [number, Float64Array, readonly unknown[]] = [component, Float64Array.from(entities), values];
+            return gathered;
+        });
+        const values = resources.map((component): readonly [number, unknown] => [component, replayed === null ? null : resourceValueOf(replayed, component, replayed.starts.get(component))]);
+        try {
+            post({ protocol: protocolName, kind: "gathered", id, components: columns, resources: values });
+        }
+        catch (error) {
+            post({ protocol: protocolName, kind: "gathered", id, error: `its values can't be posted to the world's thread: ${error instanceof Error ? error.message : String(error)}` });
+        }
+    };
+
     /** Whether the last `process` finished a task, so the next of a tick's tasks may follow it closely. */
     let tasked = false;
     const process = (): void => {
@@ -493,7 +541,21 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
                 // Its key here, if this thread has one, for a component of a thread it claims.
                 const key = message.id === null ? undefined : keyOfId(message.id);
                 name(message.component, key !== undefined && ownObject(key, claims) ? key : null);
+                answerGathers();
                 // A task waiting for this component's key runs now, and posts of observer systems.
+                systems?.process();
+                observer?.process();
+                return;
+            }
+            case "gather": {
+                gathers.push({ id: message.id, components: message.components, resources: message.resources });
+                return answerGathers();
+            }
+            case "values": {
+                if (mirror !== null) receive(mirror, message.sync, message.first, message.values);
+                answerGathers();
+                // What waited for them goes on: stops, a task, observer systems.
+                systems?.runStops();
                 systems?.process();
                 observer?.process();
                 return;
@@ -512,6 +574,7 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
             case "sync systems": {
                 if (systems === null) removedSetups.push(...message.syncSystems);
                 else systems.setupRemovedSystems(message.syncSystems);
+                answerGathers();
                 // What waited for them goes on: stops, a task, observer systems.
                 systems?.runStops();
                 systems?.process();
@@ -607,7 +670,8 @@ export const joinWorld = (port: Parameters<World["share"]>[0], options: { readon
             return keyNumber(symbol);
         });
         const present = (keys: readonly unknown[] | undefined): number[] => (keys ?? []).map(keyNumber);
-        const { components, resources, lookup } = leaf.declaration;
+        const { components, resources, lookup, changed } = leaf.declaration;
+        if (changed !== undefined) throw new Error(`Observer system "${label}" filters on traits' changes, so it runs only on the world's thread.`);
         const lookups: ObserverLookup[] = [];
         for (const name of Object.keys(lookup ?? {})) {
             const declared = lookup?.[name];

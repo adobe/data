@@ -19,6 +19,7 @@ const hidden = Symbol("tablesTest/hidden");
 const buddy = Symbol("tablesTest/buddy");
 const score = Symbol("tablesTest/score");
 const title = Symbol("tablesTest/title");
+const focus = Symbol("tablesTest/focus");
 declare module "@adobe/ecs" {
     interface Components {
         [position]: { type: Vec3 };
@@ -36,6 +37,7 @@ declare module "@adobe/ecs" {
     interface Resources {
         [score]: { type: number; default: 0 };
         [title]: { type: string; default: "" };
+        [focus]: { type: Entity };
     }
 }
 
@@ -62,6 +64,13 @@ const spawnTables = async (world: ReturnType<typeof inline>, tables: readonly Ta
         given.update = undefined;
     }
     return spawnedBy.spawned;
+};
+
+/** The rows of a table of labels whose entity `keep` takes. */
+const rowsWhere = (table: Table, keep: (entity: number) => boolean): Table => {
+    const rows = Array.from({ length: table.count }, (_, row) => row).filter(row => keep(table.entities[row]));
+    const column = table.columns[label];
+    return { count: rows.length, entities: Float64Array.from(rows, row => table.entities[row]), columns: { [label]: { kind: "values", values: rows.map(row => column?.kind === "values" ? column.values[row] : undefined) } } };
 };
 
 /** Spawns `labels` in `world`, giving each label's entity. */
@@ -306,6 +315,25 @@ describe("tables", () => {
         const { resources } = await world.run(tablesOf([label], [score, title]));
         expect(resources[score]).toBe(12);
         expect(resources[title]).toBe("loaded");
+    });
+
+    it("rewrite the entities in the resources they set as they rewrite their rows: each naming the one spawned for it, any other none", async () => {
+        await using from = inline();
+        const made = await spawnLabels(from, ["kept", "outside"]);
+        const { archetypes } = await from.run(tablesOf([label]));
+        const kept = made.get("kept") ?? Entity.none;
+        const tables = archetypes.map(table => rowsWhere(table, entity => entity === kept));
+        await using into = inline();
+        await spawnLabels(into, ["first", "second", "third"]);
+        for (const [named, expected] of [[kept, "kept"], [made.get("outside") ?? Entity.none, null]] as const) {
+            given.resources = { [focus]: named };
+            const spawned = await spawnTables(into, tables);
+            given.resources = undefined;
+            const { resources } = await into.run(tablesOf([label], [focus]));
+            if (expected === null) expect(resources[focus]).toBe(Entity.none);
+            else expect(resources[focus]).toBe(spawned.entities[0][0]);
+            expect(resources[focus]).not.toBe(named);
+        }
     });
 
     it("refuse a resource only the world writes or a value its type doesn't take, spawning nothing", async () => {

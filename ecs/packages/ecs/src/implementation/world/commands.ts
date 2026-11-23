@@ -10,6 +10,7 @@ import { despawnMatchOf, holdsCollection, isMatching, type DespawnMatch } from '
 import { holdsValuesOf } from './where.js';
 import { declarationOf, isWorldWritten, kindOf, labelOf, threadOfDeclaration, whyUnregistered } from '../../interface/registry/index.js';
 import { matchesSchema } from '../../interface/registry/schemas.js';
+import { isDelivered } from './remote.js';
 
 const collect = (state: State, buffer: CommandBuffer, key: Key, value: unknown): void => {
     if (value !== undefined) pushComponent(buffer, idOf(state, key), value);
@@ -52,18 +53,18 @@ const addShared = (state: State, buffer: CommandBuffer, entity: number, shape: L
 };
 
 /**
- * Throws for a key of `resources` that isn't a resource, is one only the world writes or one living on another thread,
- * or is given a value its schema doesn't take.
+ * Throws for a key of `resources` that isn't a resource, is one only the world writes, or one a joined thread fills
+ * that isn't data, or is given a value its schema doesn't take.
  */
-const checkResources = (resources: object): void => {
+const checkResources = (state: State, resources: object): void => {
     for (const key of Object.getOwnPropertySymbols(resources)) {
         const fail = (message: string): never => { throw new Error(`commands.spawnTables: "${labelOf(key)}" ${message}.`); };
         if (kindOf(key) !== "resource") fail(`isn't a registered resource: ${whyUnregistered(key)}`);
         if (isWorldWritten(key)) fail("is written only by the world");
         const declaration = declarationOf(key);
         if (declaration === undefined) continue;
-        const thread = threadOfDeclaration(declaration);
-        if (thread !== null && thread !== "world") fail(`lives on thread "${thread}", not the world's`);
+        const id = idOf(state, key);
+        if (state.remote[id] !== undefined && !isDelivered(state, id)) fail(`lives on thread "${threadOfDeclaration(declaration) ?? "world"}", which a joined thread fills, and isn't data`);
         if (declaration.type !== undefined && !matchesSchema(declaration.type, Reflect.get(resources, key))) fail("is given a value its type doesn't take");
     }
 };
@@ -176,10 +177,8 @@ export const createCommands = (state: State, target: { readonly buffer: CommandB
         const resources = options?.resources;
         const updates = options?.update === true ? target.buffer : null;
         if (resources === undefined) return spawnTables(state, tables, options?.existing, updates);
-        checkResources(resources);
-        const spawned = spawnTables(state, tables, options?.existing, updates);
-        queueResources(state, resources);
-        return spawned;
+        checkResources(state, resources);
+        return spawnTables(state, tables, options?.existing, updates, resources, remapped => queueResources(state, remapped));
     },
     remove: (entity: number, components: symbol | readonly symbol[]) => {
         const { buffer } = target;

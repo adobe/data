@@ -15,6 +15,18 @@ const threadOfComponent = (state: State, id: number): string | null => {
     return declaration === undefined ? null : threadOfDeclaration(declaration);
 };
 
+/**
+ * Whether the world's thread may give a joined thread's object `id` a value of its own, delivered there: one of a type
+ * with a schema, so data a message carries, and not declared `transfer`, which moves only through a run's input.
+ */
+export const isDelivered = (state: State, id: number): boolean => {
+    const declaration = declarationOf(state.keys[id]);
+    return declaration?.type !== undefined && declaration.transfer !== true;
+};
+
+/** What a batch's column of a joined thread's object refuses from the world's thread: null when its values are delivered. */
+export const batchRemote = (state: State, id: number): string | null => isDelivered(state, id) ? null : remoteError(state, id).message;
+
 /** Gives a component a joined thread fills to its log, in every archetype and batch holding it. */
 const give = (state: State, id: number, log: MoveLog): void => {
     state.remote[id] = log;
@@ -23,7 +35,7 @@ const give = (state: State, id: number, log: MoveLog): void => {
         const storage = archetype.storageById[id];
         if (storage !== undefined) makeRemote(state.memory, archetype, storage, log);
     }
-    for (const batch of state.batches) for (const column of batch.columns) if (column.id === id) column.remote = remoteError(state, id).message;
+    for (const batch of state.batches) for (const column of batch.columns) if (column.id === id) column.remote = batchRemote(state, id);
     log.announce(id);
 };
 
@@ -85,12 +97,15 @@ export const releaseThreads = (state: State, log: MoveLog): void => {
 };
 
 export const remoteError = (state: State, id: number): Error =>
-    new Error(`"${labelOf(state.keys[id])}" lives on thread "${threadOfComponent(state, id) ?? "world"}", which a joined thread fills, so a command here gives it only its start or null.`);
+    new Error(isDelivered(state, id)
+        ? `"${labelOf(state.keys[id])}" lives on thread "${threadOfComponent(state, id) ?? "world"}", which a joined thread fills, so a command on another joined thread gives it only its start or null.`
+        : `"${labelOf(state.keys[id])}" lives on thread "${threadOfComponent(state, id) ?? "world"}", which a joined thread fills, and isn't data, so a command here gives it only its start or null.`);
 
 /**
  * For a system's commands, once a joined thread fills objects: the first error of a value another thread's object can't
  * take, with each such command dropped, by naming no entity, and each such staged spawn's value its start. Commands of
- * the joined thread whose log is `own` give its own objects slots it staged.
+ * the joined thread whose log is `own` give its own objects slots it staged; the world's thread's, `own` null, give
+ * data, which is delivered.
  */
 export const checkCommands = (state: State, buffer: CommandBuffer, own: MoveLog | null = null): Error | undefined => {
     let error: Error | undefined;
@@ -102,7 +117,7 @@ export const checkCommands = (state: State, buffer: CommandBuffer, own: MoveLog 
             const log = state.remote[id];
             if (log === undefined) continue;
             const tag = tagOf(values[k], state.starts[id]);
-            if (tag >= 0 && (tag <= nullTag || log === own)) continue;
+            if (tag >= 0 ? tag <= nullTag || log === own : own === null && isDelivered(state, id)) continue;
             error ??= remoteError(state, id);
             entities[command] = 0;
             break;
@@ -116,7 +131,7 @@ export const checkCommands = (state: State, buffer: CommandBuffer, own: MoveLog 
             const begin = state.starts[column.id];
             for (let row = start; row < end; row++) {
                 const tag = tagOf(column.values[row], begin);
-                if (tag >= 0 && (tag <= nullTag || log === own)) continue;
+                if (tag >= 0 ? tag <= nullTag || log === own : own === null && isDelivered(state, column.id)) continue;
                 error ??= remoteError(state, column.id);
                 column.values[row] = begin;
             }

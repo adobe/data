@@ -101,7 +101,8 @@ export type Commands = {
      *   other components as they are. Its entity values are rewritten as a spawned row's are, but a reference naming an
      *   entity that isn't there, weak or owner, is left out, so the entity's own stands.
      * - `resources` sets each resource it names, by key, at the sync point, as commands apply, each value checked
-     *   against its resource's schema; not one only the world writes, nor one living on another thread.
+     *   against its resource's schema, its entity values rewritten as the rows' are; one a joined thread fills is
+     *   copied there. Not one only the world writes, nor one a joined thread fills that isn't data.
      */
     spawnTables(tables: readonly Table[], options?: {
         readonly resources?: { readonly [key: symbol]: unknown };

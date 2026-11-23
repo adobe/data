@@ -6,9 +6,9 @@ import { blockShift, chunkShift } from './kernel.js';
 import { createBatch, type SpawnBatch } from './staging.js';
 import { archetypeOf, type State } from './state.js';
 import { gainsOf } from './structure.js';
-import { remoteError } from './remote.js';
+import { batchRemote } from './remote.js';
 import { countChanged } from './layout-directory.js';
-import { logRange, logSet, startTag, tagOf } from './move-log.js';
+import { deliveredTag, logRange, logSet, startTag, tagOf } from './move-log.js';
 import { writeDefault } from './synchronize.js';
 import { writeString } from './strings.js';
 import { cacheShared, internShared } from './shared.js';
@@ -26,7 +26,7 @@ export const batchOf = (state: State, ids: readonly number[], shared: readonly (
     let batch = state.batchByKey.get(key);
     if (batch === undefined) {
         batch = createBatch(state.layouts, ids, shared);
-        for (const column of batch.columns) if (state.remote[column.id] !== undefined) column.remote = remoteError(state, column.id).message;
+        for (const column of batch.columns) if (state.remote[column.id] !== undefined) column.remote = batchRemote(state, column.id);
         state.batchByKey.set(key, batch);
         state.batches.push(batch);
         if (shared !== noShared) letGoWith(state, batch, key);
@@ -123,7 +123,9 @@ const commitRows = (state: State, batch: SpawnBatch, first: number, n: number, t
                 const log = storage.remote;
                 const begin = log.starts[column.id];
                 for (let i = 0; i < n; i++) {
-                    const tag = Math.max(startTag, tagOf(column.values[first + i], begin));
+                    const value = column.values[first + i];
+                    const given = tagOf(value, begin);
+                    const tag = given >= 0 ? given : deliveredTag(log, value);
                     storage.tags[start + i] = tag;
                     if (tag !== startTag) logSet(log, target.id, start + i, column.id, tag, true);
                 }

@@ -37,6 +37,7 @@ import { invariantBenchmarks } from "./invariants.js";
 import { journalBenchmarks } from "./journal.js";
 import { tableBenchmarks } from "./tables.js";
 import { chainedBenchmarks } from "./chained.js";
+import { traitChangesBenchmarks } from "./trait-changes.js";
 import { transientBenchmarks } from "./transients.js";
 
 /** A world whose kernels run on this thread, which the benchmarks without a placement measure; `workers` ones use the pool. */
@@ -765,5 +766,6 @@ export const benchmarks: readonly Benchmark[] = [
     ...journalBenchmarks,
     ...tableBenchmarks,
     ...chainedBenchmarks,
+    ...traitChangesBenchmarks,
     ...transientBenchmarks,
 ];

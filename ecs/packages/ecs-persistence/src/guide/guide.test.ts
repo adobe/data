@@ -7,6 +7,7 @@ const teaches: { readonly [chapter: number]: readonly string[] } = {
     2: ["snapshot({ world, by: file, root", "dropped", "entities: false", "entities", "match: [byLabel]"],
     3: ["shared: true", "where: { [chunk]: [2, 0] }", "despawnWhere", "match: [byTree]"],
     4: ["snapshot({ world, by: file })", "snapshot({ world, by: settings })", "decode", "spawn", "match: [byCamera]", "update: true"],
+    5: ["watch({ world, by: session }", "thread: \"page\"", "snapshot({ world, by: session })", "spawn"],
 };
 
 /**
@@ -22,6 +23,10 @@ const mutations: { readonly [chapter: number]: readonly (readonly [string, strin
         ["const settingsAsDocument = decode(settingsBytes, { by: file });", "const settingsAsDocument = decode(settingsBytes, { by: settings });"],
         ["[tool]: { type: string; default: \"select\"; [settings]: \"tool\" }", "[tool]: { type: string; default: \"select\"; [settings]: \"tool\"; [file]: \"tool\" }"],
         [", update: true", ""],
+    ],
+    5: [
+        ["() => { due = true; }", "() => {}"],
+        ["; [session]: \"filter\"", ""],
     ],
 };
 

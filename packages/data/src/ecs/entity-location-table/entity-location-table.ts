@@ -5,8 +5,10 @@ import { EntityLocation } from "./entity-location.js";
 export interface EntityLocationTable {
     create: (location: EntityLocation) => Entity;
     update: (entity: Entity, location: EntityLocation) => void;
+    /** Frees the slot and advances its generation; `rewind` leaves the generation, undoing a create. */
     delete: (entity: Entity, rewind?: boolean) => void;
-    restore: (entity: Entity, location: EntityLocation) => void;
+    /** Places `entity` at `location` under its own generation. False when its slot is live. */
+    restore: (entity: Entity, location: EntityLocation) => boolean;
     locate: (entity: Entity) => EntityLocation | null;
     /** Wipe all entity records. O(1). Next allocate starts from entity 0 again. */
     reset: () => void;

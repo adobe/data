@@ -5,8 +5,11 @@ import type { Entity } from "./entity.js";
 // space along two orthogonal axes:
 //   bit 0 — durability: set = non-persistent (not saved), clear = persistent
 //   bit 1 — sharing:    set = non-shared (local), clear = shared (replicated)
-// The remaining high bits are the entity's per-quadrant local index. THIS FILE
-// IS THE ONLY PLACE THAT KNOWS THIS LAYOUT — everything else goes through the
+// Bits 2..23 are the entity's per-quadrant local index (22 bits) and bits 24..31
+// its generation (8 bits, wrapping). A slot's generation advances each time the
+// slot is freed, so a stale id fails to locate instead of resolving to the
+// slot's next occupant. Generation 0 ids are bit-identical to ids that carried
+// no generation. THIS FILE IS THE ONLY PLACE THAT KNOWS THIS LAYOUT — everything else goes through the
 // helpers below (predicates for consumers; encode/decode for the location
 // table and core). To change the layout, change it here.
 
@@ -37,21 +40,33 @@ export const isPersistentQuadrant = (quadrant: number): boolean => (quadrant & P
 export const quadrantFor = (nonPersistent: boolean, nonShared: boolean): number =>
     (nonPersistent ? PERSISTENCE_BIT : 0) | (nonShared ? SHARING_BIT : 0);
 
-/** Pack a per-quadrant local index + quadrant into an entity id. */
-export const toEntity = (localIndex: number, quadrant: number): Entity => (localIndex << QUADRANT_BITS) | quadrant;
+const GENERATION_SHIFT = 24;
+const LOCAL_INDEX_MASK = 0x3fffff;
+
+/** Exclusive upper bound of per-quadrant local indices; the last one is reserved for `none`. */
+export const localIndexLimit = LOCAL_INDEX_MASK;
+
+/** Number of distinct generations; a slot's generation wraps after this many frees. */
+export const GENERATION_COUNT = 256;
+
+/** Pack a per-quadrant local index, quadrant and generation (default 0) into an entity id. */
+export const toEntity = (localIndex: number, quadrant: number, generation: number = 0): Entity =>
+    (generation << GENERATION_SHIFT) | (localIndex << QUADRANT_BITS) | quadrant;
 
 /**
  * Sentinel for "no entity": the last representable id (the maximum local index
- * in the last quadrant, which is numerically -1). The allocator issues local
- * indices from 0 upward and a quadrant fills up long before 2^30 entities, so
- * no live entity ever equals this — `locate`/`read` resolve it to null. Use it
- * where a lookup may have no answer; it is not a live entity, so never
- * insert/delete/update it.
+ * and generation in the last quadrant, which is numerically -1). The allocator
+ * never issues the maximum local index (`localIndexLimit`), so no live entity
+ * ever equals this — `locate`/`read` resolve it to null. Use it where a lookup
+ * may have no answer; it is not a live entity, so never insert/delete/update it.
  */
-export const none: Entity = toEntity((1 << (32 - QUADRANT_BITS)) - 1, QUADRANT_MASK);
+export const none: Entity = toEntity(LOCAL_INDEX_MASK, QUADRANT_MASK, GENERATION_COUNT - 1);
 
-/** Recover the per-quadrant local index from an entity id (unsigned). */
-export const toLocalIndex = (entity: Entity): number => entity >>> QUADRANT_BITS;
+/** Recover the per-quadrant local index from an entity id. */
+export const toLocalIndex = (entity: Entity): number => (entity >>> QUADRANT_BITS) & LOCAL_INDEX_MASK;
+
+/** Recover the generation (0..255) from an entity id. */
+export const generationOf = (entity: Entity): number => entity >>> GENERATION_SHIFT;
 
 /**
  * The quadrants whose entities are persisted (document = 0, settings = 2). A

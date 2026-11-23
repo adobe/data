@@ -51,10 +51,27 @@ describe("Entity persistence/sharing quadrant", () => {
         }
     });
 
+    it("packs the generation into the top 8 bits without disturbing index or quadrant", () => {
+        for (const q of [0, 1, 2, 3]) {
+            for (const gen of [0, 1, 127, 128, 255]) {
+                const e = toEntity(12345, q, gen);
+                expect(toLocalIndex(e)).toBe(12345);
+                expect(quadrantOf(e)).toBe(q);
+                expect(Entity.generationOf(e)).toBe(gen);
+            }
+        }
+    });
+
+    it("a generation 0 id is identical to an id with no generation", () => {
+        expect(toEntity(37, 2)).toBe((37 << 2) | 2);
+        expect(toEntity(37, 2, 0)).toBe((37 << 2) | 2);
+    });
+
     it("none is the last representable id and past any allocatable local index", () => {
         // The maximum local index the encoding can carry; the allocator never
         // reaches it, so `none` decodes to an id no live entity occupies.
-        const maxLocalIndex = (1 << (32 - 2)) - 1;
+        const maxLocalIndex = (1 << 22) - 1;
+        expect(Entity.generationOf(Entity.none)).toBe(255);
         expect(toLocalIndex(Entity.none)).toBe(maxLocalIndex);
         expect(Entity.none).toBe(-1);
     });

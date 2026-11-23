@@ -234,8 +234,8 @@ export const createArchetype = <C extends Record<IdComponent, typeof Entity.sche
                 (archetype.columns as Record<string, TypedBuffer<unknown>>)[name]!.set(row, factory());
             }
         }
-        const target = entityLocationTable.locate(entity) === null
-            ? (entityLocationTable.restore(entity, { archetype: id, row }), entity)
+        const target = entityLocationTable.restore(entity, { archetype: id, row })
+            ? entity
             : entityLocationTable.create({ archetype: id, row });
         // Runtime invariant: `C["id"]` is `typeof Entity.schema`, so the id column stores `Entity`.
         (archetype.columns[ID] as unknown as TypedBuffer<Entity>).set(row, target);

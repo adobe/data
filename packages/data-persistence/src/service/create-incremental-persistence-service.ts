@@ -20,6 +20,9 @@ const META_FILE = "meta.json";
 const entityLocationFile = (quadrant: number): string => `entity-location-${quadrant}.bin`;
 const JOURNAL_FILE = "journal.bin";
 const ELT_STRIDE = 8;
+// First ELT word: generation in the top 8 bits, (archetypeId + 1) in the low 24.
+const ARCHETYPE_FIELD_MASK = 0xffffff;
+const GENERATION_SHIFT = 24;
 const columnPath = (archetypeId: number, component: string): string =>
     `archetypes/${archetypeId}/${component}.bin`;
 
@@ -730,6 +733,8 @@ export const createIncrementalPersistenceService = async (
     // per slot: [archetypeId, rowIndex].
     interface EltState {
         entities: Int32Array;
+        // Per-slot generation (see Entity.generationOf), same indexing as `entities`.
+        generations: Uint8Array;
         capacity: number;
         nextSlot: number;
         freeListHead: number;
@@ -748,6 +753,7 @@ export const createIncrementalPersistenceService = async (
         let capacity = 16;
         while (capacity < Math.max(nextSlot, 16)) capacity *= 2;
         const entities = new Int32Array(new ArrayBuffer(capacity * 2 * 4));
+        const generations = new Uint8Array(new ArrayBuffer(capacity));
         const view = new DataView(eltBytes.buffer, eltBytes.byteOffset, eltBytes.byteLength);
         let freeListHead = -1;
 
@@ -757,7 +763,9 @@ export const createIncrementalPersistenceService = async (
             const offset = slot * ELT_STRIDE;
             // Stored archetype is biased by +1: 0 = empty (never written or
             // deleted), N+1 = archetype N.
-            const storedArchetype = view.getUint32(offset + 0, true);
+            const word = view.getUint32(offset + 0, true);
+            const storedArchetype = word & ARCHETYPE_FIELD_MASK;
+            generations[slot] = word >>> GENERATION_SHIFT;
             const rowIndex = view.getInt32(offset + 4, true);
             if (storedArchetype === 0) {
                 entities[slot * 2 + 0] = -1;
@@ -769,7 +777,7 @@ export const createIncrementalPersistenceService = async (
             }
         }
 
-        return { entities, capacity, nextSlot, freeListHead };
+        return { entities, generations, capacity, nextSlot, freeListHead };
     };
 
     const readEntityLocationSnapshots = async (): Promise<EltStates> => {
@@ -844,6 +852,9 @@ export const createIncrementalPersistenceService = async (
             const grown = new Int32Array(new ArrayBuffer(eltState.capacity * 2 * 2 * 4));
             grown.set(eltState.entities);
             eltState.entities = grown;
+            const grownGenerations = new Uint8Array(new ArrayBuffer(eltState.capacity * 2));
+            grownGenerations.set(eltState.generations);
+            eltState.generations = grownGenerations;
             eltState.capacity *= 2;
         }
         if (slot >= eltState.nextSlot) {
@@ -869,6 +880,7 @@ export const createIncrementalPersistenceService = async (
 
         if (entry.kind === "delete") {
             ensureEntityCapacity(eltState, slot);
+            eltState.generations[slot] = (Entity.generationOf(entry.entity) + 1) & 0xff;
             const prevArch = eltState.entities[slot * 2 + 0]!;
             if (prevArch >= 0) {
                 eltState.entities[slot * 2 + 0] = -1;
@@ -881,6 +893,7 @@ export const createIncrementalPersistenceService = async (
         // insert / update / migrate — set the location and re-apply
         // the component bytes.
         ensureEntityCapacity(eltState, slot);
+        eltState.generations[slot] = Entity.generationOf(entry.entity);
         const prevArch = eltState.entities[slot * 2 + 0]!;
         eltState.entities[slot * 2 + 0] = entry.archetypeId;
         eltState.entities[slot * 2 + 1] = entry.rowIndex;
@@ -978,10 +991,15 @@ export const createIncrementalPersistenceService = async (
         // The ECS buckets these into its quadrant-partitioned location tables.
         const locations: EntityLocationEntry[] = [];
         for (const [quadrant, eltState] of eltStates) {
-            const { entities, nextSlot } = eltState;
+            const { entities, generations, nextSlot } = eltState;
             for (let slot = 0; slot < nextSlot; slot++) {
                 const archetypeId = entities[slot * 2 + 0];
-                if (archetypeId === undefined || archetypeId < 0) continue;
+                if (archetypeId === undefined) continue;
+                if (archetypeId < 0) {
+                    // A free slot keeps its generation for the slot's next occupant.
+                    locations.push({ entity: Entity.toEntity(slot, quadrant, generations[slot]), archetype: -1, row: 0 });
+                    continue;
+                }
                 const rowIndex = entities[slot * 2 + 1]!;
                 const aMan = manifest.archetypes[archetypeId];
                 if (aMan === undefined) continue;
@@ -989,7 +1007,7 @@ export const createIncrementalPersistenceService = async (
                 if (liveArchetype === undefined) continue;
                 const idColumn = getIdColumn(liveArchetype);
                 if (idColumn === undefined) continue;
-                const entity = Entity.toEntity(slot, quadrant);
+                const entity = Entity.toEntity(slot, quadrant, generations[slot]);
                 idColumn.set(rowIndex, entity);
                 // `archetypeId` is the id this session's on-disk manifest
                 // recorded at the time of the last checkpoint/journal entry —

@@ -68,7 +68,7 @@ export const createRollForwardConcurrency = (userId: number | string): Concurren
 
         const rollbackAll = () => {
             for (let i = pending.length - 1; i >= 0; i--) {
-                execute(t => applyOperations(t, pending[i].undo), { intermediate: true, userId: undefined });
+                execute(t => applyOperations(t, pending[i].undo, { rewind: true }), { intermediate: true, userId: undefined });
             }
         };
 

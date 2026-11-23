@@ -1446,4 +1446,57 @@ describe("createStore", () => {
         });
     });
 
+    describe("persistent entity id stability", () => {
+        it("never reassigns a deleted persistent entity id and keeps stale ids unlocatable across snapshots", () => {
+            const store = createStore({
+                components: { position: positionSchema },
+                resources: {},
+                archetypes: { Node: ["position"] },
+            });
+
+            const entityA = store.archetypes.Node.insert({ position: { x: 1, y: 2, z: 3 } });
+            store.delete(entityA);
+
+            const entityB = store.archetypes.Node.insert({ position: { x: 4, y: 5, z: 6 } });
+            expect(entityB).not.toBe(entityA);
+            expect(store.read(entityA)).toBeNull();
+            expect(store.read(entityB)).toEqual({ position: { x: 4, y: 5, z: 6 } });
+
+            const snapshot = store.toData({ copy: true });
+            const restored = createStore({
+                components: { position: positionSchema },
+                resources: {},
+                archetypes: { Node: ["position"] },
+            });
+            restored.fromData(snapshot);
+
+            const entityC = restored.archetypes.Node.insert({ position: { x: 7, y: 8, z: 9 } });
+            expect(entityC).not.toBe(entityA);
+            expect(restored.read(entityA)).toBeNull();
+            expect(restored.read(entityB)).toEqual({ position: { x: 4, y: 5, z: 6 } });
+            expect(restored.read(entityC)).toEqual({ position: { x: 7, y: 8, z: 9 } });
+        });
+
+        it("reuses deleted non-persistent entity ids", () => {
+            const store = createStore({
+                components: { position: positionSchema },
+                resources: {},
+                archetypes: { Ephemeral: ["position", "nonPersistent"] },
+            });
+
+            const entityA = store.archetypes.Ephemeral.insert({
+                position: { x: 1, y: 2, z: 3 },
+                nonPersistent: true,
+            });
+            store.delete(entityA);
+
+            const entityB = store.archetypes.Ephemeral.insert({
+                position: { x: 4, y: 5, z: 6 },
+                nonPersistent: true,
+            });
+            expect(entityB).toBe(entityA);
+            expect(store.read(entityB)).toEqual({ position: { x: 4, y: 5, z: 6 }, nonPersistent: true });
+        });
+    });
+
 }); 

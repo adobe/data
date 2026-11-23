@@ -209,9 +209,11 @@ describe("WorkerPersistenceService.load (round-trip)", () => {
         });
         await svcB.load();
 
-        // The deleted slot should be recycled by the free list.
+        // Persistent quadrants allocate monotonically and never reuse deleted slots.
         const eNew = dbB.transactions.spawn({ x: 9, y: 9, z: 9, mass: 9 });
-        expect(eNew).toBe(e0);
+        expect(eNew).not.toBe(e0);
+        expect(eNew).not.toBe(e1);
+        expect(dbB.read(e0!)).toBeNull();
         expectEntity(dbB, eNew!, { position: [9, 9, 9], velocity: [0, 0, 0], mass: 9 });
         // The pre-existing entity is still there.
         expectEntity(dbB, e1!, { position: [2, 2, 2], velocity: [0, 0, 0], mass: 2 });

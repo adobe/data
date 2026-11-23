@@ -6,6 +6,7 @@ import {
     remapSerializedArchetypeIds,
     validateSerializedArchetypeIds,
 } from "../../entity-location-table/index.js";
+import { attachRewindDelete, getRestoreEntity, RESTORE_ENTITY } from "../../entity-location-table/internal-ops.js";
 import * as ARCHETYPE from "../../archetype/index.js";
 import { Table, addRow, updateRow } from "../../../table/index.js";
 // getRowData returns the WHOLE row (incl. the internal `id` column); it is only
@@ -274,6 +275,11 @@ export function createCore<NC extends ComponentSchemas>(
             // onArchetypeCreated), the child's `insert` is already the maintained
             // one — so routing needs no special-casing at the Store layer.
             insert: (rowData: any): Entity => resolveArchetype(namesArr, partitionValuesOf(rowData)).insert(rowData),
+            [RESTORE_ENTITY]: (entity: Entity, rowData: any): Entity => {
+                const child = resolveArchetype(namesArr, partitionValuesOf(rowData));
+                const restore = getRestoreEntity(child);
+                return restore ? restore(entity, rowData) : child.insert(rowData);
+            },
         };
     };
 
@@ -345,7 +351,7 @@ export function createCore<NC extends ComponentSchemas>(
         return readRowExcludingId(archetype, location.row);
     }
 
-    const deleteEntity = (entity: Entity): Entity | undefined => {
+    const deleteEntityImpl = (entity: Entity, rewind: boolean): Entity | undefined => {
         const locationTable = getLocationTable(entity);
         const location = locationTable.locate(entity);
         if (location !== null) {
@@ -354,11 +360,13 @@ export function createCore<NC extends ComponentSchemas>(
                 throw new Error("Archetype not found: " + JSON.stringify(location));
             }
             const swapped = ARCHETYPE.deleteRow(archetype, location.row, locationTable);
-            locationTable.delete(entity);
+            locationTable.delete(entity, rewind);
             return swapped;
         }
         return undefined;
-    }
+    };
+    const deleteEntity = (entity: Entity): Entity | undefined => deleteEntityImpl(entity, false);
+    const rewindDeleteEntity = (entity: Entity): Entity | undefined => deleteEntityImpl(entity, true);
 
     const updateEntity = (entity: Entity, components: EntityUpdateValues<C>): Entity | undefined => {
         const currentLocation = locateInternal(entity);
@@ -696,6 +704,7 @@ export function createCore<NC extends ComponentSchemas>(
             reconstructNonPersistentColumns(restoredArchetypes);
         }
     };
+    attachRewindDelete(core, rewindDeleteEntity);
     return core as any;
 }
 

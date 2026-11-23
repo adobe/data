@@ -55,6 +55,7 @@ export interface TransactionalStore<
 export type TransactionInsertOperation<C> = {
     type: "insert";
     values: EntityInsertValues<C>;
+    entity?: Entity;
 };
 
 export type TransactionUpdateOperation<C> = {

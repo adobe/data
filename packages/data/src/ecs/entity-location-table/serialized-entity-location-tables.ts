@@ -40,10 +40,10 @@ export const serializedEntityLocationTables = (
 };
 
 /**
- * Rebuild one quadrant's location-table snapshot (indexed by per-quadrant local
- * index). Holes below the high-water mark are threaded into the free list so
- * post-load allocations reuse them and `nextIndex` never collides with a
- * restored id.
+ * Rebuild one persistent quadrant's location-table snapshot (indexed by
+ * per-quadrant local index). Holes below the high-water mark are marked empty
+ * with `freeListHead = -1` so post-load allocations advance monotonically past
+ * `nextIndex`.
  */
 const buildQuadrantTable = (
     entries: { local: number; archetype: number; row: number }[],
@@ -59,12 +59,10 @@ const buildQuadrantTable = (
         entities[e.local * 2 + 1] = e.row;
         occupied[e.local] = 1;
     }
-    let freeListHead = -1;
     for (let local = 0; local < nextIndex; local++) {
         if (occupied[local] === 1) continue;
         entities[local * 2 + 0] = -1;
-        entities[local * 2 + 1] = freeListHead;
-        freeListHead = local;
+        entities[local * 2 + 1] = -1;
     }
-    return { entities, freeListHead, nextIndex, capacity };
+    return { entities, freeListHead: -1, nextIndex, capacity };
 };

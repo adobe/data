@@ -12,6 +12,7 @@ import { ArchetypeComponents } from "../../store/archetype-components.js";
 import { patchEntityValues } from "./patch-entity-values.js";
 import { coalesceWriteOperations } from "./coalesce-actions.js";
 import { applyOperations } from "./apply-operations.js";
+import { attachRewindDelete, getRestoreEntity, getRewindDelete, RESTORE_ENTITY } from "../../entity-location-table/internal-ops.js";
 
 interface Transaction<
     C extends Components = never,
@@ -51,31 +52,39 @@ export function createTransactionalStore<
     // Wrap archetype creation to track operations
     const wrapArchetype = (archetype: Archetype<any>) => {
         const { id } = archetype;
+        const recordInsert = (entity: Entity): Entity => {
+            trackEntity(entity);
+            // Record the values that actually landed — defaults and default
+            // factories included — so replaying the redo insert restores the
+            // same row rather than re-running a factory (e.g. a guid).
+            // `store.read` excludes the identity column and the entity was
+            // just inserted, so it is present.
+            const storedValues = store.read(entity) as unknown as EntityInsertValues<C>;
+            redoOperations.push({
+                type: "insert",
+                entity,
+                values: storedValues,
+            });
+            undoOperationsInReverseOrder.push({ type: "delete", entity });
+            changed.entities.set(entity, storedValues);
+            changed.archetypes.add(id);
+            for (const key in storedValues) {
+                changed.components.add(key);
+            }
+            return entity;
+        };
         return {
             ...archetype,
             get rowCount() {
                 return archetype.rowCount;
             },
-            insert: <T extends EntityInsertValues<C>>(values: T) => {
-                const entity = archetype.insert(values as never);
-                trackEntity(entity);
-                // Record the values that actually landed — defaults and default
-                // factories included — so replaying the redo insert restores the
-                // same row rather than re-running a factory (e.g. a guid).
-                // `store.read` excludes the identity column and the entity was
-                // just inserted, so it is present.
-                const storedValues = store.read(entity) as unknown as EntityInsertValues<C>;
-                redoOperations.push({
-                    type: "insert",
-                    values: storedValues,
-                });
-                undoOperationsInReverseOrder.push({ type: "delete", entity });
-                changed.entities.set(entity, storedValues);
-                changed.archetypes.add(id);
-                for (const key in storedValues) {
-                    changed.components.add(key);
-                }
-                return entity;
+            insert: <T extends EntityInsertValues<C>>(values: T) =>
+                recordInsert(archetype.insert(values as never)),
+            [RESTORE_ENTITY]: (targetEntity: Entity, values: EntityInsertValues<C>) => {
+                const restore = getRestoreEntity(archetype);
+                return recordInsert(
+                    restore ? restore(targetEntity, values) : archetype.insert(values as never),
+                );
             },
         };
     };
@@ -147,7 +156,7 @@ export function createTransactionalStore<
         return swapped;
     };
 
-    const deleteEntity = (entity: Entity): Entity | undefined => {
+    const deleteEntityImpl = (entity: Entity, rewind: boolean): Entity | undefined => {
         trackEntity(entity);
         const location = store.locate(entity);
         if (location) {
@@ -166,7 +175,8 @@ export function createTransactionalStore<
             changed.components.add(key);
         }
 
-        const swapped = store.delete(entity);
+        const rewindDelete = rewind ? getRewindDelete(store) : undefined;
+        const swapped = rewindDelete ? rewindDelete(entity) : store.delete(entity);
         if (swapped !== undefined) {
             // Deleting `entity` swap-moved `swapped` into the vacated row.
             changed.moves.add(swapped);
@@ -175,9 +185,11 @@ export function createTransactionalStore<
         // A live entity carries every component its archetype requires, so the
         // id-excluded read values form a complete insert payload — a runtime
         // invariant the checker can't derive from the all-optional read type.
-        undoOperationsInReverseOrder.push({ type: "insert", values: oldValues as unknown as EntityInsertValues<C> });
+        undoOperationsInReverseOrder.push({ type: "insert", entity, values: oldValues as unknown as EntityInsertValues<C> });
         return swapped;
     };
+    const deleteEntity = (entity: Entity): Entity | undefined => deleteEntityImpl(entity, false);
+    const rewindDeleteEntity = (entity: Entity): Entity | undefined => deleteEntityImpl(entity, true);
 
     const resourceComponentNames = (name: string): StringKeyof<C>[] => {
         const schema = (store.componentSchemas as any)[name];
@@ -229,6 +241,7 @@ export function createTransactionalStore<
         undoable: undefined,
         userId: undefined as number | string | undefined,
     } satisfies Transaction<C, R, A>;
+    attachRewindDelete(transactionStore, rewindDeleteEntity);
 
     // Execute transaction function
     const execute = (
@@ -272,7 +285,7 @@ export function createTransactionalStore<
             return result;
         } catch (error) {
             // Rollback on error by applying undo operations in reverse
-            applyOperations(store, undoOperationsInReverseOrder.reverse());
+            applyOperations(store, undoOperationsInReverseOrder.reverse(), { rewind: true });
             throw error;
         } finally {
             transactionStore.userId = undefined;

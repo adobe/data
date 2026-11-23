@@ -3,28 +3,34 @@ import { resize } from "../../internal/array-buffer-like/resize.js";
 import { EntityLocationTable } from "./entity-location-table.js";
 import { EntityLocation } from "./entity-location.js";
 import { Entity } from "../entity/entity.js";
-import { toEntity, toLocalIndex } from "../entity/persistence-sharing.js";
+import { isPersistentQuadrant, toEntity, toLocalIndex } from "../entity/persistence-sharing.js";
 import { createSharedArrayBuffer } from "../../internal/shared-array-buffer/create-shared-array-buffer.js";
 
 /**
  * A location table for one entity quadrant (0..3). The backing store allocates
- * dense per-quadrant local indices; this wrapper packs the quadrant into each
- * id's low bits (and strips it on the way back in) so an entity id alone names
- * its quadrant. `toData`/`fromData` serialize the raw local-index array
+ * per-quadrant local indices; this wrapper packs the quadrant into each id's
+ * low bits (and strips it on the way back in) so an entity id alone names its
+ * quadrant. Persistent quadrants allocate monotonically and never reuse deleted
+ * slots, so stale ids fail `locate`; non-persistent quadrants reuse deleted
+ * slots in LIFO order. `toData`/`fromData` serialize the raw local-index array
  * (quadrant-agnostic); the quadrant is re-established by table position on load.
  */
 export const createEntityLocationTable = (initialCapacity: number = 16, quadrant: number = 0): EntityLocationTable => {
-    const table = createLocalIndexEntityLocationTable(initialCapacity);
+    const table = createLocalIndexEntityLocationTable(initialCapacity, !isPersistentQuadrant(quadrant));
     return {
         ...table,
         create: (location: EntityLocation): Entity => toEntity(table.create(location), quadrant),
-        delete: (entity: Entity) => table.delete(toLocalIndex(entity)),
+        delete: (entity: Entity, rewind?: boolean) => table.delete(toLocalIndex(entity), rewind),
+        restore: (entity: Entity, location: EntityLocation) => table.restore(toLocalIndex(entity), location),
         locate: (entity: Entity) => table.locate(toLocalIndex(entity)),
         update: (entity: Entity, location: EntityLocation) => table.update(toLocalIndex(entity), location),
     };
 }
 
-const createLocalIndexEntityLocationTable = (initialCapacity: number = 16): EntityLocationTable => {
+const createLocalIndexEntityLocationTable = (
+    initialCapacity: number = 16,
+    reuseDeleted: boolean = false,
+): EntityLocationTable => {
     let freeListHead = -1;
     let nextIndex = 0;
     let capacity = initialCapacity;
@@ -35,7 +41,7 @@ const createLocalIndexEntityLocationTable = (initialCapacity: number = 16): Enti
             throw new Error("create row must be >= 0");
         }
         let entity: number;
-        if (freeListHead >= 0) {
+        if (reuseDeleted && freeListHead >= 0) {
             entity = freeListHead;
             const index = freeListHead << 1;
             freeListHead = entities[index + 1];
@@ -55,14 +61,64 @@ const createLocalIndexEntityLocationTable = (initialCapacity: number = 16): Enti
         return entity;
     }
 
-    const deleteEntity = (entity: Entity) => {
+    const deleteEntity = (entity: Entity, rewind: boolean = false) => {
         if (entity < 0) {
             throw new Error("delete entity must be >= 0");
         }
         const index = entity << 1;
         entities[index + 0] = -1;
-        entities[index + 1] = freeListHead;
-        freeListHead = entity;
+        if (reuseDeleted) {
+            entities[index + 1] = freeListHead;
+            freeListHead = entity;
+        } else {
+            entities[index + 1] = -1;
+            if (rewind && entity === nextIndex - 1) {
+                nextIndex--;
+            }
+        }
+    }
+
+    const restoreEntity = (entity: Entity, location: EntityLocation) => {
+        if (entity < 0 || location.row < 0) {
+            throw new Error("restore entity and row must be >= 0");
+        }
+        if (entity >= capacity) {
+            while (entity >= capacity) {
+                capacity *= 2;
+            }
+            entities = new Int32Array(resize(entities.buffer, capacity * 2 * 4));
+        }
+        if (entity >= nextIndex) {
+            for (let s = nextIndex; s < entity; s++) {
+                const idx = s << 1;
+                entities[idx + 0] = -1;
+                if (reuseDeleted) {
+                    entities[idx + 1] = freeListHead;
+                    freeListHead = s;
+                } else {
+                    entities[idx + 1] = -1;
+                }
+            }
+            nextIndex = entity + 1;
+        } else if (reuseDeleted && entities[entity << 1] < 0) {
+            // Splice `entity` out of the free list so a later `create` cannot pop it.
+            if (freeListHead === entity) {
+                freeListHead = entities[(entity << 1) + 1];
+            } else {
+                let cursor = freeListHead;
+                while (cursor >= 0) {
+                    const next = entities[(cursor << 1) + 1];
+                    if (next === entity) {
+                        entities[(cursor << 1) + 1] = entities[(entity << 1) + 1];
+                        break;
+                    }
+                    cursor = next;
+                }
+            }
+        }
+        const index = entity << 1;
+        entities[index + 0] = location.archetype;
+        entities[index + 1] = location.row;
     }
 
     const locateEntity = (entity: Entity): EntityLocation | null => {
@@ -93,6 +149,7 @@ const createLocalIndexEntityLocationTable = (initialCapacity: number = 16): Enti
     return {
         create: createEntity,
         delete: deleteEntity,
+        restore: restoreEntity,
         locate: locateEntity,
         update: updateEntity,
         reset: () => {
@@ -107,7 +164,7 @@ const createLocalIndexEntityLocationTable = (initialCapacity: number = 16): Enti
         }),
         fromData: (data: any) => {
             entities = data.entities;
-            freeListHead = data.freeListHead;
+            freeListHead = reuseDeleted ? data.freeListHead : -1;
             nextIndex = data.nextIndex;
             capacity = data.capacity;
         }

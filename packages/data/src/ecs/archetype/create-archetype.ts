@@ -5,6 +5,7 @@ import * as TABLE from "../../table/index.js";
 import { Archetype, EntityInsertValues } from "./archetype.js";
 import { ID, IdComponent } from "../required-components.js";
 import { EntityLocationTable } from "../entity-location-table/entity-location-table.js";
+import { RESTORE_ENTITY } from "../entity-location-table/internal-ops.js";
 import { Entity } from "../entity/entity.js";
 import { StringKeyof } from "../../types/types.js";
 import { ensureCapacity } from "../../table/ensure-capacity.js";
@@ -225,6 +226,22 @@ export const createArchetype = <C extends Record<IdComponent, typeof Entity.sche
         return insertImpl(archetype as any, rowData);
     };
 
+    const factoryEntries = Object.entries(defaultFactories);
+    const restoreEntity = (entity: Entity, rowData: EntityInsertValues<PublicComponents>): Entity => {
+        const row = TABLE.addRow(archetype as any, rowData as any);
+        for (const [name, factory] of factoryEntries) {
+            if ((rowData as Record<string, unknown>)[name] === undefined) {
+                (archetype.columns as Record<string, TypedBuffer<unknown>>)[name]!.set(row, factory());
+            }
+        }
+        const target = entityLocationTable.locate(entity) === null
+            ? (entityLocationTable.restore(entity, { archetype: id, row }), entity)
+            : entityLocationTable.create({ archetype: id, row });
+        // Runtime invariant: `C["id"]` is `typeof Entity.schema`, so the id column stores `Entity`.
+        (archetype.columns[ID] as unknown as TypedBuffer<Entity>).set(row, target);
+        return target;
+    };
+
     const archetype = {
         id,
         ...table,
@@ -232,6 +249,7 @@ export const createArchetype = <C extends Record<IdComponent, typeof Entity.sche
         // "id", but id is not a public component, so it is typed without id.
         components: componentSet as Set<StringKeyof<PublicComponents>>,
         insert: createEntity,
+        [RESTORE_ENTITY]: restoreEntity,
         toData: (copy = false, omit?: ReadonlySet<string>) => ({
             columns: Object.fromEntries(
                 Object.entries(archetype.columns as Record<string, TypedBuffer<unknown>>)

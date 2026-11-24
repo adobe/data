@@ -55,6 +55,8 @@ export interface TransactionalStore<
 export type TransactionInsertOperation<C> = {
     type: "insert";
     values: EntityInsertValues<C>;
+    /** Re-create exactly this id (undoing its delete) instead of issuing the next one. */
+    entity?: Entity;
 };
 
 export type TransactionUpdateOperation<C> = {
@@ -65,7 +67,12 @@ export type TransactionUpdateOperation<C> = {
 
 export type TransactionDeleteOperation = {
     type: "delete";
-    entity: Entity
+    entity: Entity;
+    /**
+     * Undo the insert that issued `entity`: its slot returns to the generation
+     * it had before, so the next insert issues `entity` again.
+     */
+    reclaim?: true;
 };
 
 export type TransactionWriteOperation<C> =

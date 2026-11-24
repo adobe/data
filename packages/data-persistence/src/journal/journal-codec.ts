@@ -23,11 +23,11 @@ export const encodeJournalEntry = (entry: JournalEntry): ArrayBuffer => {
     view.setUint32(0, entry.txId, true);
     view.setFloat64(4, entry.timestampMs, true);
     view.setUint8(12, JournalEntryKindCode[entry.kind]);
-    view.setInt32(13, entry.entity, true);
-    view.setUint16(17, entry.archetypeId, true);
-    view.setUint32(19, entry.rowIndex, true);
-    view.setUint16(23, entry.componentId, true);
-    view.setUint32(25, entry.bytes.byteLength, true);
+    view.setFloat64(13, entry.entity, true);
+    view.setUint16(21, entry.archetypeId, true);
+    view.setUint32(23, entry.rowIndex, true);
+    view.setUint16(27, entry.componentId, true);
+    view.setUint32(29, entry.bytes.byteLength, true);
     if (entry.bytes.byteLength > 0) {
         new Uint8Array(buffer, JOURNAL_HEADER_BYTES).set(entry.bytes);
     }
@@ -53,11 +53,11 @@ export const decodeJournalEntry = (
     }
     const txId = view.getUint32(0, true);
     const timestampMs = view.getFloat64(4, true);
-    const entity = view.getInt32(13, true);
-    const archetypeId = view.getUint16(17, true);
-    const rowIndex = view.getUint32(19, true);
-    const componentId = view.getUint16(23, true);
-    const byteLen = view.getUint32(25, true);
+    const entity = view.getFloat64(13, true);
+    const archetypeId = view.getUint16(21, true);
+    const rowIndex = view.getUint32(23, true);
+    const componentId = view.getUint16(27, true);
+    const byteLen = view.getUint32(29, true);
     const payloadStart = offset + JOURNAL_HEADER_BYTES;
     if (payloadStart + byteLen > buffer.byteLength) {
         throw new Error(

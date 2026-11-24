@@ -12,9 +12,10 @@ const entityLocationFile = (quadrant: number): string => `entity-location-${quad
 const JOURNAL_FILE = "journal.bin";
 const META_FILE = "meta.json";
 // Packed entity-location entry: u32 (archetypeId + 1, so 0 = empty) + u32
-// rowIndex. 8 bytes per persistent entity. An unwritten slot reads as the zero
-// (empty) entry; deletions write a zero entry.
-const ELT_STRIDE = 8;
+// rowIndex + u32 generation. 12 bytes per persistent entity. An unwritten slot
+// reads as the zero (empty) entry; a deletion writes an empty entry carrying the
+// deleted entity's generation, so the slot's next entity is issued past it.
+const ELT_STRIDE = 12;
 
 const columnPath = (archetypeId: number, component: string): string =>
     `archetypes/${archetypeId}/${component}.bin`;
@@ -74,6 +75,7 @@ export const createPersistRouter = (backend: PersistenceBackend): PersistRouter 
                 // backend zero-fills any gap left before the first write).
                 view.setUint32(0, op.archetypeId + 1, true);
                 view.setUint32(4, op.rowIndex, true);
+                view.setUint32(8, Entity.generationOf(op.entity), true);
                 await file.writeAt(Entity.toLocalIndex(op.entity) * ELT_STRIDE, new Uint8Array(entry));
                 return undefined;
             }
@@ -82,9 +84,10 @@ export const createPersistRouter = (backend: PersistenceBackend): PersistRouter 
                     throw new Error(`deleteEntityLocation: non-persistent entity not persistable (entity=${op.entity})`);
                 }
                 const file = await openCached(entityLocationFile(Entity.quadrantOf(op.entity)));
-                // Zero entry = empty slot (biased archetype 0 means "absent").
-                const tombstone = new Uint8Array(ELT_STRIDE);
-                await file.writeAt(Entity.toLocalIndex(op.entity) * ELT_STRIDE, tombstone);
+                // Biased archetype 0 = empty slot; the generation is the deleted entity's.
+                const tombstone = new ArrayBuffer(ELT_STRIDE);
+                new DataView(tombstone).setUint32(8, Entity.generationOf(op.entity), true);
+                await file.writeAt(Entity.toLocalIndex(op.entity) * ELT_STRIDE, new Uint8Array(tombstone));
                 return undefined;
             }
             case "writeJournalSnapshot": {

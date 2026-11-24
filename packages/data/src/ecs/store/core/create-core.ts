@@ -38,7 +38,7 @@ import { MemoryAllocator } from "../../../cache/memory-allocator.js";
  * location tables both changed shape. Bump this whenever the snapshot shape
  * changes in a way older readers cannot load.
  */
-export const ECS_SNAPSHOT_VERSION = 2;
+export const ECS_SNAPSHOT_VERSION = 3;
 
 /**
  * One archetype's entry in a serialized snapshot. Every archetype
@@ -549,6 +549,7 @@ export function createCore<NC extends ComponentSchemas>(
         get: getComponent,
         read: readEntity,
         delete: deleteEntity,
+        claim: (entity: Entity) => getLocationTable(entity).claim(entity),
         update: updateEntity,
         compact,
         reset: resetCore,

@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { Database } from "@adobe/data/ecs";
+import { Database, Entity } from "@adobe/data/ecs";
 import { F32, Vec3 } from "@adobe/data/math";
 import type { Schema } from "@adobe/data/schema";
 import { describe, expect, it } from "vitest";
@@ -209,9 +209,12 @@ describe("WorkerPersistenceService.load (round-trip)", () => {
         });
         await svcB.load();
 
-        // The deleted slot should be recycled by the free list.
+        // The deleted slot should be recycled by the free list, at a later
+        // generation so the id deleted before the save stays stale.
         const eNew = dbB.transactions.spawn({ x: 9, y: 9, z: 9, mass: 9 });
-        expect(eNew).toBe(e0);
+        expect(Entity.toLocalIndex(eNew!)).toBe(Entity.toLocalIndex(e0!));
+        expect(eNew).not.toBe(e0);
+        expect(dbB.read(e0!)).toBeNull();
         expectEntity(dbB, eNew!, { position: [9, 9, 9], velocity: [0, 0, 0], mass: 9 });
         // The pre-existing entity is still there.
         expectEntity(dbB, e1!, { position: [2, 2, 2], velocity: [0, 0, 0], mass: 2 });

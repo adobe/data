@@ -13,6 +13,7 @@ export const applyOperations = (
     for (const operation of operations) {
         switch (operation.type) {
             case "insert": {
+                if (operation.entity !== undefined) store.claim(operation.entity);
                 const componentNames = [ID, ...Object.keys(operation.values)] as StringKeyof<any>[];
                 const archetype = store.ensureArchetype(componentNames);
                 archetype.insert(operation.values as never);
@@ -28,6 +29,7 @@ export const applyOperations = (
             }
             case "delete":
                 store.delete(operation.entity);
+                if (operation.reclaim) store.claim(operation.entity);
                 break;
         }
     }

@@ -8,7 +8,7 @@ import type { TypedBufferType } from "@adobe/data/typed-buffer";
  * evolution.
  */
 export interface Manifest {
-    readonly version: 1;
+    readonly version: 2;
     readonly checkpointId: number;
     readonly archetypes: { readonly [archetypeId: number]: ArchetypeManifest };
     /** Entity → archetypeId,rowIndex packed file metadata. */

@@ -20,7 +20,7 @@ const plugin = Database.Plugin.create({
     },
 });
 
-const ELT_STRIDE = 8;
+const ELT_STRIDE = 12;
 
 describe("entity-location file density", () => {
     it("packs the document quadrant with exactly one slot per entity (no gaps)", async () => {

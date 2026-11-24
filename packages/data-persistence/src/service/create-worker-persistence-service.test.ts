@@ -179,7 +179,7 @@ describe("createWorkerPersistenceService", () => {
         await meta.close();
         expect(metaBytes.byteLength).toBeGreaterThan(0);
         const manifest = JSON.parse(new TextDecoder().decode(metaBytes));
-        expect(manifest.version).toBe(1);
+        expect(manifest.version).toBe(2);
         expect(typeof manifest.checkpointId).toBe("number");
 
         // Journal was truncated.

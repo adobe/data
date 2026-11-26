@@ -3,104 +3,151 @@ import { resize } from "../../internal/array-buffer-like/resize.js";
 import { EntityLocationTable } from "./entity-location-table.js";
 import { EntityLocation } from "./entity-location.js";
 import { Entity } from "../entity/entity.js";
-import { toEntity, toLocalIndex } from "../entity/persistence-sharing.js";
+import { toEntity, toLocalIndex, generationOf, nextGeneration, isRetiredGeneration } from "../entity/persistence-sharing.js";
 import { createSharedArrayBuffer } from "../../internal/shared-array-buffer/create-shared-array-buffer.js";
 
 /**
- * A location table for one entity quadrant (0..3). The backing store allocates
- * dense per-quadrant local indices; this wrapper packs the quadrant into each
- * id's low bits (and strips it on the way back in) so an entity id alone names
- * its quadrant. `toData`/`fromData` serialize the raw local-index array
- * (quadrant-agnostic); the quadrant is re-established by table position on load.
+ * A location table for one entity quadrant (0..3). Slots are dense
+ * per-quadrant local indices, each with a generation bumped when the slot is
+ * freed. Each id packs its local index, the quadrant and the slot's generation
+ * (see `persistence-sharing.ts`), so an id alone names its quadrant and a stale
+ * id for a reused slot locates to null. A slot whose generation reaches the
+ * maximum is retired: it never rejoins the free list, so no id repeats.
+ * `toData`/`fromData` serialize the raw slot arrays (quadrant-agnostic); the
+ * quadrant is re-established by table position on load. Data without
+ * `generations` (a 0.10.x snapshot) loads at generation 0, with every free slot
+ * at generation 1 so a stored reference to a deleted entity stays stale.
  */
 export const createEntityLocationTable = (initialCapacity: number = 16, quadrant: number = 0): EntityLocationTable => {
-    const table = createLocalIndexEntityLocationTable(initialCapacity);
-    return {
-        ...table,
-        create: (location: EntityLocation): Entity => toEntity(table.create(location), quadrant),
-        delete: (entity: Entity) => table.delete(toLocalIndex(entity)),
-        locate: (entity: Entity) => table.locate(toLocalIndex(entity)),
-        update: (entity: Entity, location: EntityLocation) => table.update(toLocalIndex(entity), location),
-    };
-}
-
-const createLocalIndexEntityLocationTable = (initialCapacity: number = 16): EntityLocationTable => {
     let freeListHead = -1;
     let nextIndex = 0;
     let capacity = initialCapacity;
     let entities = new Int32Array(createSharedArrayBuffer(capacity * 2 * 4));
+    let generations = new Uint32Array(createSharedArrayBuffer(capacity * 4));
+
+    /** The local index `entity` names, or -1 when it is out of range, free or stale. */
+    const liveIndex = (entity: Entity): number => {
+        const index = toLocalIndex(entity);
+        return index < nextIndex && entities[index << 1] >= 0 && generations[index] === generationOf(entity) ? index : -1;
+    };
+
+    const grow = () => {
+        capacity *= 2;
+        entities = new Int32Array(resize(entities.buffer, capacity * 2 * 4));
+        generations = new Uint32Array(resize(generations.buffer, capacity * 4));
+    };
+
+    /** Frees `index`, joining the free list unless the slot is retired. */
+    const free = (index: number) => {
+        entities[(index << 1) + 0] = -1;
+        if (isRetiredGeneration(generations[index])) {
+            entities[(index << 1) + 1] = -1;
+            return;
+        }
+        entities[(index << 1) + 1] = freeListHead;
+        freeListHead = index;
+    };
 
     const createEntity = ({ archetype, row }: EntityLocation): Entity => {
         if (row < 0) {
             throw new Error("create row must be >= 0");
         }
-        let entity: number;
+        let index: number;
         if (freeListHead >= 0) {
-            entity = freeListHead;
-            const index = freeListHead << 1;
-            freeListHead = entities[index + 1];
+            index = freeListHead;
+            freeListHead = entities[(index << 1) + 1];
         }
         else {
-            entity = nextIndex++;
-            if (nextIndex >= capacity) {
-                capacity *= 2;
-                entities = new Int32Array(resize(entities.buffer, capacity * 2 * 4));
+            // Slots past `nextIndex` are unused, apart from retired ones a reset left behind.
+            index = nextIndex++;
+            if (nextIndex >= capacity) grow();
+            while (isRetiredGeneration(generations[index])) {
+                entities[(index << 1) + 0] = -1;
+                entities[(index << 1) + 1] = -1;
+                index = nextIndex++;
+                if (nextIndex >= capacity) grow();
             }
         }
 
-        const index = entity << 1;
-        entities[index + 0] = archetype;
-        entities[index + 1] = row;
+        entities[(index << 1) + 0] = archetype;
+        entities[(index << 1) + 1] = row;
 
-        return entity;
+        return toEntity(index, quadrant, generations[index]);
     }
 
     const deleteEntity = (entity: Entity) => {
-        if (entity < 0) {
-            throw new Error("delete entity must be >= 0");
+        const index = liveIndex(entity);
+        if (index < 0) {
+            return;
         }
-        const index = entity << 1;
-        entities[index + 0] = -1;
-        entities[index + 1] = freeListHead;
-        freeListHead = entity;
+        generations[index] = nextGeneration(generations[index]);
+        free(index);
     }
 
     const locateEntity = (entity: Entity): EntityLocation | null => {
-        if (entity < 0) {
-            throw new Error("locate entity must be >= 0");
-        }
-        if (entity >= nextIndex) {
+        const index = liveIndex(entity);
+        if (index < 0) {
             return null;
         }
-        const index = entity << 1;
-        const archetype = entities[index + 0];
-        if (archetype < 0) {
-            return null;
-        }
-        const row = entities[index + 1];
-        return { archetype, row };
+        return { archetype: entities[index << 1], row: entities[(index << 1) + 1] };
     }
 
     const updateEntity = (entity: Entity, location: EntityLocation) => {
         if (entity < 0 || location.row < 0) {
             throw new Error("update entity and row must be >= 0");
         }
-        const index = entity << 1;
+        const index = toLocalIndex(entity) << 1;
         entities[index + 0] = location.archetype;
         entities[index + 1] = location.row;
+    }
+
+    const claimEntity = (entity: Entity) => {
+        const index = toLocalIndex(entity);
+        while (index >= nextIndex) {
+            // Slots below the claimed one that were never issued are freed.
+            const unused = nextIndex++;
+            if (nextIndex >= capacity) grow();
+            free(unused);
+        }
+        if (entities[index << 1] >= 0) {
+            throw new Error(`claim entity ${entity}: its slot is in use`);
+        }
+        // Unlink the slot from the free list (a retired slot is not on it), then push it at the head.
+        if (freeListHead === index) {
+            freeListHead = entities[(index << 1) + 1];
+        } else {
+            for (let cursor = freeListHead; cursor >= 0; cursor = entities[(cursor << 1) + 1]) {
+                if (entities[(cursor << 1) + 1] === index) {
+                    entities[(cursor << 1) + 1] = entities[(index << 1) + 1];
+                    break;
+                }
+            }
+        }
+        entities[(index << 1) + 1] = freeListHead;
+        freeListHead = index;
+        generations[index] = generationOf(entity);
     }
 
     return {
         create: createEntity,
         delete: deleteEntity,
+        claim: claimEntity,
         locate: locateEntity,
         update: updateEntity,
         reset: () => {
+            // Every slot in use is freed, so its generation moves on and ids
+            // issued before the reset stay stale.
+            for (let index = 0; index < nextIndex; index++) {
+                if (entities[index << 1] >= 0) {
+                    generations[index] = nextGeneration(generations[index]);
+                }
+            }
             freeListHead = -1;
             nextIndex = 0;
         },
         toData: (copy = false) => ({
             entities: copy ? entities.slice() : entities,
+            generations: copy ? generations.slice() : generations,
             freeListHead,
             nextIndex,
             capacity,
@@ -110,9 +157,19 @@ const createLocalIndexEntityLocationTable = (initialCapacity: number = 16): Enti
             freeListHead = data.freeListHead;
             nextIndex = data.nextIndex;
             capacity = data.capacity;
+            generations = data.generations ?? storedGenerations(entities, nextIndex, capacity);
         }
     };
 }
+
+/** Generations for a table stored without them: 0, or 1 for a free slot below `nextIndex`. */
+const storedGenerations = (entities: Int32Array, nextIndex: number, capacity: number): Uint32Array => {
+    const generations = new Uint32Array(createSharedArrayBuffer(capacity * 4));
+    for (let index = 0; index < nextIndex; index++) {
+        if (entities[index << 1] < 0) generations[index] = 1;
+    }
+    return generations;
+};
 
 const missingArchetypeError = (
     entityIndex: number,

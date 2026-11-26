@@ -58,6 +58,8 @@ export interface EncodedColumnSlice {
 export interface ColumnEncoder {
     readonly storage: ColumnManifest["storage"];
     readonly stride: number;
+    /** The buffer type the column is stored as (for an entity column, its stored i32 form's). */
+    readonly bufferType: TypedBufferType;
     /**
      * Encode a contiguous range of rows into a transferable buffer.
      * Returns null when the column type stores nothing per row (const).

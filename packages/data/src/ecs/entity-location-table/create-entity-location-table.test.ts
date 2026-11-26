@@ -2,6 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import { createEntityLocationTable, remapSerializedArchetypeIds } from './create-entity-location-table.js';
 import { Entity } from '../entity/entity.js';
+import { GENERATION_MASK, generationOf, toEntity, toLocalIndex } from '../entity/persistence-sharing.js';
 
 describe('createEntityLocationTable', () => {
     it('should create entities with quadrant-encoded ids (quadrant 0)', () => {
@@ -36,9 +37,11 @@ describe('createEntityLocationTable', () => {
         // Delete entity1
         table.delete(entity1);
 
-        // Create a new entity - should reuse entity1's id
+        // Create a new entity - should reuse entity1's slot at the next generation
         const entity3 = table.create({ archetype: 4, row: 40 });
-        expect(entity3).toBe(entity1); // reuses entity1's freed slot (same id)
+        expect(toLocalIndex(entity3)).toBe(toLocalIndex(entity1));
+        expect(generationOf(entity3)).toBe(generationOf(entity1) + 1);
+        expect(table.locate(entity1)).toBeNull(); // the stale id no longer resolves
 
         // Verify the new entity's location
         const location = table.locate(entity3);
@@ -61,15 +64,15 @@ describe('createEntityLocationTable', () => {
 
         // Recreate entities - should get IDs in reverse deletion order
         const newEntity1 = table.create({ archetype: 5, row: 50 });
-        expect(newEntity1).toBe(entity0); // Should get entity0's id (last deleted)
+        expect(toLocalIndex(newEntity1)).toBe(toLocalIndex(entity0)); // Should get entity0's id (last deleted)
         expect(table.locate(newEntity1)).toEqual({ archetype: 5, row: 50 });
 
         const newEntity2 = table.create({ archetype: 6, row: 60 });
-        expect(newEntity2).toBe(entity2); // Should get entity2's id (second-to-last deleted)
+        expect(toLocalIndex(newEntity2)).toBe(toLocalIndex(entity2)); // Should get entity2's id (second-to-last deleted)
         expect(table.locate(newEntity2)).toEqual({ archetype: 6, row: 60 });
 
         const newEntity3 = table.create({ archetype: 7, row: 70 });
-        expect(newEntity3).toBe(entity1); // Should get entity1's id (first deleted)
+        expect(toLocalIndex(newEntity3)).toBe(toLocalIndex(entity1)); // Should get entity1's id (first deleted)
         expect(table.locate(newEntity3)).toEqual({ archetype: 7, row: 70 });
 
         // Creating one more should create a new ID since free list is empty
@@ -118,9 +121,9 @@ describe('createEntityLocationTable', () => {
         const newEntity3 = table.create({ archetype: 102, row: 1020 });
 
         // Verify the entities were reused in LIFO order
-        expect(newEntity1).toBe(entities[initialCapacity + 1]);
-        expect(newEntity2).toBe(entities[initialCapacity]);
-        expect(newEntity3).toBe(entities[initialCapacity - 1]);
+        expect(toLocalIndex(newEntity1)).toBe(toLocalIndex(entities[initialCapacity + 1]));
+        expect(toLocalIndex(newEntity2)).toBe(toLocalIndex(entities[initialCapacity]));
+        expect(toLocalIndex(newEntity3)).toBe(toLocalIndex(entities[initialCapacity - 1]));
 
         // Verify their locations are correct
         expect(table.locate(newEntity1)).toEqual({ archetype: 100, row: 1000 });
@@ -201,5 +204,89 @@ describe('remapSerializedArchetypeIds', () => {
         const data = table.toData(true);
 
         expect(() => remapSerializedArchetypeIds(data, [0])).not.toThrow();
+    });
+});
+describe('entity generations', () => {
+    it('detects a stale id after its slot is reused', () => {
+        const table = createEntityLocationTable();
+        const stale = table.create({ archetype: 1, row: 0 });
+        table.delete(stale);
+        const reused = table.create({ archetype: 2, row: 0 });
+        expect(reused).not.toBe(stale);
+        expect(table.locate(stale)).toBeNull();
+        expect(table.locate(reused)).toEqual({ archetype: 2, row: 0 });
+        table.delete(stale); // a stale delete leaves the live occupant alone
+        expect(table.locate(reused)).toEqual({ archetype: 2, row: 0 });
+    });
+
+    it('claim revives a deleted id on the next create', () => {
+        const table = createEntityLocationTable();
+        const a = table.create({ archetype: 1, row: 0 });
+        const b = table.create({ archetype: 1, row: 1 });
+        table.delete(a);
+        table.delete(b);
+        table.claim(a); // not the free-list head
+        expect(table.create({ archetype: 3, row: 0 })).toBe(a);
+        expect(toLocalIndex(table.create({ archetype: 3, row: 1 }))).toBe(toLocalIndex(b));
+    });
+
+    it('claim right after delete restores the generation the slot had', () => {
+        const table = createEntityLocationTable();
+        const a = table.create({ archetype: 1, row: 0 });
+        table.delete(a);
+        table.claim(a);
+        expect(table.create({ archetype: 1, row: 0 })).toBe(a);
+    });
+
+    it('claim throws for a slot in use', () => {
+        const table = createEntityLocationTable();
+        const a = table.create({ archetype: 1, row: 0 });
+        expect(() => table.claim(a)).toThrow(/in use/);
+    });
+
+    it('reset leaves ids issued before it stale', () => {
+        const table = createEntityLocationTable();
+        const a = table.create({ archetype: 1, row: 0 });
+        table.reset();
+        const b = table.create({ archetype: 1, row: 0 });
+        expect(toLocalIndex(b)).toBe(toLocalIndex(a));
+        expect(table.locate(a)).toBeNull();
+    });
+
+    it('round-trips generations through toData/fromData', () => {
+        const source = createEntityLocationTable();
+        const a = source.create({ archetype: 1, row: 0 });
+        source.delete(a);
+        const live = source.create({ archetype: 1, row: 0 });
+        const target = createEntityLocationTable();
+        target.fromData(source.toData(true));
+        expect(target.locate(live)).toEqual({ archetype: 1, row: 0 });
+        expect(target.locate(a)).toBeNull();
+    });
+
+    it('retires a slot at the last generation instead of wrapping', () => {
+        const table = createEntityLocationTable();
+        table.claim(toEntity(0, 0, GENERATION_MASK - 1));
+        const last = table.create({ archetype: 1, row: 0 });
+        expect(generationOf(last)).toBe(GENERATION_MASK - 1);
+        table.delete(last);
+        const next = table.create({ archetype: 1, row: 1 });
+        expect(toLocalIndex(next)).toBe(1); // slot 0 is never issued again
+        expect(table.locate(last)).toBeNull();
+        table.reset();
+        expect(toLocalIndex(table.create({ archetype: 1, row: 0 }))).toBe(1);
+    });
+
+    it('loads a table stored without generations at generation 0, with free slots at 1', () => {
+        const source = createEntityLocationTable();
+        const kept = source.create({ archetype: 1, row: 0 });
+        const deleted = source.create({ archetype: 1, row: 1 });
+        source.delete(deleted);
+        const { generations: _generations, ...stored } = source.toData(true) as Record<string, unknown>;
+        const table = createEntityLocationTable();
+        table.fromData(stored);
+        expect(table.locate(kept)).toEqual({ archetype: 1, row: 0 });
+        const reused = table.create({ archetype: 1, row: 1 });
+        expect(reused).toBe(toEntity(toLocalIndex(deleted), 0, 1));
     });
 });

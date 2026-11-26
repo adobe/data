@@ -129,6 +129,15 @@ export interface Core<
      */
     delete: (entity: Entity) => Entity | undefined;
     /**
+     * Makes the next entity created in `entity`'s quadrant be exactly `entity`.
+     * Its slot must be free; it moves to the head of the free list and takes
+     * `entity`'s generation. Replaying an undo uses this: claiming a deleted
+     * entity before re-inserting its values revives the same id, and claiming
+     * an entity right after deleting it returns its slot to the generation it
+     * had before the insert that issued it.
+     */
+    claim: (entity: Entity) => void;
+    /**
      * Updates the entity. When the update migrates the entity to another
      * archetype, its old archetype swap-moves a neighbor into the vacated row;
      * that neighbor is returned (or `undefined` for an in-place update with no

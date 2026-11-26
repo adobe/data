@@ -8,6 +8,7 @@
 
 import { describe, it, expect, vi } from "vitest";
 import { Database } from "./database.js";
+import { Entity } from "../entity/entity.js";
 import { createRebaseReplayConcurrency } from "./concurrency/index.js";
 
 // ---------------------------------------------------------------------------
@@ -118,8 +119,10 @@ describe("Database.reset()", () => {
 
         const e2 = db.transactions.addPoint({ x: 2, label: "new" });
         expect(db.read(e2)?.label).toBe("new");
-        // entity IDs restart from the same base, so e2 should equal e1
-        expect(e2).toBe(e1);
+        // slots restart from the same base, at a new generation so e1 stays stale
+        expect(Entity.toLocalIndex(e2)).toBe(Entity.toLocalIndex(e1));
+        expect(e2).not.toBe(e1);
+        expect(db.read(e1)).toBeNull();
         expect(entityCount(db)).toBe(1);
     });
 

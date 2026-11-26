@@ -1,7 +1,7 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import { describe, it, expect } from "vitest";
 import { Entity } from "./entity.js";
-import { quadrantFor, quadrantOf, toEntity, toLocalIndex } from "./persistence-sharing.js";
+import { GENERATION_MASK, generationOf, quadrantFor, quadrantOf, toEntity, toLocalIndex } from "./persistence-sharing.js";
 
 // Quadrant encoding: bit0 = non-persistent, bit1 = non-shared.
 //   0 = persistent + shared      (document)
@@ -56,6 +56,15 @@ describe("Entity persistence/sharing quadrant", () => {
         // reaches it, so `none` decodes to an id no live entity occupies.
         const maxLocalIndex = (1 << (32 - 2)) - 1;
         expect(toLocalIndex(Entity.none)).toBe(maxLocalIndex);
-        expect(Entity.none).toBe(-1);
+        expect(Entity.none).toBe(Number.MAX_SAFE_INTEGER);
+    });
+
+    it("packs the generation above the 32 slot bits without disturbing the slot", () => {
+        const e = toEntity(37, 2, 5);
+        expect(e).toBe(((37 << 2) | 2) + 5 * 2 ** 32);
+        expect(quadrantOf(e)).toBe(2);
+        expect(toLocalIndex(e)).toBe(37);
+        expect(generationOf(e)).toBe(5);
+        expect(generationOf(toEntity(37, 2, GENERATION_MASK + 1))).toBe(0); // wraps
     });
 });

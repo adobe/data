@@ -17,6 +17,7 @@ import { Archetype, ReadonlyArchetype } from "../../archetype/archetype.js";
 import { RequiredComponents, ID, RESERVED_COMPONENT_NAMES } from "../../required-components.js";
 import { Entity } from "../../entity/entity.js";
 import { QUADRANT_COUNT, isPersistentQuadrant, quadrantFor, quadrantOf } from "../../entity/persistence-sharing.js";
+import { fromStoredArchetypeData, fromStoredSchema, toStoredArchetypeData, toStoredSchema } from "../../entity/stored-entities.js";
 import { PersistenceScope, ToDataOptions } from "../../persistence-scope.js";
 import { Core, EntityUpdateValues, ArchetypeQueryOptions } from "./core.js";
 import { Assert, Equal, Simplify, StringKeyof } from "../../../types/index.js";
@@ -56,6 +57,15 @@ type SerializedArchetype = {
     // archetypes.
     readonly partitionValues?: Record<string, unknown>;
     readonly data?: unknown;
+};
+
+type StoredArchetypeData = Parameters<typeof toStoredArchetypeData>[0];
+
+/** A location table's `toData` without its generations, which snapshots do not store. */
+const storedLocationTable = (data: unknown): unknown => {
+    // Runtime invariant: `data` is a location table's `toData`.
+    const { generations: _generations, ...stored } = data as { generations?: unknown };
+    return stored;
 };
 
 type SerializedCore = {
@@ -549,6 +559,7 @@ export function createCore<NC extends ComponentSchemas>(
         get: getComponent,
         read: readEntity,
         delete: deleteEntity,
+        claim: (entity: Entity) => getLocationTable(entity).claim(entity),
         update: updateEntity,
         compact,
         reset: resetCore,
@@ -561,11 +572,15 @@ export function createCore<NC extends ComponentSchemas>(
             const omit = nonPersistentComponents();
             return {
                 version: ECS_SNAPSHOT_VERSION,
-                componentSchemas,
+                // Snapshots keep the 0.10.x format: entity ids are stored as
+                // i32s without their generation (see stored-entities.ts).
+                componentSchemas: Object.fromEntries(
+                    Object.entries(componentSchemas as Record<string, Schema>).map(([name, schema]) => [name, toStoredSchema(schema)]),
+                ),
                 // Serialize the in-scope persistent quadrants' location tables.
                 entityLocationTables: Object.fromEntries(
                     locationTables.flatMap((table, quadrant) =>
-                        inScope.has(quadrant) ? [[quadrant, table.toData(copy)]] : []),
+                        inScope.has(quadrant) ? [[quadrant, storedLocationTable(table.toData(copy))]] : []),
                 ),
                 // Every archetype contributes a structural entry so its id (this
                 // array index, stored by value in the location tables) is
@@ -579,7 +594,7 @@ export function createCore<NC extends ComponentSchemas>(
                         ? Object.fromEntries(partitionNames.map((n) => [n, archetype.columns[n]!.get(0)]))
                         : undefined;
                     return inScope.has(archetypeQuadrant(archetype))
-                        ? { componentNames, partitionValues, data: archetype.toData(copy, omit) }
+                        ? { componentNames, partitionValues, data: toStoredArchetypeData(archetype.toData(copy, omit) as StoredArchetypeData) }
                         : { componentNames, partitionValues };
                 })
             };
@@ -661,7 +676,7 @@ export function createCore<NC extends ComponentSchemas>(
                 // simply fall away instead of round-tripping forever.
                 for (const name of componentNames) {
                     if (!(name in liveSchemas) && snapshotSchemas[name] !== undefined) {
-                        liveSchemas[name] = snapshotSchemas[name]!;
+                        liveSchemas[name] = fromStoredSchema(snapshotSchemas[name]!);
                     }
                 }
                 // resolveArchetype (not the public ensureArchetype) so a
@@ -670,7 +685,7 @@ export function createCore<NC extends ComponentSchemas>(
                 archetypeIdMap.push(archetype.id);
                 // rehome: re-home restored columns onto the core's allocator so a
                 // loaded arena-backed store keeps its arena backing.
-                archetype.fromData(archetypeData, true);
+                archetype.fromData(fromStoredArchetypeData(archetypeData as StoredArchetypeData, liveSchemas), true);
                 restoredArchetypes.push(archetype as unknown as Archetype<any>);
             }
             for (const quadrant of inScopeQuadrants) {

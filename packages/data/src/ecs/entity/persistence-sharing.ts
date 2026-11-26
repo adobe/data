@@ -1,14 +1,20 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 import type { Entity } from "./entity.js";
 
-// Entity ids carry a 2-bit quadrant in their low bits, partitioning entity
-// space along two orthogonal axes:
+// An entity id is `slot + generation * 2^32`. The low 32 bits are the slot:
+// a 2-bit quadrant in its low bits, partitioning entity space along two
+// orthogonal axes:
 //   bit 0 — durability: set = non-persistent (not saved), clear = persistent
 //   bit 1 — sharing:    set = non-shared (local), clear = shared (replicated)
-// The remaining high bits are the entity's per-quadrant local index. THIS FILE
-// IS THE ONLY PLACE THAT KNOWS THIS LAYOUT — everything else goes through the
-// helpers below (predicates for consumers; encode/decode for the location
-// table and core). To change the layout, change it here.
+// and the entity's per-quadrant local index in the remaining 30 bits. The high
+// 21 bits are the slot's generation, bumped each time the slot is freed, so a
+// stale id for a reused slot is detected. Generations live in memory only: a
+// stored snapshot keeps the 0.10.x i32 ids (see `toStoredEntity`). Ids stay safe integers (53 bits), and
+// bitwise operators see only the low 32 bits, so `entity & mask` and
+// `entity >>> n` read the slot directly. THIS FILE IS THE ONLY PLACE THAT KNOWS
+// THIS LAYOUT — everything else goes through the helpers below (predicates for
+// consumers; encode/decode for the location table and core). To change the
+// layout, change it here.
 
 /** Number of low bits reserved for the quadrant. */
 const QUADRANT_BITS = 2;
@@ -18,6 +24,10 @@ const QUADRANT_MASK = 0b11;
 const PERSISTENCE_BIT = 0b01;
 /** Quadrant bit 1 — set when the entity is non-shared. */
 const SHARING_BIT = 0b10;
+/** The value of one generation step: generations live above the 32 slot bits. */
+const GENERATION_SCALE = 0x1_0000_0000;
+/** The largest generation; it marks a retired slot (and `none`), so issued ids stay below it and are safe integers. */
+export const GENERATION_MASK = 0x1F_FFFF;
 
 export const isNonPersistent = (entity: Entity): boolean => (entity & PERSISTENCE_BIT) !== 0;
 export const isPersistent = (entity: Entity): boolean => (entity & PERSISTENCE_BIT) === 0;
@@ -37,21 +47,44 @@ export const isPersistentQuadrant = (quadrant: number): boolean => (quadrant & P
 export const quadrantFor = (nonPersistent: boolean, nonShared: boolean): number =>
     (nonPersistent ? PERSISTENCE_BIT : 0) | (nonShared ? SHARING_BIT : 0);
 
-/** Pack a per-quadrant local index + quadrant into an entity id. */
-export const toEntity = (localIndex: number, quadrant: number): Entity => (localIndex << QUADRANT_BITS) | quadrant;
+/** Pack a per-quadrant local index, quadrant and slot generation into an entity id. */
+export const toEntity = (localIndex: number, quadrant: number, generation: number = 0): Entity =>
+    (((localIndex << QUADRANT_BITS) | quadrant) >>> 0) + (generation & GENERATION_MASK) * GENERATION_SCALE;
+
+/** Recover the per-quadrant local index from an entity id. */
+export const toLocalIndex = (entity: Entity): number => entity >>> QUADRANT_BITS;
+
+/** Recover the slot generation from an entity id. */
+export const generationOf = (entity: Entity): number => Math.floor(entity / GENERATION_SCALE);
+
+/**
+ * The generation a slot takes when the entity holding `generation` is freed.
+ * Generations never wrap: a slot reaching `GENERATION_MASK` is retired (see
+ * {@link isRetiredGeneration}), so an old id can never come back.
+ */
+export const nextGeneration = (generation: number): number => Math.min(generation + 1, GENERATION_MASK);
+
+/** Whether a free slot at `generation` is retired and is never issued again. `none` carries this generation. */
+export const isRetiredGeneration = (generation: number): boolean => generation >= GENERATION_MASK;
+
+/**
+ * The stored (0.10.x snapshot) form of an entity id: its low 32 bits as a signed
+ * i32, generation dropped. `none` stores as -1, as it always has.
+ */
+export const toStoredEntity = (entity: Entity): number => entity | 0;
+
+/** An entity id read from a stored i32, at generation 0; a stored -1 is `none`. */
+export const fromStoredEntity = (stored: number): Entity => (stored === -1 ? none : stored >>> 0);
 
 /**
  * Sentinel for "no entity": the last representable id (the maximum local index
- * in the last quadrant, which is numerically -1). The allocator issues local
- * indices from 0 upward and a quadrant fills up long before 2^30 entities, so
- * no live entity ever equals this — `locate`/`read` resolve it to null. Use it
- * where a lookup may have no answer; it is not a live entity, so never
- * insert/delete/update it.
+ * in the last quadrant at the maximum generation, `Number.MAX_SAFE_INTEGER`).
+ * The allocator issues local indices from 0 upward and a quadrant fills up long
+ * before 2^30 entities, so no live entity ever equals this — `locate`/`read`
+ * resolve it to null. Use it where a lookup may have no answer; it is not a
+ * live entity, so never insert/delete/update it.
  */
-export const none: Entity = toEntity((1 << (32 - QUADRANT_BITS)) - 1, QUADRANT_MASK);
-
-/** Recover the per-quadrant local index from an entity id (unsigned). */
-export const toLocalIndex = (entity: Entity): number => entity >>> QUADRANT_BITS;
+export const none: Entity = toEntity((1 << (32 - QUADRANT_BITS)) - 1, QUADRANT_MASK, GENERATION_MASK);
 
 /**
  * The quadrants whose entities are persisted (document = 0, settings = 2). A

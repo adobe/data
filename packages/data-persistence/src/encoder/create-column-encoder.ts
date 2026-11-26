@@ -1,6 +1,8 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
 
-import type { TypedBuffer, TypedBufferType } from "@adobe/data/typed-buffer";
+import { Entity } from "@adobe/data/ecs";
+import { createTypedBuffer, type TypedBuffer, type TypedBufferType } from "@adobe/data/typed-buffer";
+import { encodeStoredRows } from "./stored-entity-rows.js";
 import type { ColumnEncoder, ColumnManifest } from "./types.js";
 
 // Implementation note (V8 hidden classes / monomorphic IC):
@@ -27,11 +29,13 @@ const JOURNAL_STORAGE: ColumnManifest["storage"] = "journal";
 class FixedColumnEncoder implements ColumnEncoder {
     public readonly storage: ColumnManifest["storage"] = FIXED_STORAGE;
     public readonly stride: number;
+    public readonly bufferType: TypedBufferType;
     private readonly buffer: TypedBuffer<unknown>;
     private readonly elementsPerRow: number;
 
     constructor(buffer: TypedBuffer<unknown>) {
         this.buffer = buffer;
+        this.bufferType = buffer.type;
         this.stride = buffer.typedArrayElementSizeInBytes;
         // Hoist the per-row element count out of the hot loop. Every
         // typed-array view we slice goes through this multiplier; it
@@ -64,9 +68,32 @@ class FixedColumnEncoder implements ColumnEncoder {
     }
 }
 
+// A fixed-stride column holding entity ids, written in their stored (i32) form.
+class StoredEntityColumnEncoder implements ColumnEncoder {
+    public readonly storage: ColumnManifest["storage"] = FIXED_STORAGE;
+    public readonly stride: number;
+    public readonly bufferType: TypedBufferType;
+    private readonly buffer: TypedBuffer<unknown>;
+
+    constructor(buffer: TypedBuffer<unknown>, stored: TypedBuffer<unknown>) {
+        this.buffer = buffer;
+        this.stride = stored.typedArrayElementSizeInBytes;
+        this.bufferType = stored.type;
+    }
+
+    encodeRows(rowStart: number, rowCount: number): ArrayBuffer | null {
+        return encodeStoredRows(this.buffer, rowStart, rowCount);
+    }
+
+    encodeRowValue(rowIndex: number): Uint8Array | null {
+        return new Uint8Array(encodeStoredRows(this.buffer, rowIndex, 1));
+    }
+}
+
 class ConstColumnEncoder implements ColumnEncoder {
     public readonly storage: ColumnManifest["storage"] = CONST_STORAGE;
     public readonly stride: number = 0;
+    public readonly bufferType: TypedBufferType = "const";
 
     encodeRows(): ArrayBuffer | null {
         return null;
@@ -80,6 +107,7 @@ class ConstColumnEncoder implements ColumnEncoder {
 class JournalColumnEncoder implements ColumnEncoder {
     public readonly storage: ColumnManifest["storage"] = JOURNAL_STORAGE;
     public readonly stride: number = 0;
+    public readonly bufferType: TypedBufferType;
     private readonly buffer: TypedBuffer<unknown>;
     // TextEncoder is cheap to construct but not free; reuse one per
     // encoder instance. (TextEncoder has no internal state that would
@@ -89,6 +117,7 @@ class JournalColumnEncoder implements ColumnEncoder {
 
     constructor(buffer: TypedBuffer<unknown>) {
         this.buffer = buffer;
+        this.bufferType = buffer.type;
         this.textEncoder = new TextEncoder();
     }
 
@@ -97,7 +126,8 @@ class JournalColumnEncoder implements ColumnEncoder {
     }
 
     encodeRowValue(rowIndex: number): Uint8Array | null {
-        const value = this.buffer.get(rowIndex);
+        // Entity ids are written in their stored (i32) form.
+        const value = Entity.toStoredValue(this.buffer.get(rowIndex), this.buffer.schema);
         return this.textEncoder.encode(JSON.stringify(value));
     }
 }
@@ -118,6 +148,14 @@ export const createColumnEncoder = (
     componentName: string,
     buffer: TypedBuffer<unknown>,
 ): ColumnEncoder => {
+    if (buffer.type !== "const" && Entity.hasEntity(buffer.schema)) {
+        // Encode by the stored schema's buffer type, which is what 0.10.x wrote.
+        const stored = createTypedBuffer(Entity.toStoredSchema(buffer.schema), 1);
+        if (stored.type === "number" || stored.type === "struct" || stored.type === "enum") {
+            return new StoredEntityColumnEncoder(buffer, stored);
+        }
+        return new JournalColumnEncoder(buffer);
+    }
     const bufferType: TypedBufferType = buffer.type;
     switch (bufferType) {
         case "number":

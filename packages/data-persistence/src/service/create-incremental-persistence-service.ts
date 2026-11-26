@@ -2,6 +2,7 @@
 
 import { ECS_SNAPSHOT_VERSION, Entity, Store, serializedEntityLocationTables, type Archetype, type EntityLocationEntry } from "@adobe/data/ecs";
 import { createColumnEncoder } from "../encoder/create-column-encoder.js";
+import { decodeStoredRows } from "../encoder/stored-entity-rows.js";
 import {
     decodeJournalSnapshot,
     encodeJournalSnapshot,
@@ -223,13 +224,11 @@ export const createIncrementalPersistenceService = async (
             for (const component of archetype.components) {
                 const encoder = ctx.encoders.get(component);
                 if (encoder === undefined) continue;
-                const buffer = getColumn(archetype, component);
-                if (buffer === undefined) continue;
                 columns[component] = {
                     component,
                     stride: encoder.stride,
                     storage: encoder.storage,
-                    bufferType: buffer.type,
+                    bufferType: encoder.bufferType,
                 };
             }
             archetypes[archetype.id] = {
@@ -694,7 +693,9 @@ export const createIncrementalPersistenceService = async (
         });
         if (reply.bytes.byteLength === 0) return;
 
-        if (colMan.storage === "fixed") {
+        if (colMan.storage === "fixed" && Entity.hasEntity(buffer.schema)) {
+            decodeStoredRows(buffer, new Uint8Array(reply.bytes), 0);
+        } else if (colMan.storage === "fixed") {
             const ta = buffer.getTypedArray();
             const dest = new Uint8Array(ta.buffer, ta.byteOffset, ta.byteLength);
             const src = new Uint8Array(reply.bytes);
@@ -713,7 +714,7 @@ export const createIncrementalPersistenceService = async (
                 const rowBytes = rows[row];
                 if (rowBytes === undefined) continue;
                 try {
-                    buffer.set(row, JSON.parse(textDecoder.decode(rowBytes)));
+                    buffer.set(row, Entity.fromStoredValue(JSON.parse(textDecoder.decode(rowBytes)), buffer.schema));
                 } catch {
                     // Corrupt JSON — skip; default value stands.
                 }
@@ -939,7 +940,10 @@ export const createIncrementalPersistenceService = async (
         const buffer = getColumn(mutableArchetype, componentName);
         if (buffer === undefined) return;
 
-        if (colMan.storage === "fixed") {
+        if (colMan.storage === "fixed" && Entity.hasEntity(buffer.schema)) {
+            if (entry.bytes.byteLength === 0) return;
+            decodeStoredRows(buffer, entry.bytes, entry.rowIndex);
+        } else if (colMan.storage === "fixed") {
             if (entry.bytes.byteLength === 0) return;
             const ta = buffer.getTypedArray();
             const dest = new Uint8Array(ta.buffer, ta.byteOffset, ta.byteLength);
@@ -956,7 +960,7 @@ export const createIncrementalPersistenceService = async (
                 // `JournalColumnEncoder.encodeRowValue` JSON-encodes
                 // the live value, so JSON.parse round-trips back to
                 // a value of the same shape the buffer expects.
-                buffer.set(entry.rowIndex, value);
+                buffer.set(entry.rowIndex, Entity.fromStoredValue(value, buffer.schema));
             } catch {
                 // Corrupt JSON — skip this entry rather than crashing
                 // the whole load. The column file (if present) still
@@ -976,12 +980,19 @@ export const createIncrementalPersistenceService = async (
         // of live persistent entity locations. Each quadrant's state is indexed
         // by local index, so recover the entity id from (localIndex, quadrant).
         // The ECS buckets these into its quadrant-partitioned location tables.
+        // Generations are not persisted: live entities load at generation 0,
+        // and every free slot is passed as a vacancy so it takes generation 1
+        // and a persisted reference to an entity deleted there stays stale.
         const locations: EntityLocationEntry[] = [];
+        const vacancies: number[] = [];
         for (const [quadrant, eltState] of eltStates) {
             const { entities, nextSlot } = eltState;
             for (let slot = 0; slot < nextSlot; slot++) {
                 const archetypeId = entities[slot * 2 + 0];
-                if (archetypeId === undefined || archetypeId < 0) continue;
+                if (archetypeId === undefined || archetypeId < 0) {
+                    vacancies.push(Entity.toEntity(slot, quadrant));
+                    continue;
+                }
                 const rowIndex = entities[slot * 2 + 1]!;
                 const aMan = manifest.archetypes[archetypeId];
                 if (aMan === undefined) continue;
@@ -1003,7 +1014,7 @@ export const createIncrementalPersistenceService = async (
         store.fromData({
             version: ECS_SNAPSHOT_VERSION,
             componentSchemas: {},
-            entityLocationTables: serializedEntityLocationTables(locations),
+            entityLocationTables: serializedEntityLocationTables(locations, vacancies),
             archetypesData: [],
         });
 

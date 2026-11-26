@@ -69,7 +69,7 @@ export function createTransactionalStore<
                     type: "insert",
                     values: storedValues,
                 });
-                undoOperationsInReverseOrder.push({ type: "delete", entity });
+                undoOperationsInReverseOrder.push({ type: "delete", entity, reclaim: true });
                 changed.entities.set(entity, storedValues);
                 changed.archetypes.add(id);
                 for (const key in storedValues) {
@@ -175,7 +175,7 @@ export function createTransactionalStore<
         // A live entity carries every component its archetype requires, so the
         // id-excluded read values form a complete insert payload — a runtime
         // invariant the checker can't derive from the all-optional read type.
-        undoOperationsInReverseOrder.push({ type: "insert", values: oldValues as unknown as EntityInsertValues<C> });
+        undoOperationsInReverseOrder.push({ type: "insert", values: oldValues as unknown as EntityInsertValues<C>, entity });
         return swapped;
     };
 

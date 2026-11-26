@@ -8,7 +8,8 @@ import type { Entity } from "./entity.js";
 //   bit 1 — sharing:    set = non-shared (local), clear = shared (replicated)
 // and the entity's per-quadrant local index in the remaining 30 bits. The high
 // 21 bits are the slot's generation, bumped each time the slot is freed, so a
-// stale id for a reused slot is detected. Ids stay safe integers (53 bits), and
+// stale id for a reused slot is detected. Generations live in memory only: a
+// stored snapshot keeps the 0.10.x i32 ids (see `toStoredEntity`). Ids stay safe integers (53 bits), and
 // bitwise operators see only the low 32 bits, so `entity & mask` and
 // `entity >>> n` read the slot directly. THIS FILE IS THE ONLY PLACE THAT KNOWS
 // THIS LAYOUT — everything else goes through the helpers below (predicates for
@@ -25,7 +26,7 @@ const PERSISTENCE_BIT = 0b01;
 const SHARING_BIT = 0b10;
 /** The value of one generation step: generations live above the 32 slot bits. */
 const GENERATION_SCALE = 0x1_0000_0000;
-/** Generations wrap at 2^21 so ids stay safe integers. */
+/** The largest generation; it marks a retired slot (and `none`), so issued ids stay below it and are safe integers. */
 export const GENERATION_MASK = 0x1F_FFFF;
 
 export const isNonPersistent = (entity: Entity): boolean => (entity & PERSISTENCE_BIT) !== 0;
@@ -56,8 +57,24 @@ export const toLocalIndex = (entity: Entity): number => entity >>> QUADRANT_BITS
 /** Recover the slot generation from an entity id. */
 export const generationOf = (entity: Entity): number => Math.floor(entity / GENERATION_SCALE);
 
-/** The generation a slot takes when the entity holding `generation` is freed. */
-export const nextGeneration = (generation: number): number => (generation + 1) & GENERATION_MASK;
+/**
+ * The generation a slot takes when the entity holding `generation` is freed.
+ * Generations never wrap: a slot reaching `GENERATION_MASK` is retired (see
+ * {@link isRetiredGeneration}), so an old id can never come back.
+ */
+export const nextGeneration = (generation: number): number => Math.min(generation + 1, GENERATION_MASK);
+
+/** Whether a free slot at `generation` is retired and is never issued again. `none` carries this generation. */
+export const isRetiredGeneration = (generation: number): boolean => generation >= GENERATION_MASK;
+
+/**
+ * The stored (0.10.x snapshot) form of an entity id: its low 32 bits as a signed
+ * i32, generation dropped. `none` stores as -1, as it always has.
+ */
+export const toStoredEntity = (entity: Entity): number => entity | 0;
+
+/** An entity id read from a stored i32, at generation 0; a stored -1 is `none`. */
+export const fromStoredEntity = (stored: number): Entity => (stored === -1 ? none : stored >>> 0);
 
 /**
  * Sentinel for "no entity": the last representable id (the maximum local index

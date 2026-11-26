@@ -1,5 +1,5 @@
 // © 2026 Adobe. MIT License. See /LICENSE for details.
-import { generationOf, isPersistentQuadrant, nextGeneration, quadrantOf, toLocalIndex } from "../entity/persistence-sharing.js";
+import { generationOf, isPersistentQuadrant, isRetiredGeneration, nextGeneration, quadrantOf, toLocalIndex } from "../entity/persistence-sharing.js";
 
 /** A live persistent entity's location, as mirrored by a persistence layer. */
 export interface EntityLocationEntry {
@@ -55,7 +55,7 @@ export const serializedEntityLocationTables = (
 
 /**
  * Rebuild one quadrant's location-table snapshot (indexed by per-quadrant local
- * index). Holes below the high-water mark are threaded into the free list so
+ * index). Holes below the high-water mark, except retired ones, are threaded into the free list so
  * post-load allocations reuse them and `nextIndex` never collides with a
  * restored id.
  */
@@ -84,6 +84,11 @@ const buildQuadrantTable = (
     for (let local = 0; local < nextIndex; local++) {
         if (occupied[local] === 1) continue;
         entities[local * 2 + 0] = -1;
+        // A retired slot stays off the free list.
+        if (isRetiredGeneration(generations[local])) {
+            entities[local * 2 + 1] = -1;
+            continue;
+        }
         entities[local * 2 + 1] = freeListHead;
         freeListHead = local;
     }

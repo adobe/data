@@ -40,14 +40,14 @@ export const JournalEntryKindName = Object.fromEntries(
  *   u32 txId
  *   f64 timestampMs
  *   u8  kindCode
- *   f64 entity            (the affected entity id, generation included)
+ *   i32 entity            (signed; the affected entity id)
  *   u16 archetypeId       (0 for delete entries — entity has no archetype)
  *   u32 rowIndex          (0 for delete entries)
  *   u16 componentId       (0 when not applicable, e.g. delete)
  *   u32 byteLen
  *   bytes... (byteLen bytes)
  *
- * Total fixed-header size: 33 bytes.
+ * Total fixed-header size: 29 bytes.
  *
  * `entity` is required for crash-recovery replay: after restoring the
  * checkpoint snapshot, the journal carries the entity → (archetype, row)
@@ -68,4 +68,4 @@ export interface JournalEntry {
     readonly bytes: Uint8Array;
 }
 
-export const JOURNAL_HEADER_BYTES = 33;
+export const JOURNAL_HEADER_BYTES = 29;

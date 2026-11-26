@@ -2,6 +2,7 @@
 
 import { ECS_SNAPSHOT_VERSION, Entity, Store, serializedEntityLocationTables, type Archetype, type EntityLocationEntry } from "@adobe/data/ecs";
 import { createColumnEncoder } from "../encoder/create-column-encoder.js";
+import { decodeStoredRows } from "../encoder/stored-entity-rows.js";
 import {
     decodeJournalSnapshot,
     encodeJournalSnapshot,
@@ -19,7 +20,7 @@ const META_FILE = "meta.json";
 // densely indexed by the entity's per-quadrant local index.
 const entityLocationFile = (quadrant: number): string => `entity-location-${quadrant}.bin`;
 const JOURNAL_FILE = "journal.bin";
-const ELT_STRIDE = 12;
+const ELT_STRIDE = 8;
 const columnPath = (archetypeId: number, component: string): string =>
     `archetypes/${archetypeId}/${component}.bin`;
 
@@ -223,13 +224,11 @@ export const createIncrementalPersistenceService = async (
             for (const component of archetype.components) {
                 const encoder = ctx.encoders.get(component);
                 if (encoder === undefined) continue;
-                const buffer = getColumn(archetype, component);
-                if (buffer === undefined) continue;
                 columns[component] = {
                     component,
                     stride: encoder.stride,
                     storage: encoder.storage,
-                    bufferType: buffer.type,
+                    bufferType: encoder.bufferType,
                 };
             }
             archetypes[archetype.id] = {
@@ -249,7 +248,7 @@ export const createIncrementalPersistenceService = async (
             components[id] = name;
         }
         return {
-            version: 2,
+            version: 1,
             checkpointId: clock(),
             archetypes,
             entityLocation: { stride: 8 },
@@ -628,7 +627,7 @@ export const createIncrementalPersistenceService = async (
             throw new Error("WorkerPersistenceService.load: meta.json is not an object");
         }
         const obj = raw as { version?: unknown; archetypes?: unknown; components?: unknown };
-        if (obj.version !== 2) {
+        if (obj.version !== 1) {
             throw new Error(`WorkerPersistenceService.load: unsupported manifest version ${String(obj.version)}`);
         }
         if (typeof obj.archetypes !== "object" || obj.archetypes === null) {
@@ -694,7 +693,9 @@ export const createIncrementalPersistenceService = async (
         });
         if (reply.bytes.byteLength === 0) return;
 
-        if (colMan.storage === "fixed") {
+        if (colMan.storage === "fixed" && Entity.hasEntity(buffer.schema)) {
+            decodeStoredRows(buffer, new Uint8Array(reply.bytes), 0);
+        } else if (colMan.storage === "fixed") {
             const ta = buffer.getTypedArray();
             const dest = new Uint8Array(ta.buffer, ta.byteOffset, ta.byteLength);
             const src = new Uint8Array(reply.bytes);
@@ -713,7 +714,7 @@ export const createIncrementalPersistenceService = async (
                 const rowBytes = rows[row];
                 if (rowBytes === undefined) continue;
                 try {
-                    buffer.set(row, JSON.parse(textDecoder.decode(rowBytes)));
+                    buffer.set(row, Entity.fromStoredValue(JSON.parse(textDecoder.decode(rowBytes)), buffer.schema));
                 } catch {
                     // Corrupt JSON — skip; default value stands.
                 }
@@ -727,11 +728,9 @@ export const createIncrementalPersistenceService = async (
      */
     // One EltState per persistent quadrant, indexed by per-quadrant local index
     // (Entity.toLocalIndex), mirroring that quadrant's on-disk file. Two Int32
-    // per slot: [archetypeId, rowIndex], plus the slot's generation: the live
-    // entity's, or for a free slot the generation of the entity last deleted there.
+    // per slot: [archetypeId, rowIndex].
     interface EltState {
         entities: Int32Array;
-        generations: Uint32Array;
         capacity: number;
         nextSlot: number;
         freeListHead: number;
@@ -750,7 +749,6 @@ export const createIncrementalPersistenceService = async (
         let capacity = 16;
         while (capacity < Math.max(nextSlot, 16)) capacity *= 2;
         const entities = new Int32Array(new ArrayBuffer(capacity * 2 * 4));
-        const generations = new Uint32Array(new ArrayBuffer(capacity * 4));
         const view = new DataView(eltBytes.buffer, eltBytes.byteOffset, eltBytes.byteLength);
         let freeListHead = -1;
 
@@ -762,7 +760,6 @@ export const createIncrementalPersistenceService = async (
             // deleted), N+1 = archetype N.
             const storedArchetype = view.getUint32(offset + 0, true);
             const rowIndex = view.getInt32(offset + 4, true);
-            generations[slot] = view.getUint32(offset + 8, true);
             if (storedArchetype === 0) {
                 entities[slot * 2 + 0] = -1;
                 entities[slot * 2 + 1] = freeListHead;
@@ -773,7 +770,7 @@ export const createIncrementalPersistenceService = async (
             }
         }
 
-        return { entities, generations, capacity, nextSlot, freeListHead };
+        return { entities, capacity, nextSlot, freeListHead };
     };
 
     const readEntityLocationSnapshots = async (): Promise<EltStates> => {
@@ -848,9 +845,6 @@ export const createIncrementalPersistenceService = async (
             const grown = new Int32Array(new ArrayBuffer(eltState.capacity * 2 * 2 * 4));
             grown.set(eltState.entities);
             eltState.entities = grown;
-            const grownGenerations = new Uint32Array(new ArrayBuffer(eltState.capacity * 2 * 4));
-            grownGenerations.set(eltState.generations);
-            eltState.generations = grownGenerations;
             eltState.capacity *= 2;
         }
         if (slot >= eltState.nextSlot) {
@@ -873,8 +867,6 @@ export const createIncrementalPersistenceService = async (
         const eltState = states.get(Entity.quadrantOf(entry.entity));
         if (eltState === undefined) return;
         const slot = Entity.toLocalIndex(entry.entity);
-        ensureEntityCapacity(eltState, slot);
-        eltState.generations[slot] = Entity.generationOf(entry.entity);
 
         if (entry.kind === "delete") {
             ensureEntityCapacity(eltState, slot);
@@ -948,7 +940,10 @@ export const createIncrementalPersistenceService = async (
         const buffer = getColumn(mutableArchetype, componentName);
         if (buffer === undefined) return;
 
-        if (colMan.storage === "fixed") {
+        if (colMan.storage === "fixed" && Entity.hasEntity(buffer.schema)) {
+            if (entry.bytes.byteLength === 0) return;
+            decodeStoredRows(buffer, entry.bytes, entry.rowIndex);
+        } else if (colMan.storage === "fixed") {
             if (entry.bytes.byteLength === 0) return;
             const ta = buffer.getTypedArray();
             const dest = new Uint8Array(ta.buffer, ta.byteOffset, ta.byteLength);
@@ -965,7 +960,7 @@ export const createIncrementalPersistenceService = async (
                 // `JournalColumnEncoder.encodeRowValue` JSON-encodes
                 // the live value, so JSON.parse round-trips back to
                 // a value of the same shape the buffer expects.
-                buffer.set(entry.rowIndex, value);
+                buffer.set(entry.rowIndex, Entity.fromStoredValue(value, buffer.schema));
             } catch {
                 // Corrupt JSON — skip this entry rather than crashing
                 // the whole load. The column file (if present) still
@@ -983,18 +978,19 @@ export const createIncrementalPersistenceService = async (
     const finalizeEntityLocationTable = (manifest: Manifest, eltStates: EltStates): void => {
         // Rebuild each archetype's implicit `id` column and collect a flat list
         // of live persistent entity locations. Each quadrant's state is indexed
-        // by local index, so recover the entity id from (localIndex, quadrant,
-        // generation). Free slots that held an entity are passed as vacancies so
-        // ids deleted before the save stay stale.
+        // by local index, so recover the entity id from (localIndex, quadrant).
         // The ECS buckets these into its quadrant-partitioned location tables.
+        // Generations are not persisted: live entities load at generation 0,
+        // and every free slot is passed as a vacancy so it takes generation 1
+        // and a persisted reference to an entity deleted there stays stale.
         const locations: EntityLocationEntry[] = [];
         const vacancies: number[] = [];
         for (const [quadrant, eltState] of eltStates) {
-            const { entities, generations, nextSlot } = eltState;
+            const { entities, nextSlot } = eltState;
             for (let slot = 0; slot < nextSlot; slot++) {
                 const archetypeId = entities[slot * 2 + 0];
                 if (archetypeId === undefined || archetypeId < 0) {
-                    vacancies.push(Entity.toEntity(slot, quadrant, generations[slot]));
+                    vacancies.push(Entity.toEntity(slot, quadrant));
                     continue;
                 }
                 const rowIndex = entities[slot * 2 + 1]!;
@@ -1004,7 +1000,7 @@ export const createIncrementalPersistenceService = async (
                 if (liveArchetype === undefined) continue;
                 const idColumn = getIdColumn(liveArchetype);
                 if (idColumn === undefined) continue;
-                const entity = Entity.toEntity(slot, quadrant, generations[slot]);
+                const entity = Entity.toEntity(slot, quadrant);
                 idColumn.set(rowIndex, entity);
                 // `archetypeId` is the id this session's on-disk manifest
                 // recorded at the time of the last checkpoint/journal entry —

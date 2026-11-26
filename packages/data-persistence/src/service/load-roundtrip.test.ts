@@ -209,11 +209,11 @@ describe("WorkerPersistenceService.load (round-trip)", () => {
         });
         await svcB.load();
 
-        // The deleted slot should be recycled by the free list, at a later
-        // generation so the id deleted before the save stays stale.
+        // The deleted slot should be recycled by the free list, at generation
+        // 1 so the id deleted before the save stays stale.
         const eNew = dbB.transactions.spawn({ x: 9, y: 9, z: 9, mass: 9 });
         expect(Entity.toLocalIndex(eNew!)).toBe(Entity.toLocalIndex(e0!));
-        expect(eNew).not.toBe(e0);
+        expect(Entity.generationOf(eNew!)).toBe(1);
         expect(dbB.read(e0!)).toBeNull();
         expectEntity(dbB, eNew!, { position: [9, 9, 9], velocity: [0, 0, 0], mass: 9 });
         // The pre-existing entity is still there.

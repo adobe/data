@@ -2,7 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import { createEntityLocationTable, remapSerializedArchetypeIds } from './create-entity-location-table.js';
 import { Entity } from '../entity/entity.js';
-import { generationOf, toLocalIndex } from '../entity/persistence-sharing.js';
+import { GENERATION_MASK, generationOf, toEntity, toLocalIndex } from '../entity/persistence-sharing.js';
 
 describe('createEntityLocationTable', () => {
     it('should create entities with quadrant-encoded ids (quadrant 0)', () => {
@@ -262,5 +262,31 @@ describe('entity generations', () => {
         target.fromData(source.toData(true));
         expect(target.locate(live)).toEqual({ archetype: 1, row: 0 });
         expect(target.locate(a)).toBeNull();
+    });
+
+    it('retires a slot at the last generation instead of wrapping', () => {
+        const table = createEntityLocationTable();
+        table.claim(toEntity(0, 0, GENERATION_MASK - 1));
+        const last = table.create({ archetype: 1, row: 0 });
+        expect(generationOf(last)).toBe(GENERATION_MASK - 1);
+        table.delete(last);
+        const next = table.create({ archetype: 1, row: 1 });
+        expect(toLocalIndex(next)).toBe(1); // slot 0 is never issued again
+        expect(table.locate(last)).toBeNull();
+        table.reset();
+        expect(toLocalIndex(table.create({ archetype: 1, row: 0 }))).toBe(1);
+    });
+
+    it('loads a table stored without generations at generation 0, with free slots at 1', () => {
+        const source = createEntityLocationTable();
+        const kept = source.create({ archetype: 1, row: 0 });
+        const deleted = source.create({ archetype: 1, row: 1 });
+        source.delete(deleted);
+        const { generations: _generations, ...stored } = source.toData(true) as Record<string, unknown>;
+        const table = createEntityLocationTable();
+        table.fromData(stored);
+        expect(table.locate(kept)).toEqual({ archetype: 1, row: 0 });
+        const reused = table.create({ archetype: 1, row: 1 });
+        expect(reused).toBe(toEntity(toLocalIndex(deleted), 0, 1));
     });
 });

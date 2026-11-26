@@ -93,11 +93,11 @@ describe("journal codec", () => {
         expect(() => decodeJournalEntry(buf.buffer, 0)).toThrow(/Unknown journal entry kind code/);
     });
 
-    it("preserves an entity id carrying a generation", () => {
-        const entry = sample({ entity: Number.MAX_SAFE_INTEGER });
+    it("preserves negative entity values (ephemeral / sentinel)", () => {
+        const entry = sample({ entity: -1 });
         const buf = encodeBytes(entry);
         const { entry: decoded } = decodeJournalEntry(buf.buffer, 0);
-        expect(decoded.entity).toBe(Number.MAX_SAFE_INTEGER);
+        expect(decoded.entity).toBe(-1);
     });
 
     it("preserves a large positive entity id", () => {

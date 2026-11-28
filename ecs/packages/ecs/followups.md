@@ -103,6 +103,12 @@ correctness, then optimization. Remove an item once it's decided or done.
 
 ## Optimization
 
+- **The interleaved loop's cost gate** (`work.spent > 0.7 × 4 × statements` in `interleavedGroups`) was tuned before
+  lanes across whole elements existed; measure it against one row at a time over 1M rows for bodies that mix leaves,
+  such as `Vec3.cross`, and loosen it where lanes still win.
+- **The JS kernel computes as written,** not at storage precision, so where WASM can't run a kernel's last bits differ
+  from WASM's. Rounding each f32 step there with `Math.fround` would make them agree, at its cost in the fallback.
+
 - **Owner references in bulk spawns:** `spawn tables 1M owner` takes 53 ms against 10 ms for `spawn tables 1M`, and
   `spawn owned 1M` 64 ms. What's left is per row: `commands.spawnTables` places every entity of the tables and finds
   each row's owner among them (about 25 ms at 1M), and the sync point links each holder to its target (about 20 ms),

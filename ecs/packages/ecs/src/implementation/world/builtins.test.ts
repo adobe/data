@@ -67,8 +67,9 @@ describe("math in kernels", () => {
             await world.run(transform);
             const read = await readEach(world, await select(world, { required: [position] }), position);
             const want = Array.from({ length: 64 }, (_, i) => expected([i, i % 5, -i], [1, 0.5 * (i % 3), 0.25]));
-            // Stored as f32, so compared at f32 precision.
-            expect(read.map(value => value?.map(Math.fround))).toEqual(want.map(value => value.map(Math.fround)));
+            // Stored as f32, so compared at f32 precision; WASM's f32 lanes also round each step.
+            if (!wasm) expect(read.map(value => value?.map(Math.fround))).toEqual(want.map(value => value.map(Math.fround)));
+            else read.forEach((value, i) => value?.forEach((leaf, k) => expect(Math.abs(leaf - (want[i]?.[k] ?? NaN))).toBeLessThanOrEqual(1e-6 * Math.max(1, Math.abs(want[i]?.[k] ?? 0)))));
             await world.dispose();
         });
     }

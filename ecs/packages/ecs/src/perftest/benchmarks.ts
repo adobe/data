@@ -3,7 +3,7 @@ import type { Component } from "../interface/component/component.js";
 import type { Entity } from "../interface/entity/entity.js";
 import { World } from "../interface/world/world.js";
 import { enabled as flatEnabled, spawnFlat, spawnFlatDynamic, visible as flatVisible } from "./flat.js";
-import { enabled, fastest as particlesFastest, move, position as particlePosition, spawn, visible } from "./particles.js";
+import { enabled, fastest as particlesFastest, integrate, integrate64, integrateChanged, move, nudgeHalf, position as particlePosition, spawn, spawn64, visible } from "./particles.js";
 import { forest, local as hierarchyLocal, nudge, parent as hierarchyParent, propagate, propagateChanged, reparent, sprout, turnover, under } from "./hierarchy.js";
 import * as structural from "./structural.js";
 import { chain, churn, emit, failing, fastest, follow, highest, hits, idle, idles, idleObserver, index, indexSum, observe, poke, pokeCluster, reduce, retag, seeded, small, smalls, spawnOne, tag, totalOf } from "./suite.js";
@@ -335,6 +335,52 @@ export const benchmarks: readonly Benchmark[] = [
             await world.run(spawn, { count: 1_000_000 });
             check((await entitiesWith(world, [particlePosition, visible, enabled])).length === 250_000, "move: wrong count");
             const { minimum } = await particlesFastest(() => world.run(move));
+            await world.dispose();
+            return minimum;
+        },
+    },
+    {
+        name: "integrate",
+        operation: "A kernel adding each row's velocity, scaled by its mass and the time step, to its position, through nested vec3 calls and without `kernel: true`: Euler integration.",
+        per: "matched rows",
+        n: 250_000,
+        typical: [1_000, 1_000_000],
+        best: { bytes: 40, basis: "Each row reads 12 bytes of velocity and 4 of mass, and reads and writes 12 bytes of position." },
+        run: async () => {
+            const world = inline();
+            await world.run(spawn, { count: 1_000_000 });
+            const { minimum } = await particlesFastest(() => world.run(integrate, { delta: 1 / 60 }));
+            await world.dispose();
+            return minimum;
+        },
+    },
+    {
+        name: "integrate changed half",
+        operation: "`integrate` filtered on `changed` velocity, after a scattered half of the rows changed: per-row updates reacting to edits no branch predicts.",
+        per: "matched rows",
+        n: 250_000,
+        typical: [1_000, 1_000_000],
+        best: { bytes: 48, basis: "Each row reads its 8-byte velocity tick, 12 bytes of velocity and 4 of mass, and reads and writes 12 bytes of position." },
+        run: async () => {
+            const world = inline();
+            await world.run(spawn, { count: 1_000_000 });
+            let round = 0;
+            const minimum = await after(() => world.run(nudgeHalf, { z: round++ % 2 }), () => world.run(integrateChanged));
+            await world.dispose();
+            return minimum;
+        },
+    },
+    {
+        name: "integrate f64",
+        operation: "`integrate` over f64 position, velocity and mass, which compute in f64.",
+        per: "matched rows",
+        n: 250_000,
+        typical: [1_000, 1_000_000],
+        best: { bytes: 80, basis: "Each row reads 24 bytes of velocity and 8 of mass, and reads and writes 24 bytes of position." },
+        run: async () => {
+            const world = inline();
+            await world.run(spawn64, { count: 250_000 });
+            const { minimum } = await particlesFastest(() => world.run(integrate64, { delta: 1 / 60 }));
             await world.dispose();
             return minimum;
         },

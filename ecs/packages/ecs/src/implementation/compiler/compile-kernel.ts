@@ -64,7 +64,6 @@ export type KernelExplanation = {
     readonly columns: readonly string[];
     readonly upColumns: readonly string[];
     readonly signature: Signature;
-    readonly storagePrecision: boolean;
     /** Each accumulator's operator, in its description's `reductions` order. */
     readonly operators: readonly Reduction[];
 };
@@ -183,7 +182,6 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
         columns: [...unit.columnIndex.keys()],
         upColumns: [...unit.upColumnIndex.keys()],
         signature: unit.signature,
-        storagePrecision: !unit.tried,
         operators: unit.accumulators.map(entry => unit.signature.reduced[entry.reduced]?.operator ?? fail(declaration, "unknown reduction")),
     });
     return {
@@ -206,7 +204,6 @@ export const compileKernel = (declaration: ObjectExpression, body: Node, module:
             `url: ${url},`,
             `program: ${serialize(program)},`,
             `reducedShapes: [${[...unit.reducedShapes].join(", ")}],`,
-            ...unit.tried ? [] : ["storagePrecision: true,"],
             `reductions: [${unit.accumulators.map(entry => {
                 const { resource, operator } = reduced[entry.reduced] ?? fail(declaration, "unknown reduction");
                 return `{ resource: ${resource}, operator: ${JSON.stringify(operator)}, path: ${JSON.stringify(entry.path)} }`;

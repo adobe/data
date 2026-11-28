@@ -27,7 +27,7 @@ const spawn = System.create(({ commands }) => {
         commands.spawn([scale, cell, value, out, steps], { [scale]: [0.1, 1.5, -3.25][k % 3] ?? 0, [cell]: [k % 2, -7] })({ [value]: k * 0.7, [out]: 0, [steps]: 0 });
     }
 });
-// Tried as a kernel, and as written: the kernel's results are the body's.
+// Tried as a kernel, as written, and rounding each step of f32 arithmetic: JS kernels give the body's results, WASM the stepped ones.
 const compute = System.create({ components: { with: [scale, cell, value, out, steps] } }, row => {
     const [x, y] = row[cell];
     row[out] = row[value] * row[scale] + x / 3;
@@ -36,6 +36,11 @@ const compute = System.create({ components: { with: [scale, cell, value, out, st
 const written = System.create({ kernel: false, components: { with: [scale, cell, value, out, steps] } }, row => {
     const [x, y] = row[cell];
     row[out] = row[value] * row[scale] + x / 3;
+    row[steps] = x * 1000 + y;
+});
+const stepped = System.create({ kernel: false, components: { with: [scale, cell, value, out, steps] } }, row => {
+    const [x, y] = row[cell];
+    row[out] = Math.fround(row[value] * row[scale]) + Math.fround(x / 3);
     row[steps] = x * 1000 + y;
 });
 const read: [number, string][] = [];
@@ -50,9 +55,9 @@ const outcome = async (system: typeof compute, wasm: boolean): Promise<readonly 
     return read.sort((a, b) => a[0] - b[0]).map(([, text]) => text);
 };
 
-/** Each row's results, by a kernel on workers and by the body as written. */
+/** Each row's results, by a kernel on workers and by the body: as written for JS, rounding each f32 step for WASM. */
 export const computedOnWorkers = async (wasm: boolean): Promise<{ readonly kernel: readonly string[]; readonly written: readonly string[] }> =>
-    ({ kernel: await outcome(compute, wasm), written: await outcome(written, wasm) });
+    ({ kernel: await outcome(compute, wasm), written: await outcome(wasm ? stepped : written, wasm) });
 
 // With `where`, workers only ever run the archetypes that pass.
 const negative = System.create({ components: { with: [value, out], where: { [scale]: value => value < 0 } } }, row => {

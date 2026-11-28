@@ -48,6 +48,12 @@ const written = System.create({ kernel: false, components: { with: [scale, cell,
     row[out] = row[value] * row[scale] + x / 3 + (row[flag] ? 1 : 0);
     row[steps] = x * 1000 + y;
 });
+/** The body rounding each step of its f32 arithmetic to f32, as WASM computes it. */
+const stepped = System.create({ kernel: false, components: { with: [scale, cell, flag, value, out, steps] } }, row => {
+    const [x, y] = row[cell];
+    row[out] = Math.fround(Math.fround(row[value] * row[scale]) + Math.fround(x / 3)) + (row[flag] ? 1 : 0);
+    row[steps] = x * 1000 + y;
+});
 
 /** Moving rows to another scale, which only a system run as written does: tried as a kernel, it runs as written. */
 const moving = System.create({ components: { with: [value] } }, (row, { commands }) => {
@@ -74,11 +80,11 @@ describe("a kernel reading a shared component", () => {
         expect(description?.program).not.toBeNull();
     });
     for (const wasm of [false, true]) {
-        it(`gives the body's results, bit for bit, in ${wasm ? "WASM" : "JS"}`, async () => {
+        it(`gives the body's results, bit for bit, in ${wasm ? "WASM, rounding each step of f32 arithmetic" : "JS, as written"}`, async () => {
             const expected = await (async () => {
                 await using world = createWorld({ [workers]: 0 }, { wasm });
                 await world.run(spawn);
-                await world.run(written);
+                await world.run(wasm ? stepped : written);
                 return results(world);
             })();
             await using world = createWorld({ [workers]: 0 }, { wasm });

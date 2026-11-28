@@ -196,6 +196,9 @@ feature, and of its sub-features, import them, and they add no systems to an app
   aim is to stay semantically immutable and gain its speed underneath, as compiled systems do, assigning new tuples in
   source and allocating none.
 - **Hot paths allocate nothing per frame,** and have a benchmark.
+- **Model components for the systems that use them,** as `@adobe/ecs`'s component rules say: a tuple for fields every
+  system treats alike, scalar components for fields combined with each other or used apart, `F32` unless the precision
+  is needed.
 - **Prefer WebGPU for drawing,** through `@adobe/ecs-gpu` and render systems, to WebGL and other older APIs: a render
   system draws from the GPU copy of the components it names, which the world uploads straight from storage as rows
   change, with no copy of its own.

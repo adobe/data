@@ -327,7 +327,7 @@ describe("generateWasm with change filters", () => {
             run(0, rows, 10, 5, 0, 16384, 32768, 65536, 66560);
             const written = [...output].flatMap((value, row) => value === -1 ? [] : [row]);
             // Rows 1100 and 2050 have new ticks, but their block or chunk says nothing in it changed, so they're skipped by design.
-            expect([simd, kernel.vectorized, written]).toEqual([simd, false, [1030, 1500, 2047]]);
+            expect([simd, kernel.vectorized, written]).toEqual([simd, simd, [1030, 1500, 2047]]);
             // From a start inside a block, that block's tick is still checked.
             output.fill(-1);
             run(1029, 1040, 10, 5, 0, 16384, 32768, 65536, 66560);
@@ -548,14 +548,14 @@ describe("generateWasm with f64 lanes, as kernels computing at the body's precis
         expect(both(program, columns, ([a, b]) => { for (let i = 0; i < 1024; i++) { a[i] = hard(i); b[i] = hard(i + 3); } }, 5, 133)).toEqual({ vectorized: true, same: true });
     });
 
-    // A padded vec3's elements aren't whole vectors, and f64 lanes don't fuse within a row, so it runs a row at a time.
-    for (const [name, stride, leaves, vectorized] of [["vec2", 8, 2, true], ["tight vec3", 12, 3, true], ["padded vec3", 16, 3, false]] as const) {
-        it(`computes ${name} elements ${vectorized ? "in f64 lanes" : "a row at a time"}, as the body does`, () => {
+    // A padded vec3's padding lane is stored back as it was loaded.
+    for (const [name, stride, leaves] of [["vec2", 8, 2], ["tight vec3", 12, 3], ["padded vec3", 16, 3]] as const) {
+        it(`computes ${name} elements in f64 lanes, as the body does`, () => {
             // p = p * v - v * args, leaf by leaf, with p.x and v.x reading cancelling values.
             const all = Array.from({ length: leaves }, (_, leaf) => leaf);
             const program: Program = { locals: 0, body: all.map(leaf => ({ kind: "store", column: leaf, value: binary("-", binary("*", read(leaf), read(leaves + leaf)), binary("*", read(leaves + leaf), { kind: "args", path: [] })) })) };
             const columns = [...all.map(leaf => column(0, stride, 4 * leaf)), ...all.map(leaf => column(1, stride, 4 * leaf))];
-            expect(both(program, columns, ([p, v]) => { for (let i = 0; i < 1024; i++) { p[i] = hard(i); v[i] = hard(i + 1); } }, 1, 63)).toEqual({ vectorized, same: true });
+            expect(both(program, columns, ([p, v]) => { for (let i = 0; i < 1024; i++) { p[i] = hard(i); v[i] = hard(i + 1); } }, 1, 63)).toEqual({ vectorized: true, same: true });
         });
     }
 
@@ -931,9 +931,9 @@ describe("generateWasm integers through locals", () => {
             body: [
                 { kind: "set", local: 0, value: binary("%", column(0), number(17)) },
                 { kind: "store", column: 1, value: binary("-", local(0), number(10)) },
-                // A u32 and 1 reach 2^32.
+                // A u32 and 1 reach 2^32; read twice, so it stays a local.
                 { kind: "set", local: 1, value: binary("+", column(0), number(1)) },
-                { kind: "store", column: 2, value: binary("/", local(1), local(0)) },
+                { kind: "store", column: 2, value: binary("/", local(1), binary("+", local(1), local(0))) },
             ],
         };
         const rangeColumns: WasmColumn[] = [{ view: "u32", stride: 4, offset: 0, boolean: false, component: 0 }, { view: "i32", stride: 4, offset: 0, boolean: false, component: 1 }, dense("f64", 2)];
@@ -947,7 +947,7 @@ describe("generateWasm integers through locals", () => {
         const run = new WebAssembly.Instance(new WebAssembly.Module(kernel.bytes), { env: { memory }, math: importsOf(kernel.imports) }).exports.run;
         if (typeof run !== "function") throw new Error("no run export");
         run(0, values.length, 0, -1, 0, 1024, 2048);
-        expect([[...differences], [...inverses]]).toEqual([values.map(x => (x % 17) - 10), values.map(x => (x + 1) / (x % 17))]);
+        expect([[...differences], [...inverses]]).toEqual([values.map(x => (x % 17) - 10), values.map(x => (x + 1) / (x + 1 + (x % 17)))]);
         const wat = printWat(kernel.bytes);
         if ("failure" in wat) throw new Error(wat.failure);
         const named = generateWasmOrReason(range, rangeColumns, () => "number", true, 0, [], [], [], [], [], false, () => null, true);
@@ -1226,9 +1226,9 @@ describe("generateWasm interleaved rows", () => {
         expect(vector).toEqual(scalar);
     });
 
-    it("runs an if beside lanes of a row without branching, choosing what its arms store, as row by row does", () => {
-        // p += v over an f32 pair in 8-byte elements, in lanes of a row; then, where an i32 is even, a long mix of it,
-        // past what four rows at a time take, and a choice by comparing p's fields.
+    it("runs an if with a long arm four rows at a time beside the lanes of whole elements, as row by row does", () => {
+        // p += v over an f32 pair in 8-byte elements; then, where an i32 is even, a long mix of it, more than an arm runs
+        // for every group, so skipped by groups no row of takes it, and a choice by comparing p's fields.
         const columns: WasmColumn[] = [
             { view: "f32", stride: 8, offset: 0, boolean: false, component: 0 }, { view: "f32", stride: 8, offset: 4, boolean: false, component: 0 },
             { view: "f32", stride: 8, offset: 0, boolean: false, component: 1 }, { view: "f32", stride: 8, offset: 4, boolean: false, component: 1 },
@@ -1252,8 +1252,8 @@ describe("generateWasm interleaved rows", () => {
         };
         const { vector, scalar, wat } = bothWays(program, columns, 1, 4 * 40 + 3);
         expect(wat).toContain("f32x4.add");
-        expect(wat).not.toContain("i32x4");
-        expect(wat).toContain("select");
+        expect(wat).toContain("i32x4");
+        expect(wat).toContain("v128.any_true");
         expect(vector).toEqual(scalar);
     });
 
@@ -1763,5 +1763,283 @@ describe("generateWasm remainders by a literal", () => {
             }
         }
         expect(signedMagic(7)).toEqual({ multiplier: -1840700269, shift: 2 });
+    });
+});
+
+describe("generateWasm across whole elements", () => {
+    type Columns = readonly (WasmColumn & { readonly base: number })[];
+    const field = (view: "f32" | "f64", component: number, stride: number, offset: number): WasmColumn & { readonly base: number } =>
+        ({ view, stride, offset, boolean: false, component, base: 8192 * (component + 1) });
+    const read = (k: number): Expression => ({ kind: "column", column: k });
+    const local = (k: number): Expression => ({ kind: "local", local: k });
+    const args: Expression = { kind: "args", path: [] };
+    const binary = (operator: "+" | "-" | "*", left: Expression, right: Expression): Expression => ({ kind: "binary", operator, left, right });
+    /** Runs a kernel at storage precision over rows `start` to `end`, `args` 0.1, on memory `fill` sets; returns whether it vectorized, and the memory. */
+    const run = (program: Program, columns: Columns, fill: (memory: WebAssembly.Memory) => void, start: number, end: number) => {
+        const kernel = generateWasm(program, columns, () => "number", true, 0, [], [], [], [], [], true);
+        if (kernel === null) throw new Error("expected a kernel");
+        const memory = new WebAssembly.Memory({ initial: 2, maximum: 65536, shared: true });
+        fill(memory);
+        const runKernel: unknown = new WebAssembly.Instance(new WebAssembly.Module(kernel.bytes), { env: { memory }, math: importsOf(kernel.imports) }).exports.run;
+        if (typeof runKernel !== "function") throw new Error("no run export");
+        runKernel(start, end, 7, -1, ...columns.map(column => column.base), 0.1);
+        return { kernel, memory };
+    };
+    const f32 = Math.fround;
+    const rows = 40;
+    const ranges = [[0, rows], [3, 22], [1, 2]] as const;
+
+    it("spreads a per-row f32 value over each element's leaves: a dense column loaded, a leaf of a wider one gathered", () => {
+        // p = p + v * (m * args), leaf by leaf; m is a dense f32 column, or the second leaf of an 8-byte element.
+        for (const [stride, offset] of [[4, 0], [8, 4]] as const) {
+            const columns = [field("f32", 0, 12, 0), field("f32", 0, 12, 4), field("f32", 0, 12, 8), field("f32", 1, 12, 0), field("f32", 1, 12, 4), field("f32", 1, 12, 8), field("f32", 2, stride, offset)];
+            const program: Program = { locals: 0, body: [0, 1, 2].map(leaf => ({ kind: "store", column: leaf, value: binary("+", read(leaf), binary("*", read(3 + leaf), binary("*", read(6), args))) })) };
+            for (const [start, end] of ranges) {
+                const { kernel, memory } = run(program, columns, memory => {
+                    const floats = new Float32Array(memory.buffer);
+                    for (let i = 0; i < 3 * rows; i++) { floats[8192 / 4 + i] = i * 1.25; floats[16384 / 4 + i] = 7 - i * 0.375; }
+                    for (let i = 0; i < rows; i++) floats[24576 / 4 + i * stride / 4 + offset / 4] = 1 + i * 0.1;
+                }, start, end);
+                const p = new Float32Array(memory.buffer, 8192, 3 * rows);
+                const expected = Array.from({ length: 3 * rows }, (_, i) => {
+                    const row = Math.floor(i / 3);
+                    if (row < start || row >= end) return f32(i * 1.25);
+                    return f32(f32(i * 1.25) + f32(f32(7 - i * 0.375) * f32(f32(1 + row * 0.1) * f32(0.1))));
+                });
+                expect([stride, start, end, kernel.lanes, [...p]]).toEqual([stride, start, end, "f32", expected]);
+            }
+        }
+    });
+
+    it("computes a local of each row's values four rows at a time, then spreads it", () => {
+        // s = m * args; p = p + v * s.
+        const columns = [field("f32", 0, 8, 0), field("f32", 0, 8, 4), field("f32", 1, 8, 0), field("f32", 1, 8, 4), field("f32", 2, 4, 0)];
+        const program: Program = {
+            locals: 1,
+            body: [
+                { kind: "set", local: 0, value: binary("*", read(4), args) },
+                ...[0, 1].map((leaf): Program.Statement => ({ kind: "store", column: leaf, value: binary("+", read(leaf), binary("*", read(2 + leaf), local(0))) })),
+                { kind: "store", column: 4, value: binary("+", read(4), local(0)) },
+            ],
+        };
+        const s = (row: number): number => f32(f32(2 + row) * f32(0.1));
+        // Rows outside whole groups of four, a row at a time, round as the lanes do.
+        for (const [start, end] of ranges) {
+            const { kernel, memory } = run(program, columns, memory => {
+                const floats = new Float32Array(memory.buffer);
+                for (let i = 0; i < 2 * rows; i++) { floats[8192 / 4 + i] = i; floats[16384 / 4 + i] = i + 0.5; }
+                for (let i = 0; i < rows; i++) floats[24576 / 4 + i] = 2 + i;
+            }, start, end);
+            const within = (row: number): boolean => row >= start && row < end;
+            expect([start, end, kernel.lanes, [...new Float32Array(memory.buffer, 8192, 2 * rows)], [...new Float32Array(memory.buffer, 24576, rows)]]).toEqual([
+                start, end, "f32",
+                Array.from({ length: 2 * rows }, (_, i) => within(Math.floor(i / 2)) ? f32(i + f32(f32(i + 0.5) * s(Math.floor(i / 2)))) : i),
+                Array.from({ length: rows }, (_, row) => within(row) ? f32(2 + row + s(row)) : 2 + row),
+            ]);
+        }
+    });
+
+    it("loads, computes and stores f64 elements in f64 lanes, as the body computes, spreading a per-row f64", () => {
+        // p = p + v * (m * args) over f64 vec3s and a dense f64 m.
+        const columns = [field("f64", 0, 24, 0), field("f64", 0, 24, 8), field("f64", 0, 24, 16), field("f64", 1, 24, 0), field("f64", 1, 24, 8), field("f64", 1, 24, 16), field("f64", 2, 8, 0)];
+        const program: Program = { locals: 0, body: [0, 1, 2].map(leaf => ({ kind: "store", column: leaf, value: binary("+", read(leaf), binary("*", read(3 + leaf), binary("*", read(6), args))) })) };
+        for (const [start, end] of ranges) {
+            const { kernel, memory } = run(program, columns, memory => {
+                const doubles = new Float64Array(memory.buffer);
+                for (let i = 0; i < 3 * rows; i++) { doubles[8192 / 8 + i] = i / 3; doubles[16384 / 8 + i] = 1 / (i + 1); }
+                for (let i = 0; i < rows; i++) doubles[24576 / 8 + i] = Math.PI + i;
+            }, start, end);
+            const expected = Array.from({ length: 3 * rows }, (_, i) => {
+                const row = Math.floor(i / 3);
+                return row < start || row >= end ? i / 3 : i / 3 + 1 / (i + 1) * ((Math.PI + row) * 0.1);
+            });
+            expect([start, end, kernel.lanes, [...new Float64Array(memory.buffer, 8192, 3 * rows)]]).toEqual([start, end, "f64", expected]);
+        }
+    });
+
+    it("runs dense f64 columns two rows at a time", () => {
+        const columns = [field("f64", 0, 8, 0), field("f64", 1, 8, 0)];
+        const { kernel, memory } = run({ locals: 0, body: [{ kind: "store", column: 0, value: binary("-", binary("*", read(0), read(1)), args) }] }, columns, memory => {
+            const doubles = new Float64Array(memory.buffer);
+            for (let i = 0; i < rows; i++) { doubles[8192 / 8 + i] = i / 7; doubles[16384 / 8 + i] = 1e300 * i; }
+        }, 3, 22);
+        expect([kernel.lanes, [...new Float64Array(memory.buffer, 8192, rows)]]).toEqual(["f64", Array.from({ length: rows }, (_, i) => i >= 3 && i < 22 ? i / 7 * (1e300 * i) - 0.1 : i / 7)]);
+    });
+
+    it("keeps what no store writes: leaves the body leaves, and a padded vec3's padding", () => {
+        // p.x and p.z of a tight vec3; then x, y and z of a padded one.
+        for (const [stride, stored] of [[12, [0, 2]], [16, [0, 1, 2]]] as const) {
+            const columns = [0, 1, 2].flatMap(leaf => [field("f32", 0, stride, 4 * leaf)]);
+            const program: Program = { locals: 0, body: stored.map(leaf => ({ kind: "store", column: leaf, value: binary("*", read(leaf), args) })) };
+            const { kernel, memory } = run(program, columns, memory => {
+                const floats = new Float32Array(memory.buffer, 8192, stride / 4 * rows);
+                for (let i = 0; i < floats.length; i++) floats[i] = i % (stride / 4) === 1 && stored.length === 2 ? NaN : i;
+            }, 1, 30);
+            const words = stride / 4;
+            const expected = Array.from({ length: words * rows }, (_, i) => {
+                const row = Math.floor(i / words), leaf = i % words;
+                const before = leaf === 1 && stored.length === 2 ? NaN : i;
+                return row >= 1 && row < 30 && (stored as readonly number[]).includes(leaf) ? f32(before * f32(0.1)) : before;
+            });
+            expect([stride, kernel.lanes, [...new Float32Array(memory.buffer, 8192, words * rows)]]).toEqual([stride, "f32", expected]);
+        }
+    });
+
+    it("compares a row's f32 value with a constant as f32s, in lanes and a row at a time alike", () => {
+        // out = in > 0.1 ? 1 : 2, where in is f32(0.1), which is greater than 0.1 but not than f32(0.1).
+        const test: Expression = { kind: "binary", operator: ">", left: read(0), right: { kind: "number", value: 0.1 } };
+        const program: Program = { locals: 0, body: [{ kind: "store", column: 1, value: { kind: "conditional", test, consequent: { kind: "number", value: 1 }, alternate: { kind: "number", value: 2 } } }] };
+        const { kernel, memory } = run(program, [field("f32", 0, 4, 0), field("f32", 1, 4, 0)], memory => {
+            new Float32Array(memory.buffer, 8192, rows).fill(0.1);
+        }, 3, 22);
+        expect([kernel.lanes, [...new Float32Array(memory.buffer, 16384, rows)]]).toEqual(["f32", Array.from({ length: rows }, (_, row) => row >= 3 && row < 22 ? 2 : 0)]);
+    });
+
+    it("spreads a component's leaf after an earlier group stored it, as each row reads it", () => {
+        // v = v * args; p = p + v.x.
+        const columns = [field("f32", 0, 8, 0), field("f32", 0, 8, 4), field("f32", 1, 8, 0), field("f32", 1, 8, 4)];
+        const program: Program = {
+            locals: 0,
+            body: [
+                ...[0, 1].map((leaf): Program.Statement => ({ kind: "store", column: leaf, value: binary("*", read(leaf), args) })),
+                ...[2, 3].map((leaf): Program.Statement => ({ kind: "store", column: leaf, value: binary("+", read(leaf), read(0)) })),
+            ],
+        };
+        const { kernel, memory } = run(program, columns, memory => {
+            const floats = new Float32Array(memory.buffer);
+            for (let i = 0; i < 2 * rows; i++) { floats[8192 / 4 + i] = i + 1; floats[16384 / 4 + i] = 100 * i; }
+        }, 0, rows);
+        const vx = (row: number): number => f32(f32(2 * row + 1) * f32(0.1));
+        expect([kernel.lanes, [...new Float32Array(memory.buffer, 16384, 2 * rows)]]).toEqual(["f32", Array.from({ length: 2 * rows }, (_, i) => f32(100 * i + vx(Math.floor(i / 2))))]);
+    });
+});
+
+describe("generateWasm filtered rows, with SIMD and without", () => {
+    const rows = 2600;
+    /** Each filter's row ticks, then chunk and block ticks; then the stamped column's; then the components'. */
+    const tickBytes = 8 * rows + 64;
+    const field = (view: "f32" | "f64", component: number, stride: number, offset: number): WasmColumn => ({ view, stride, offset, boolean: false, component });
+    const ticks = (component: number): WasmColumn => ({ view: "f64", stride: 8, offset: 0, boolean: false, component });
+    const read = (k: number): Expression => ({ kind: "column", column: k });
+    const args: Expression = { kind: "args", path: [] };
+    const binary = (operator: "+" | "-" | "*" | ">", left: Expression, right: Expression): Expression => ({ kind: "binary", operator, left, right });
+    const hash = (i: number): number => {
+        let x = (i + 0x9e3779b9) | 0;
+        x = Math.imul(x ^ (x >>> 16), 0x85ebca6b);
+        x = Math.imul(x ^ (x >>> 13), 0xc2b2ae35);
+        return (x ^ (x >>> 16)) >>> 0;
+    };
+    /** Which rows each pattern marks changed. */
+    const patterns: readonly (readonly [string, (row: number) => boolean])[] = [
+        ["all", () => true],
+        ["none", () => false],
+        ["alternate", row => row % 2 === 0],
+        ["random half", row => hash(row) % 2 === 0],
+        ["random tenth", row => hash(row) % 10 === 0],
+        ["runs of 64", row => hash(row >> 6) % 2 === 0],
+        ["single rows", row => row === 1031 || row === 2047 || row === 5],
+    ];
+    /**
+     * Runs a program with `filters` change filters over `rows` rows, the first filter marking rows by `changed` and
+     * the second, if any, the rows after each it marks, from `start` to `end`; returns the kernel and every byte it may
+     * have written, as words.
+     */
+    const runFiltered = (program: Program, columns: readonly WasmColumn[], simd: boolean, filters: number, changed: (row: number) => boolean, start: number, end: number) => {
+        const kernel = generateWasm(program, columns, () => "number", simd, filters, [], [], [], [], [], true);
+        if (kernel === null) throw new Error("expected a kernel");
+        const memory = new WebAssembly.Memory({ initial: 16, maximum: 65536, shared: true });
+        let next = 64;
+        const allocate = (bytes: number): number => { const at = next; next += bytes + 64; return at; };
+        // Each filter's ticks: a row's 9 where marked, else 1; its block and chunk 9 where a row in it is.
+        const filterArrays = Array.from({ length: filters }, (_, filter) => {
+            const marked = (row: number): boolean => filter === 0 ? changed(row) : row > 0 && changed(row - 1);
+            const rowTicks = allocate(tickBytes), chunks = allocate(8 * 8), blocks = allocate(8 * 64);
+            const view = new Float64Array(memory.buffer);
+            for (let row = 0; row < rows; row++) {
+                const tick = marked(row) ? 9 : 1;
+                view[rowTicks / 8 + row] = tick;
+                view[chunks / 8 + (row >> 10)] = Math.max(view[chunks / 8 + (row >> 10)] ?? 0, tick);
+                view[blocks / 8 + (row >> 6)] = Math.max(view[blocks / 8 + (row >> 6)] ?? 0, tick);
+            }
+            return { rowTicks, chunks, blocks };
+        });
+        // Columns: ticks of the stamped component as 3, a chunk's and block's as 0; components filled with distinct values.
+        const bases = new Map<number, number>();
+        const addresses = columns.map(column => {
+            const key = column.component;
+            let base = bases.get(key);
+            if (base === undefined) {
+                base = allocate(Math.max(column.stride, 8) * rows + 64);
+                bases.set(key, base);
+                const length = (Math.max(column.stride, 8) * rows + 64) / 4;
+                if (key >= 0) {
+                    if (column.view === "f64") { const view = new Float64Array(memory.buffer, base, length / 2); for (let k = 0; k < view.length; k++) view[k] = (k % 97) * 0.37 - 11; }
+                    else { const view = new Float32Array(memory.buffer, base, length); for (let k = 0; k < view.length; k++) view[k] = (k % 97) * 0.37 - 11; }
+                }
+                else new Float64Array(memory.buffer, base, length / 2).fill(key === -1 ? 3 : 0);
+            }
+            return base;
+        });
+        const run: unknown = new WebAssembly.Instance(new WebAssembly.Module(kernel.bytes), { env: { memory }, math: importsOf(kernel.imports) }).exports.run;
+        if (typeof run !== "function") throw new Error("no run export");
+        run(start, end, 7, 5, ...addresses, ...filterArrays.map(arrays => arrays.rowTicks), ...filterArrays.map(arrays => arrays.chunks), ...filterArrays.map(arrays => arrays.blocks), 0.1);
+        return { kernel, memory, addresses, words: [...new Uint32Array(memory.buffer, 0, next / 4)] };
+    };
+    /** Checks a program gives the same bits with SIMD and without, for every pattern and range, and how SIMD runs it. */
+    const same = (program: Program, columns: readonly WasmColumn[], lanes: "f32" | "f64" | null, filters = 1) => {
+        for (const [name, changed] of patterns) {
+            for (const [start, end] of [[0, rows], [3, 2050], [1029, 1040], [700, 701]] as const) {
+                const scalar = runFiltered(program, columns, false, filters, changed, start, end);
+                const vector = runFiltered(program, columns, true, filters, changed, start, end);
+                const differing = scalar.words.flatMap((word, k) => word === vector.words[k] ? [] : [k]);
+                expect([name, start, end, vector.kernel.lanes, differing.slice(0, 5)]).toEqual([name, start, end, lanes, []]);
+            }
+        }
+    };
+    const stamp = (column: number): Program.Statement => ({ kind: "stamp", column, chunks: column + 1, blocks: column + 2 });
+
+    it("runs a dense f32 column's changed rows: their values, ticks, chunks and blocks", () => {
+        const columns = [field("f32", 0, 4, 0), field("f32", 1, 4, 0), ticks(-1), ticks(-2), ticks(-3)];
+        const program: Program = { locals: 0, body: [{ kind: "store", column: 0, value: binary("+", read(0), binary("*", read(1), args)) }, stamp(2)] };
+        same(program, columns, "f32");
+        same(program, columns, "f32", 2);
+        // Directly: rows marked run, rounding each step to f32, and stamp their ticks; the rest keep both.
+        const changed = (row: number): boolean => hash(row) % 3 === 0;
+        const { memory, addresses } = runFiltered(program, columns, true, 1, changed, 0, rows);
+        const f32 = Math.fround;
+        const initial = (k: number): number => f32((k % 97) * 0.37 - 11);
+        const values = new Float32Array(memory.buffer, addresses[0], rows);
+        const rowTicks = new Float64Array(memory.buffer, addresses[2], rows);
+        expect([...values]).toEqual(Array.from({ length: rows }, (_, row) => changed(row) ? f32(initial(row) + f32(initial(row) * f32(0.1))) : initial(row)));
+        expect([...rowTicks]).toEqual(Array.from({ length: rows }, (_, row) => changed(row) ? 7 : 3));
+    });
+
+    it("runs changed rows of whole vec3 and vec4 elements, spreading a per-row value", () => {
+        for (const leaves of [3, 4]) {
+            const stride = 4 * leaves;
+            const all = Array.from({ length: leaves }, (_, leaf) => leaf);
+            // p = p + v * (m * args), leaf by leaf.
+            const columns = [...all.map(leaf => field("f32", 0, stride, 4 * leaf)), ...all.map(leaf => field("f32", 1, stride, 4 * leaf)), field("f32", 2, 4, 0), ticks(-1), ticks(-2), ticks(-3)];
+            const m = 2 * leaves;
+            const program: Program = { locals: 0, body: [...all.map((leaf): Program.Statement => ({ kind: "store", column: leaf, value: binary("+", read(leaf), binary("*", read(leaves + leaf), binary("*", read(m), args))) })), stamp(m + 1)] };
+            same(program, columns, "f32");
+        }
+    });
+
+    it("runs changed rows' partial stores and stores under an if, keeping what they leave", () => {
+        const columns = [field("f32", 0, 12, 0), field("f32", 0, 12, 4), field("f32", 0, 12, 8), field("f32", 1, 12, 0), field("f32", 1, 12, 8), ticks(-1), ticks(-2), ticks(-3)];
+        // p.x and p.z less v times args; p.y kept.
+        const partial: Program = { locals: 0, body: [0, 2].map((leaf, k): Program.Statement => ({ kind: "store", column: leaf, value: binary("-", read(leaf), binary("*", read(3 + k), args)) })).concat(stamp(5)) };
+        same(partial, columns, "f32");
+        // Dense columns: where a > b, a = a + args, stamped.
+        const dense = [field("f32", 0, 4, 0), field("f32", 1, 4, 0), ticks(-1), ticks(-2), ticks(-3)];
+        const branched: Program = { locals: 0, body: [{ kind: "if", test: binary(">", read(0), read(1)), consequent: [{ kind: "store", column: 0, value: binary("+", read(0), args) }, stamp(2)], alternate: [] }] };
+        same(branched, dense, "f32");
+    });
+
+    it("runs changed rows of f64 elements in f64 lanes", () => {
+        const columns = [field("f64", 0, 24, 0), field("f64", 0, 24, 8), field("f64", 0, 24, 16), field("f64", 1, 24, 0), field("f64", 1, 24, 8), field("f64", 1, 24, 16), ticks(-1), ticks(-2), ticks(-3)];
+        const program: Program = { locals: 0, body: [...[0, 1, 2].map((leaf): Program.Statement => ({ kind: "store", column: leaf, value: binary("+", read(leaf), binary("*", read(3 + leaf), args)) })), stamp(6)] };
+        same(program, columns, "f64");
     });
 });

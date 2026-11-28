@@ -400,8 +400,73 @@ move, chromium, by worker count and entity count (a quarter of the entities move
 - **Even shares wait for the slowest core.** The default pool is `hardwareConcurrency − 1`, which is 9 here. Past 7 workers, shares land on efficiency cores or share a core with the main thread, so 1M more than doubles. Browsers expose no core types or thread placement, so claimed splits fix this instead: with them, 1M takes 0.030 ms at 7, 8 and the default 9 workers. Pieces per worker (4, 8 or 16) made no measurable difference.
 - **At 10M the work is memory bound.** 2.5M rows read 24 bytes and write 12, about 90 MB per run; 0.5 ms is about 180 GB/s, near the chip's CPU bandwidth. It stops improving after 4 to 6 workers, and more entities would not change that.
 - **Single-threaded move matches the adobe/data ECS** (0.095 ms against 0.09 ms): four tight vec3 rows are three full vectors, as its separate x, y and z arrays are.
+- **Lanes across rows for every kernel, at storage precision** (`design.md`, Precision and Lanes across rows), M4 Max, ns a row, before → after: `integrate` 0.951 → 0.273, against a 0.224 memory bound; `integrate f64` 0.791 → 0.522, against 0.426; `with 100K kernel` 0.303 → 0.183; `shared read 100K kernel` 0.228 → 0.128; `column read 100K kernel` 0.250 → 0.159; `chain` 0.203 → 0.174; `move` 0.226 both, as it already ran in lanes. The generated `integrate` loop runs within 2% of a hand-written one.
+- **f32 arithmetic a row at a time in f32 instructions,** where it rounded each f64 step to f32: the guide's `move` without SIMD 1.95 → 0.61 ns a row (below).
+- **Filtered rows in lanes, eight rows' masks at a time** (`design.md`, Filtered rows in lanes), M4 Max: `integrate changed half` 1.11 → 0.49 ns a row; `changed all 100K kernels` 64.5 → 26.5 µs a system; `sparse changed` 0.177 → 0.155 ns a row, `sparse changed clustered` 0.0141 → 0.0083; `changed one` and `changed few 100K kernels` within noise. Over 1M rows, a vec3 kernel took 0.42 ns a row for every row changed or a random half, against 0.96 and 3.84 a row at a time within lanes, and 0.70 at a random tenth, against 1.63.
+
+## The guide's move on one thread
+
+`row[position] = Vec3.add(row[position], Vec3.scale(row[velocity], resources[delta]))` over 1M rows of f32 vec3s,
+one thread (`workers: 0`), M4 Max, fastest run:
+
+| Runs as | ns a row | 1M rows |
+| --- | --- | --- |
+| The body as written (`kernel: false`) | 129 | 135 ms |
+| JS kernel (where WASM can't run) | 2.45 | 2.57 ms |
+| WASM a row at a time (no SIMD) | 0.61 | 0.64 ms |
+| WASM, f32x4 across rows | 0.227 | 0.24 ms |
+
+- **The SIMD kernel runs at one core's memory throughput.** Each row moves 36 bytes (24 read, 12 written). A
+  hand-written loop with the same loads and stores and one `v128.or` in place of the arithmetic takes the same time at
+  every size, so the arithmetic is free:
+
+  | Rows | Working set | `move` | Loads and stores alone | `move`'s rate |
+  | --- | --- | --- | --- | --- |
+  | 1K | 0.02 MB | 0.150 | 0.144 | 239 GB/s |
+  | 16K | 0.38 MB | 0.231 | 0.225 | 156 GB/s |
+  | 1M | 24 MB | 0.238 | 0.235 | 152 GB/s |
+  | 16M | 384 MB | 0.234 | 0.236 | 154 GB/s |
+
+  The rate is flat at about 155 GB/s from L2 to DRAM; only a working set in L1 goes faster. The benchmarks' **Best**
+  assumes the peak in-cache copy rate (0.195 for `move`), which one core can't sustain past L1. More rows a second
+  take more cores: `move workers` 0.051 ns a row across nine.
+- **The JS kernel** inlines the calls into scalar arithmetic on the columns' typed arrays, about 55× the body as
+  written, which builds tuples and reads each row through its row object; WASM without SIMD is 4× the JS kernel.
+
+- **Interleaved arms skipped by groups no row takes them,** each span only such an arm uses loaded and stored back in it,
+  where an arm over `armsBudget` made the kernel run a row at a time: the ecs_benchmark suite's `MoreComplexSystem`,
+  whose rows all take its arm one frame in ten, 0.95 → 0.76 ns a row at 1M; its 7-system frame 4.20 → 4.08. Loading
+  every span up front, the arm skipped, took 1.13.
+
+## Modeling components
+
+The component rules (`rules/component.x.ts.md`) rest on these, WASM, one thread, 1M rows, M4 Max:
+
+- **Fields combined with each other:** `HealthSystem` of the ecs_benchmark suite, `{ hp, maxhp, status }` as one struct
+  0.61 ns a row, as three components 0.35. The struct's kernel transposes four rows into a vector a field and back, 16
+  shuffles a group; the same logic over separate arrays, hand-written, 0.30, near its memory floor of about 0.18. A
+  hand-written transpose of the struct with fewer, irregular shuffles was slower, 1.00: the generated one is about the
+  best the struct's layout allows.
+- **One field of a wide struct:** reading the `I32` `thingy` of the suite's 40-byte `DataComponent`, 0.42 ns a row; as
+  its own component, 0.17. A row loads its components' every byte.
+- **Width:** `integrate` 0.27 ns a row in `F32`, `integrate f64` 0.52.
+- **The suite's frame by system** (`BM_ComplexSystemsUpdate`, 1M): `MovementSystem` 0.20 at its floor of about 0.16;
+  `DataSystem` 1.11 against 0.50; `MoreComplexSystem` 0.76 against 0.26 (below); `HealthSystem` 0.65 against 0.16; `DamageSystem` 0.39 against 0.21;
+  `SpriteSystem` 0.53 against 0.26; `RenderSystem` 0.37 against 0.08, scattered writes to its frame buffer. The suite
+  ports its structs as the C++ declares them, so they stay structs there.
 
 ## Tried and not kept
+
+- **Filtered groups of four without the eight-row skip,** every group's arithmetic run under its mask: `changed all 100K
+  kernels` 32.6 µs and a random tenth 0.38 ns a row, but `sparse changed` 0.35 ns, against 0.155 with the skip. Skipping
+  before the groups with the old eight-row check loaded and compared the ticks twice: `changed all 100K kernels` 45 µs.
+  Skipping a group of four whose mask is empty: 38.2 µs and `sparse changed` 0.26. The eight rows' masks shared by the
+  skip and the groups beat all three but at a random tenth, where the skip's branch mispredicts; worth revisiting with
+  a skip that turns off in a run where it rarely skips.
+
+- **Eight rows a pass in the across-elements loop,** two groups of four unrolled: a hand-written f32x4 `move` over 1M
+  rows took 0.246 ns a row both ways on an M4 Max, the loop already bound by memory. Worth revisiting for bodies with
+  more arithmetic a row, where the loop's own instructions are a larger share.
 
 - **Finding a sync point's pairs by scanning up to eight before using the map,** since `Map.prototype.clear` allocates
   a new table: `sync point one spawn` 669 bytes and 0.40–0.42 µs mean before and after, `spawn singles` 0.57–0.59 µs

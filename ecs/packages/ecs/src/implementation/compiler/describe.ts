@@ -351,11 +351,13 @@ export const describeSystems = async (sites: TransformedSites, format: (code: st
         // An `up` kernel's runner passes only the rows that pass its filters.
         const filters = signature.up !== null ? 0 : listLength(declaration, ["components", "added"], count) + listLength(declaration, ["components", "changed"], count);
         const generated = generateWasmOrReason(explanation.program, placed.columns, placed.scalarType, true, filters, placed.lookups, placed.upColumns,
-            explanation.operators, [], [], explanation.storagePrecision, arraysOf(explanation), true);
+            explanation.operators, [], [], true, arraysOf(explanation), true);
         if (typeof generated === "string") return { backend: { kind: "none", reason: generated }, lanes: null };
         const printed = printWat(generated.bytes);
         if ("failure" in printed) return { backend: { kind: "none", reason: `its WASM can't be printed: ${printed.failure}` }, lanes: null };
-        const lanes = !generated.vectorized ? "a row at a time" : explanation.storagePrecision ? "four f32 lanes at a time, rounding each step to storage precision" : "two f64 lanes at a time, bit-exact with the body as written";
+        const lanes = generated.lanes === null ? "a row at a time"
+            : generated.lanes === "interleaved" ? "four rows at a time, interleaved into a vector a field"
+            : generated.lanes === "f32" ? "four f32 lanes at a time" : "two f64 lanes at a time";
         return { backend: { kind: "compiled", code: printed.wat }, lanes };
     };
 

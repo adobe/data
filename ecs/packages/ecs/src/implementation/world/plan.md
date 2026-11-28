@@ -68,13 +68,14 @@ All of the runtime lives here. The only export is `create`, which moves here fro
 
 - **Layout:** a linear component is one interleaved column per archetype, in its schema's layout: `storage` (WGSL storage-buffer rules), `vertex` (tight, 4-byte aligned), or by default tight for the CPU. A GPU layout is checked at registration. Kernels address a field as `row * stride + offset`.
 - **The compiler lowers each kernel once** and prints both the JS kernel and a `Program` IR from it. The IR is `null` for kernels with commands or lookups, which keep the JS kernel.
-- **Registration generates WASM** from the IR and the schemas' storage types: f64 arithmetic with typed-array store conversion, so scalar WASM is bit-identical to JS. It compiles once, and every worker instantiates the module against the shared `Memory`.
-- **SIMD**, in f32 lanes at storage precision:
-  - *Across rows*, four at a time, when every column is a dense f32 scalar.
-  - *Across rows of whole elements*, four at a time as `stride / 4` full vectors, when every store fuses into whole-element writes of components that read only same-stride components lane for lane (`p = p + v` on tight vec2 or vec3). The per-row loop takes the tail.
+- **Registration generates WASM** from the IR and the schemas' storage types, at storage precision: arithmetic on f32 values rounds each step to f32, a row at a time as in lanes, and f64 values compute as JS does. It compiles once, and every worker instantiates the module against the shared `Memory`.
+- **SIMD**, in f32 lanes, or f64x2 when every float field is an f64:
+  - *Across rows*, a vector's lanes at a time, when every column is a dense float scalar.
+  - *Across rows of whole elements*, four at a time as `4 × stride / 16` full vectors, when every store fuses into element writes of components that read same-stride components lane for lane, values the same for every row, and values of each row spread across its element's leaves (`p = p + v * (mass * delta)` on tight or padded vec2, vec3 or vec4); lanes no store writes are kept. The per-row loop takes the tail.
+  - *Filtered rows* run across rows the same way, eight rows' masks of passing rows at a time, branch-free within them, inside each run of passing blocks.
   - *Within a row* otherwise: consecutive snapshot loads of a component's leaves become one vector load, and stores to its leaves whose values match lane for lane become one f32x4 operation and store. Loads and stores cover only the element's lanes.
   - Anything else runs as scalar WASM, in the same row.
-- **Tests:** scalar WASM is bit-identical to JS; SIMD is within storage precision of JS; 0 and N workers stay identical with SIMD, since chunks start on 16-row boundaries.
+- **Tests:** WASM is bit-identical with SIMD and without, and to the body rounding each f32 step; the JS kernel to the body as written; 0 and N workers stay identical with SIMD, since chunks start on 16-row boundaries.
 
 ## Deferred
 

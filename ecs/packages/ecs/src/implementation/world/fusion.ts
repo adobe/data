@@ -159,17 +159,14 @@ export const fuseSchedule = (state: State, schedule: Schedule, runnerOf: (leaf: 
         return { leaf, runner, tier: t, uses: usesOf(state, runner, leaf), reads: readsOf(runner), group: null };
     }));
     const groups: Placed[][] = [];
-    const storagePrecisionOf = (entry: Placed): boolean => entry.runner.kernel?.description.storagePrecision === true;
     for (let t = 1; t < placed.length; t++) {
         for (const later of placed[t]) {
             if (!fusible(later.runner, later.leaf)) continue;
             const readsFrom = (earlier: Placed): boolean => earlier.runner.touches.some(id => later.reads.has(id));
             const shares = (group: Placed[]): boolean => group.some(readsFrom);
-            // A fused kernel computes in one arithmetic: an explicit kernel's, 32 bits for I32 and U32, or as JS does.
-            const precision = storagePrecisionOf(later);
             const candidate = groups.find(group => {
                 const last = group[group.length - 1];
-                if (last === undefined || last.tier >= t || !shares(group) || group.some(member => storagePrecisionOf(member) !== precision)) return false;
+                if (last === undefined || last.tier >= t || !shares(group)) return false;
                 for (let s = group[0]?.tier ?? t; s < t; s++) if (schedule.syncs[s] !== null) return false;
                 // What runs in the tiers it moves over, and beside it, mustn't conflict with what moves.
                 for (let s = (group[0]?.tier ?? t) + 1; s <= t; s++) {
@@ -186,7 +183,7 @@ export const fuseSchedule = (state: State, schedule: Schedule, runnerOf: (leaf: 
                 continue;
             }
             const earlier = placed.slice(0, t).flat().find(other => other.group === null && fusible(other.runner, other.leaf)
-                && readsFrom(other) && storagePrecisionOf(other) === precision
+                && readsFrom(other)
                 && placed.slice(other.tier + 1, t + 1).every(tier => tier.every(next => next === later || !conflict(other.uses, next.uses)))
                 && schedule.syncs.slice(other.tier, t).every(sync => sync === null));
             if (earlier === undefined) continue;
@@ -334,7 +331,7 @@ const compileGroup = async (state: State, group: FusedGroup): Promise<void> => {
     if (parts.some(part => part === undefined || part.loaded === null) || kernels.some(kernel => kernel?.wasm === null || kernel?.description.program === null)) return;
     const fusion = parts.flatMap(part => part === undefined ? [] : [part]);
     const merged = fuseMembers(fusion, kernels.flatMap(kernel => kernel?.description.program ?? []), kernels.map(kernel => (kernel?.description.resources ?? []).flatMap(key => typeof key === "symbol" ? [key] : [])));
-    const wasm = generateWasm(merged.program, merged.columns, merged.scalarType, state.simd, 0, [], [], [], [], [], kernels.every(kernel => kernel?.description.storagePrecision === true), merged.arrays);
+    const wasm = generateWasm(merged.program, merged.columns, merged.scalarType, state.simd, 0, [], [], [], [], [], true, merged.arrays);
     group.loadedFrom = fusion.map(part => part.loaded).join("|");
     if (wasm === null || (!wasm.vectorized && kernels.some(kernel => kernel?.wasm?.vectorized === true))) {
         group.refused = true;

@@ -82,21 +82,20 @@ describe("a module's systems described", () => {
         expect([...systems.keys()]).toEqual(["automatic", "asserted", "shaded", "spawn", "observe", "named", "optional", "unflagged", "draw", "filtered", "looked", "summed", "inputs", "hypotenuse", null]);
     });
 
-    it("gives an automatic kernel's JS, its WASM at the body's precision, and the shader it would be as a GPU kernel", () => {
+    it("gives an automatic kernel's JS, its WASM in f32 lanes at storage precision, and the shader it would be as a GPU kernel", () => {
         const system = described("automatic");
         expect(system).toMatchObject({ kind: "row", kernel: null, js: { kind: "compiled" }, wasm: { kind: "compiled" }, wgsl: { kind: "eligible", reason: expect.stringContaining("With `kernel: \"gpu\"`") } });
         expect(codeOf(system.js)).toContain("export const create = (booleans");
         expect(codeOf(system.js)).toContain("\n\t\trows: for (");
         expect(codeOf(system.wasm)).toContain("(func $run (type 0) (param $start i32) (param $end i32) (param $tick f64) (param $lastRun f64) (param $c0 i32)");
-        expect(codeOf(system.wasm)).toContain("(local $x1_7 f64)");
-        expect(codeOf(system.wasm)).toContain("f64.promote_f32");
+        expect(codeOf(system.wasm)).toContain("f32x4.mul");
         expect(codeOf(system.wgsl)).toContain("@compute @workgroup_size(64)");
-        expect(system.runs).toMatch(/^WASM on the kernel pool's workers, (a row at a time|two f64 lanes at a time, bit-exact with the body as written); the JS kernel/);
+        expect(system.runs).toMatch(/^WASM on the kernel pool's workers, four f32 lanes at a time; the JS kernel/);
     });
 
     it("gives a kernel: true kernel's WASM in f32 lanes at storage precision", () => {
         const system = described("asserted");
-        expect(system).toMatchObject({ kernel: true, wasm: { kind: "compiled" }, runs: expect.stringContaining("four f32 lanes at a time, rounding each step to storage precision") });
+        expect(system).toMatchObject({ kernel: true, wasm: { kind: "compiled" }, runs: expect.stringContaining("four f32 lanes at a time") });
         expect(codeOf(system.wasm)).toContain("f32x4.add");
     });
 

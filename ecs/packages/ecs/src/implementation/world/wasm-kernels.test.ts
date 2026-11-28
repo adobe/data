@@ -295,7 +295,7 @@ describe("WASM kernels", () => {
             if (description === undefined) throw new Error("not compiled");
             return bindKernel(createState(), definition, description).wasm;
         };
-        expect([integrate, bounce, tally, scale, drift].map(system => wasmOf(system)?.vectorized)).toEqual([false, false, false, false, true]);
+        expect([integrate, bounce, tally, scale, drift].map(system => wasmOf(system)?.vectorized)).toEqual([false, false, false, true, true]);
         expect(wasmOf(chase)).not.toBeNull();
     });
 
@@ -364,10 +364,10 @@ describe("WASM kernels", () => {
         expect(scores).toEqual([[0.25, 0.25, 0.25], [0.25, 0.25, 0.25]]);
     });
 
-    it("give bit-identical results to the JS kernels without SIMD", async () => {
-        const javascript = await simulate(false);
-        expect(javascript.some(values => JSON.stringify(values).includes("true"))).toBe(true);
-        expect(await simulate(true)).toEqual(javascript);
+    it("give bit-identical results with SIMD and without, rounding each step of f32 arithmetic alike", async () => {
+        const scalar = await simulate(true);
+        expect(scalar.some(values => JSON.stringify(values).includes("true"))).toBe(true);
+        expect(await simulate(true, true)).toEqual(scalar);
     });
 
     it("stay within storage precision of the JS kernels with SIMD", async () => {

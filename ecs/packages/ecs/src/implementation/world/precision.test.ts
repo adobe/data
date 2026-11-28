@@ -55,12 +55,11 @@ const differenceAfter = async (system: typeof tried, wasm: boolean): Promise<num
     }
 };
 
-it("computes an unflagged kernel at the precision the body as written does, in JS and WASM", async () => {
+it("computes a kernel in WASM at storage precision, rounding each step to f32, and in its JS kernel as the body as written does", async () => {
     expect(kernelOf(tried)).toBeDefined();
-    const expected = await differenceAfter(written, true);
-    expect(expected).toBe(Math.fround(2 ** -46));
-    expect(await differenceAfter(tried, true)).toBe(expected);
-    expect(await differenceAfter(tried, false)).toBe(expected);
+    expect(await differenceAfter(written, true)).toBe(Math.fround(2 ** -46));
+    expect(await differenceAfter(tried, true)).toBe(0);
+    expect(await differenceAfter(tried, false)).toBe(Math.fround(2 ** -46));
 });
 
 /** Values where f32 arithmetic loses what f64 keeps: cancellation, rounding at each step, NaN, infinities and -0. */
@@ -73,23 +72,29 @@ const seedMany = System.create(({ commands }) => {
 const touch = System.create({ kernel: false, components: { with: [c] } }, row => {
     if (row.entity % 3 === 0) row[c] = row[c] * 3;
 });
+/** Each kernel, the body as written, and the body rounding each step of f32 arithmetic to f32, as its WASM does in lanes and a row at a time. */
 const pairs = [
     [
         System.create({ components: { with: [a, c, difference] } }, row => { row[difference] = Math.sqrt(Math.abs(row[a])) / row[c] + Math.min(row[a], 0.75) * Math.fround(row[c]) - Math.floor(row[a]); }),
         System.create({ kernel: false, components: { with: [a, c, difference] } }, row => { row[difference] = Math.sqrt(Math.abs(row[a])) / row[c] + Math.min(row[a], 0.75) * Math.fround(row[c]) - Math.floor(row[a]); }),
+        System.create({ kernel: false, components: { with: [a, c, difference] } }, row => { row[difference] = Math.fround(Math.fround(Math.fround(Math.sqrt(Math.abs(row[a]))) / row[c]) + Math.fround(Math.min(row[a], 0.75) * row[c])) - Math.floor(row[a]); }),
     ],
     [
         System.create({ components: { with: [velocity, position] } }, row => { row[position] = [row[position][0] * row[velocity][0] - row[velocity][0] * 0.75, row[position][1] * row[velocity][1] - row[velocity][1] * 0.75, row[position][2] * row[velocity][2] - row[velocity][2] * 0.75]; }),
         System.create({ kernel: false, components: { with: [velocity, position] } }, row => { row[position] = [row[position][0] * row[velocity][0] - row[velocity][0] * 0.75, row[position][1] * row[velocity][1] - row[velocity][1] * 0.75, row[position][2] * row[velocity][2] - row[velocity][2] * 0.75]; }),
+        System.create({ kernel: false, components: { with: [velocity, position] } }, row => { row[position] = [Math.fround(row[position][0] * row[velocity][0]) - Math.fround(row[velocity][0] * 0.75), Math.fround(row[position][1] * row[velocity][1]) - Math.fround(row[velocity][1] * 0.75), Math.fround(row[position][2] * row[velocity][2]) - Math.fround(row[velocity][2] * 0.75)]; }),
     ],
     // Remainders by integer literals: of integers and of everything else, NaN, infinities and -0 among them.
+    // Remainders run a row at a time; a product of f32s rounds to f32 there too.
     [
         System.create({ components: { with: [a, c, difference] } }, row => { row[difference] = row[a] < 0 ? Math.trunc(row[a] * -1e6) % 5 + row[c] % 2 : row[a] === 0 ? Math.trunc(row[a]) % 4 : row[a] % 3 + Math.floor(row[c] * 4096) % 7; }),
         System.create({ kernel: false, components: { with: [a, c, difference] } }, row => { row[difference] = row[a] < 0 ? Math.trunc(row[a] * -1e6) % 5 + row[c] % 2 : row[a] === 0 ? Math.trunc(row[a]) % 4 : row[a] % 3 + Math.floor(row[c] * 4096) % 7; }),
+        System.create({ kernel: false, components: { with: [a, c, difference] } }, row => { row[difference] = row[a] < 0 ? Math.trunc(Math.fround(row[a] * -1e6)) % 5 + row[c] % 2 : row[a] === 0 ? Math.trunc(row[a]) % 4 : row[a] % 3 + Math.floor(Math.fround(row[c] * 4096)) % 7; }),
     ],
     [
         System.create({ components: { with: [a, c, difference], changed: [c] } }, row => { row[difference] = row[a] * row[a] - row[c]; }),
         System.create({ kernel: false, components: { with: [a, c, difference], changed: [c] } }, row => { row[difference] = row[a] * row[a] - row[c]; }),
+        System.create({ kernel: false, components: { with: [a, c, difference], changed: [c] } }, row => { row[difference] = Math.fround(row[a] * row[a]) - row[c]; }),
     ],
 ] as const;
 const values: number[] = [];
@@ -126,12 +131,11 @@ const bitsAfter = async (system: (typeof pairs)[number][number], wasm: boolean):
     }
 };
 
-it("gives an unflagged kernel's results bit for bit as written, for dense columns, whole elements and change filters", async () => {
-    for (const [index, [tried, written]] of pairs.entries()) {
+it("gives a kernel's results bit for bit rounding each step to f32 in WASM and as written in JS, for dense columns, whole elements and change filters", async () => {
+    for (const [index, [tried, written, stepped]] of pairs.entries()) {
         expect([index, kernelOf(tried) !== undefined]).toEqual([index, true]);
-        const expected = await bitsAfter(written, true);
-        expect([index, "wasm", await bitsAfter(tried, true)]).toEqual([index, "wasm", expected]);
-        expect([index, "js", await bitsAfter(tried, false)]).toEqual([index, "js", expected]);
+        expect([index, "wasm", await bitsAfter(tried, true)]).toEqual([index, "wasm", await bitsAfter(stepped, true)]);
+        expect([index, "js", await bitsAfter(tried, false)]).toEqual([index, "js", await bitsAfter(written, true)]);
     }
 });
 
